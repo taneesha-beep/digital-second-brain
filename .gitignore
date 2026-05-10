@@ -1,4 +1,5 @@
-second-brain-report.docx
 node_modules/
 backend/.env
 frontend/.env
+.DS_Store
+second-brain-report.docx
