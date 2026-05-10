@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+/* Palette variables */
+:root {
+  --mint:   #e5ffde;
+  --silver: #bbcbcb;
+  --muted:  #9590a8;
+  --plum:   #634b66;
+  --ink:    #18020c;
+}
+
+/* Global background — soft radial gradient for depth */
+body {
+  background: radial-gradient(ellipse at 20% 10%, #d4f5cb 0%, #e5ffde 45%, #daf0d5 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #e5ffde; }
+::-webkit-scrollbar-thumb  { background: #9590a8; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #634b66; }
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid #634b66;
+  outline-offset: 2px;
+}
+
+/* Floating card — glass morphism */
+.card {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(187,203,203,0.45);
+  box-shadow:
+    0 2px 8px rgba(24,2,12,0.04),
+    0 8px 32px rgba(99,75,102,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+  border-radius: 1.25rem;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+/* Card hover lift */
+.card-lift:hover {
+  box-shadow:
+    0 4px 16px rgba(24,2,12,0.07),
+    0 16px 48px rgba(99,75,102,0.14),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+  transform: translateY(-3px);
+}
+
+/* Plum gradient for buttons */
+.btn-plum {
+  background: linear-gradient(135deg, #7a5c7d 0%, #634b66 50%, #4e3a51 100%);
+  color: #e5ffde;
+  box-shadow: 0 4px 14px rgba(99,75,102,0.35);
+  transition: all 0.2s ease;
+}
+.btn-plum:hover:not(:disabled) {
+  background: linear-gradient(135deg, #8a6a8d 0%, #6e5472 50%, #5a4260 100%);
+  box-shadow: 0 6px 20px rgba(99,75,102,0.45);
+  transform: translateY(-1px);
+}
+.btn-plum:active:not(:disabled) {
+  transform: translateY(0px);
+  box-shadow: 0 2px 8px rgba(99,75,102,0.3);
+}
+.btn-plum:disabled { background: #9590a8; box-shadow: none; }
+
+/* Input glow on focus */
+.input-plum {
+  border: 1px solid #bbcbcb;
+  background: rgba(255,255,255,0.8);
+  color: #18020c;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-plum:focus {
+  border-color: #9590a8;
+  box-shadow: 0 0 0 3px rgba(99,75,102,0.12);
+}
+
+/* Floating brain animation for auth pages */
+@keyframes floatBrain {
+  0%, 100% { transform: translateY(0px) rotate(-2deg); }
+  50%       { transform: translateY(-10px) rotate(2deg); }
+}
+.float-brain {
+  display: inline-block;
+  animation: floatBrain 4s ease-in-out infinite;
+}
+
+/* Section header hover shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+/* Pulse glow for selected note card */
+@keyframes selectedPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,75,102,0.25), 0 8px 32px rgba(99,75,102,0.12); }
+  50%       { box-shadow: 0 0 0 4px rgba(99,75,102,0.1), 0 8px 32px rgba(99,75,102,0.18); }
+}
