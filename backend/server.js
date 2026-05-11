@@ -14,9 +14,15 @@ const exportRoutes = require('./routes/export');
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://digital-second-brain.vercel.app'],
+  origin: function(origin, callback) {
+    if (!origin || origin.includes('vercel.app') || origin.includes('localhost')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
-}))
+}));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes); // NO protect here
