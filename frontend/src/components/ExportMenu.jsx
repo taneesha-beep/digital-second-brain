@@ -92,8 +92,7 @@ export default function ExportMenu({ noteId }) {
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
   const [busy, setBusy]       = useState('');
   const rootRef = useRef(null);
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
-
+  const apiBase = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:5001/api';
   useEffect(() => {
     const fn = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', fn);
