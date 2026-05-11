@@ -14,9 +14,9 @@ const exportRoutes = require('./routes/export');
 const app = express();
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: ['http://localhost:5173', 'https://digital-second-brain.vercel.app'],
   credentials: true
-}));
+}))
 app.use(express.json());
 
 app.use('/api/auth', authRoutes); // NO protect here
