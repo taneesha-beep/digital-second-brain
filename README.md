@@ -1,8 +1,35 @@
-# 🧠 Digital Second Brain
+# Digital Second Brain
 
-A full-stack web application that connects your notes into an intelligent knowledge network. It automatically extracts keywords, finds relationships between notes, and displays them as a color-coded interactive graph.
+A full-stack AI-powered knowledge management app that connects your notes into an
+intelligent graph. Built solo using React, Node.js, Express, MongoDB, and Groq LLM
+integration — with a custom TF-IDF keyword extraction algorithm and automatic
+smart linking between related notes.
 
----
+🔗 Live Demo: https://digital-second-brain-3g3e7vfs6-taneesha-badhe-s-projects.vercel.app/login
+📁 Built by: Taneesha Badhe (sole developer)
+
+## Key Technical Highlights
+
+- Custom TF-IDF NLP algorithm for keyword extraction (no external NLP library)
+- Smart linking engine that automatically computes semantic relationships between notes
+- Interactive knowledge graph using Cytoscape.js with color-coded topic clusters
+- LLM integration via Groq API for AI-powered note insights
+- JWT authentication with bcryptjs password hashing
+- PDF and .txt file upload with automatic text extraction
+- Export to PDF and JSON
+- Full REST API with 10 endpoints
+
+## Tech Stack
+
+Frontend: React 18, Tailwind CSS, Vite, Cytoscape.js, Axios
+Backend: Node.js, Express.js, Mongoose
+Database: MongoDB Atlas
+Auth: JWT + bcryptjs
+AI: Groq LLM API
+File handling: Multer, pdf-parse, jsPDF
+Deployment: Vercel (frontend), Render (backend)
+
+## Screenshots
 
 ## 📋 Table of Contents
 
