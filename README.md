@@ -30,6 +30,12 @@ File handling: Multer, pdf-parse, jsPDF
 Deployment: Vercel (frontend), Render (backend)
 
 ## Screenshots
+<img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 42 36 PM" src="https://github.com/user-attachments/assets/8aab3a14-f8d7-4f9d-b889-17da762a24b0" />
+<img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 40 26 PM" src="https://github.com/user-attachments/assets/5714329c-2df3-404d-9e47-68c0508226cf" />
+<img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 41 16 PM" src="https://github.com/user-attachments/assets/95087952-8761-414c-a40c-16c0b35a7c79" />
+<img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 41 27 PM" src="https://github.com/user-attachments/assets/528e7c93-65c1-4f3d-b0ec-ae115acc9661" />
+<img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 42 22 PM" src="https://github.com/user-attachments/assets/1a3f082b-9a96-4af6-8aad-6e9cdeceb634" />
+
 
 ## 📋 Table of Contents
 
