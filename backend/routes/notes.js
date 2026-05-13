@@ -25,9 +25,20 @@ function blockNoteToPlainText(value) {
   return '';
 }
 
+/**
+ * Normalise whatever the client sends as `content`.
+ * Quill Delta { ops: [...] } is stored as-is.
+ * Legacy plain strings are wrapped as { text } for backwards compat.
+ * Anything else (null, undefined, empty array) becomes {}.
+ */
 function normalizeContent(value) {
-  if (value && typeof value === 'object') return value;
-  if (typeof value === 'string') return { text: value };
+  if (!value) return {};
+  // Quill Delta — has an ops array
+  if (typeof value === 'object' && Array.isArray(value.ops)) return value;
+  // Any other object (legacy { text: '...' } or block-note arrays) — keep as-is
+  if (typeof value === 'object') return value;
+  // Plain string — wrap for backwards compat
+  if (typeof value === 'string' && value.trim()) return { text: value };
   return {};
 }
 
