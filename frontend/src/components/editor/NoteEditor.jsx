@@ -32,13 +32,24 @@ function loadQuill() {
   return quillLoadPromise;
 }
 
-export default function NoteEditor({ initialValue: _iv = '', onChange }) {
-  const initialValue = typeof _iv === 'string' ? _iv : (typeof _iv?.text === 'string' ? _iv.text : '');
+/**
+ * NoteEditor
+ *
+ * Props:
+ *   initialValue — Quill Delta { ops: [...] }, plain string, or { text: string }.
+ *                  Whatever is stored in Note.content — passed straight through.
+ *   onChange({ delta, text }) — called on every keystroke.
+ *                  delta → store as Note.content  (rich formatting preserved)
+ *                  text  → store as Note.contentText (plain text for NLP/search)
+ */
+export default function NoteEditor({ initialValue = null, onChange }) {
   const containerRef = useRef(null);
-  const quillRef    = useRef(null);
-  const onChangeRef = useRef(onChange);
+  const quillRef     = useRef(null);
+  const onChangeRef  = useRef(onChange);
+  const initialRef   = useRef(initialValue); // snapshot at mount — not reactive
   onChangeRef.current = onChange;
 
+  // ── Mount Quill once ──────────────────────────────────────────────────────
   useEffect(() => {
     loadQuill().then(() => {
       if (!containerRef.current || quillRef.current) return;
@@ -46,31 +57,27 @@ export default function NoteEditor({ initialValue: _iv = '', onChange }) {
       const quill = new window.Quill(containerRef.current, {
         theme: 'snow',
         placeholder: 'Type your note… (use toolbar for formatting)',
-        modules: { toolbar: TOOLBAR }
+        modules: { toolbar: TOOLBAR },
       });
 
-      // Set initial content
-      if (initialValue) {
-        quill.setText(initialValue);
-        quill.setSelection(quill.getLength(), 0);
-      }
+      setQuillContent(quill, initialRef.current);
 
       quill.on('text-change', () => {
-        const text = quill.getText().trim();
-        onChangeRef.current?.(text);
+        onChangeRef.current?.({
+          delta: quill.getContents(),   // full Delta — preserves all formatting
+          text:  quill.getText().trim(), // plain text — for NLP / keyword extraction
+        });
       });
 
       quillRef.current = quill;
     });
-  }, []); // only run once
+  }, []); // intentionally runs once
 
-  // Update content when note changes
+  // ── Swap content when the selected note changes ───────────────────────────
   useEffect(() => {
     const quill = quillRef.current;
     if (!quill) return;
-    const current = quill.getText().trim();
-    if (current === initialValue.trim()) return;
-    quill.setText(initialValue || '');
+    setQuillContent(quill, initialValue);
   }, [initialValue]);
 
   return (
@@ -78,4 +85,35 @@ export default function NoteEditor({ initialValue: _iv = '', onChange }) {
       <div ref={containerRef} style={{ minHeight: '200px', fontSize: '14px' }} />
     </div>
   );
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Load the right content into a Quill instance.
+ * Handles all the formats Note.content can arrive in:
+ *   - Quill Delta  : { ops: [...] }
+ *   - Plain object : { text: '...' }  (legacy notes saved before Delta support)
+ *   - Plain string : '...'            (very old notes / imports)
+ *   - null / undefined / empty       : clears the editor
+ */
+function setQuillContent(quill, value) {
+  if (!quill) return;
+
+  if (value && typeof value === 'object' && Array.isArray(value.ops)) {
+    // ✅ Quill Delta — restore rich formatting
+    quill.setContents(value, 'silent');
+  } else if (typeof value === 'string' && value.trim()) {
+    // Legacy plain string
+    quill.setText(value, 'silent');
+  } else if (value && typeof value === 'object' && typeof value.text === 'string') {
+    // Legacy { text: '...' } shape
+    quill.setText(value.text, 'silent');
+  } else {
+    // Empty / new note
+    quill.setText('', 'silent');
+  }
+
+  // Move cursor to end
+  quill.setSelection(quill.getLength(), 0);
 }

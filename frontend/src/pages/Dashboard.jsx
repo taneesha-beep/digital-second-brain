@@ -214,8 +214,15 @@ export default function Dashboard() {
   };
 
   const handleVersionRestore = (content) => {
-    const text = typeof content === 'string' ? content : content?.text || '';
-    setEditorText(text);
+    // content may be a Delta, a legacy { text } object, or a plain string
+    if (content && typeof content === 'object' && Array.isArray(content.ops)) {
+      setEditorDelta(content);
+      setEditorText('');
+    } else {
+      const text = typeof content === 'string' ? content : (content?.text || '');
+      setEditorText(text);
+      setEditorDelta(null);
+    }
     setShowVersions(false);
   };
 
@@ -430,14 +437,10 @@ export default function Dashboard() {
               <TagInput tags={noteTags} onChange={setNoteTags} />
 
               <NoteEditor
-                initialValue={selectedNote?.content || editorText}
-                onChange={(payload) => {
-                  if (payload && typeof payload === 'object' && payload.delta) {
-                    setEditorText(payload.text || '');
-                    setEditorDelta(payload.delta);
-                  } else {
-                    setEditorText(typeof payload === 'string' ? payload : '');
-                  }
+                initialValue={selectedNote?.content ?? null}
+                onChange={({ delta, text }) => {
+                  setEditorText(text || '');
+                  setEditorDelta(delta || null);
                 }}
               />
             </section>
