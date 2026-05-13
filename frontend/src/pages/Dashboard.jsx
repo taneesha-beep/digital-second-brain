@@ -95,7 +95,7 @@ export default function Dashboard() {
   } = useContext(NoteContext);
 
   const [editorText, setEditorText]         = useState('');
-  const [editorBlocks, setEditorBlocks]     = useState([]);
+  const [editorDelta, setEditorDelta]       = useState(null);
   const [noteTitle, setNoteTitle]           = useState('');
   const [noteTags, setNoteTags]             = useState([]);
   const [saving, setSaving]                 = useState(false);
@@ -112,7 +112,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!selectedNote) { setEditorText(''); setNoteTitle(''); return; }
     setEditorText(selectedNote.contentText || '');
-    setEditorBlocks(selectedNote.content || []);
+    setEditorDelta(selectedNote.content || null);
     setNoteTitle(selectedNote.title || '');
     setNoteTags(selectedNote.tags || []);
   }, [selectedNote?._id]);
@@ -134,7 +134,7 @@ export default function Dashboard() {
       await saveNote(selectedNote._id, {
         title: noteTitle,
         tags: noteTags,
-        content: editorBlocks.length > 0 ? editorBlocks : { text: editorText },
+        content: editorDelta || { text: editorText },
         contentText: editorText
       });
     } catch (err) {
@@ -430,10 +430,14 @@ export default function Dashboard() {
               <TagInput tags={noteTags} onChange={setNoteTags} />
 
               <NoteEditor
-                initialValue={typeof selectedNote?.content === 'object' && !Array.isArray(selectedNote?.content) ? (selectedNote?.content?.text || editorText) : (selectedNote?.content || editorText)}
-                onChange={(plainText, blocks) => {
-                  setEditorText(plainText);
-                  if (blocks) setEditorBlocks(blocks);
+                initialValue={selectedNote?.content || editorText}
+                onChange={(payload) => {
+                  if (payload && typeof payload === 'object' && payload.delta) {
+                    setEditorText(payload.text || '');
+                    setEditorDelta(payload.delta);
+                  } else {
+                    setEditorText(typeof payload === 'string' ? payload : '');
+                  }
                 }}
               />
             </section>
