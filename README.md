@@ -5,7 +5,7 @@ intelligent graph. Built solo using React, Node.js, Express, MongoDB, and Groq L
 integration — with a custom TF-IDF keyword extraction algorithm and automatic
 smart linking between related notes.
 
-🔗 Live Demo: https://digital-second-brain-3g3e7vfs6-taneesha-badhe-s-projects.vercel.app/login
+🔗 Live Demo: [https://taneesha-digital-second-brain.vercel.app/dashboard](https://taneesha-digital-second-brain.vercel.app/dashboard)
 📁 Built by: Taneesha Badhe (sole developer)
 
 ## Key Technical Highlights
