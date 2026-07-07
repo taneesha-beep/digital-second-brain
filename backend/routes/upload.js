@@ -6,6 +6,7 @@ const Note     = require('../models/Note');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
 const { buildColorMap }   = require('../utils/colors');
+const { computeAndSaveLinks } = require('../services/linker.service');
 
 router.use(protect);
 
@@ -61,25 +62,20 @@ router.post('/', upload.single('file'), async (req, res) => {
       category: req.body.category || ''
     });
 
-    // Recompute relations + colors for all user notes
+    // Recompute colors for all user notes
     const allNotes = await Note.find({ user: req.user._id }).lean();
     const colorMap = buildColorMap(allNotes);
 
     for (const n of allNotes) {
-      const related = [];
-      for (const other of allNotes) {
-        if (other._id.toString() === n._id.toString()) continue;
-        const set1 = new Set(n.keywords);
-        if (n.keywords.some(k => other.keywords.includes(k))) {
-          related.push(other._id);
-        }
-      }
       const color = colorMap.get(n._id.toString()) || '#6366f1';
-      await Note.findByIdAndUpdate(n._id, { relatedNotes: related, color });
+      await Note.findByIdAndUpdate(n._id, { color });
     }
 
+    // Compute linkedNotes (strength + sharedKeywords) via the shared linker service
+    await computeAndSaveLinks(note._id, req.user._id);
+
     const populated = await Note.findById(note._id)
-      .populate('relatedNotes', 'title _id color');
+      .populate('linkedNotes.noteId', 'title _id color');
 
     res.status(201).json(populated);
   } catch (err) {
