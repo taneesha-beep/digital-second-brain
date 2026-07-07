@@ -26,8 +26,8 @@ Backend: Node.js, Express.js, Mongoose
 Database: MongoDB Atlas
 Auth: JWT + bcryptjs
 AI: Groq LLM API
-File handling: Multer, pdf-parse, jsPDF
-Deployment: Vercel (frontend), Render (backend)
+File handling: Multer, pdf-parse, pdfkit
+Deployment: Vercel (frontend), Railway (backend)
 
 ## Screenshots
 <img width="1440" height="900" alt="Screenshot 2026-05-12 at 1 42 36 PM" src="https://github.com/user-attachments/assets/8aab3a14-f8d7-4f9d-b889-17da762a24b0" />
