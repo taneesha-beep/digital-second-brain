@@ -17,7 +17,7 @@ smart linking between related notes.
 - JWT authentication with bcryptjs password hashing
 - PDF and .txt file upload with automatic text extraction
 - Export to PDF and JSON
-- Full REST API with 10 endpoints
+- Full REST API covering auth, notes, search, file upload, export, and AI features
 
 ## Tech Stack
 
@@ -508,7 +508,9 @@ Here is the complete picture of how the frontend, backend, and database talk to 
 | GET    | /api/notes/:id                      | Yes           | Get one specific note                                  |
 | DELETE | /api/notes/:id/relations/:relatedId | Yes           | Remove a specific link between two notes               |
 | POST   | /api/upload                         | Yes           | Upload a .txt or .pdf and create a note from it        |
-
+| POST   | /api/llm/:noteId/:feature           | Yes           | Run an AI feature                                      |
+| GET    | /api/search                         | Yes           | Search notes (keyword / semantic / tag modes)          |
+| GET    | /api/export/:noteId                 | Yes           | Export a note as PDF, Markdown, or text                |
 ---
 
 ## Tech Stack Summary
