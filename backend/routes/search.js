@@ -3,6 +3,7 @@ const router  = express.Router();
 const Note    = require('../models/Note');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
+const { loadUserCorpus } = require('../utils/corpus');
 
 router.use(protect);
 
@@ -75,7 +76,8 @@ router.get('/', async (req, res) => {
 
     // ── Semantic mode — extract query keywords, score by overlap ─────────
     if (mode === 'semantic' && q) {
-      const queryKeywords = extractKeywords('', q, [], 10);
+      const corpus = await loadUserCorpus(req.user._id);
+      const queryKeywords = extractKeywords('', q, corpus, 10);
       const allNotes = await Note.find({ user: req.user._id })
         .select('title tags keywords createdAt contentText')
         .lean();

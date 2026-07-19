@@ -4,6 +4,7 @@ const Note      = require('../models/Note');
 const NoteVersion = require('../models/NoteVersion');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
+const { loadUserCorpus } = require('../utils/corpus');
 const { buildGlobalGraph } = require('../services/graphBuilder.service');
 const { computeAndSaveLinks, getLinkedNotes } = require('../services/linker.service');
 const { saveVersion, getVersions } = require('../services/version.service');
@@ -111,8 +112,9 @@ router.put('/:id', async (req, res) => {
     if (Array.isArray(embedding))  note.embedding = embedding;
     if (category !== undefined)    note.category  = category;
 
-    // Extract keywords from updated text
-    note.keywords = extractKeywords(note.title, note.contentText);
+    // Extract keywords from updated text, using the user's other notes as the corpus
+    const corpus = await loadUserCorpus(req.user._id, { excludeId: note._id });
+    note.keywords = extractKeywords(note.title, note.contentText, corpus);
 
     await note.save();
 

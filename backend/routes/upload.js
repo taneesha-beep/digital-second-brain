@@ -5,6 +5,7 @@ const pdfParse = require('pdf-parse');
 const Note     = require('../models/Note');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
+const { loadUserCorpus } = require('../utils/corpus');
 const { buildColorMap }   = require('../utils/colors');
 const { computeAndSaveLinks } = require('../services/linker.service');
 
@@ -52,7 +53,8 @@ router.post('/', upload.single('file'), async (req, res) => {
     // Limit content to first 10,000 characters to keep DB documents reasonable
     const content = extractedText.slice(0, 10000);
 
-    const keywords = extractKeywords(title, content);
+    const corpus = await loadUserCorpus(req.user._id);
+    const keywords = extractKeywords(title, content, corpus);
 
     const note = await Note.create({
       user:    req.user._id,
