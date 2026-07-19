@@ -463,7 +463,8 @@ Here is the complete picture of how the frontend, backend, and database talk to 
 │       → pdf-parse extracts text from PDF                    │
 │       → creates a note automatically                        │
 │                                                              │
-│  /api/notes/graph   → returns {nodes, links} for graph      │
+│  /api/notes/graph   → returns { elements: [...] }           │
+│                        (Cytoscape.js element format)         │
 │  /api/notes/:id/relations/:rid → removes a specific link    │
 └──────────────────────┬──────────────────────────────────────┘
                        │  Mongoose ODM
@@ -506,13 +507,16 @@ Here is the complete picture of how the frontend, backend, and database talk to 
 | POST   | /api/notes                          | Yes           | Create a note (auto-extracts keywords + assigns color) |
 | PUT    | /api/notes/:id                      | Yes           | Edit a note (re-extracts keywords)                     |
 | DELETE | /api/notes/:id                      | Yes           | Delete a note + clean up all links                     |
-| GET    | /api/notes/graph                    | Yes           | Get graph data `{nodes, links}` for Cytoscape          |
+| GET    | /api/notes/graph                    | Yes           | Get global graph data as `{ elements: [...] }` (Cytoscape format); identical to `/api/graph/global` |
 | GET    | /api/notes/:id                      | Yes           | Get one specific note                                  |
 | DELETE | /api/notes/:id/relations/:relatedId | Yes           | Remove a specific link between two notes               |
 | POST   | /api/upload                         | Yes           | Upload a .txt or .pdf and create a note from it        |
 | POST   | /api/llm/:noteId/:feature           | Yes           | Run an AI feature                                      |
 | GET    | /api/search                         | Yes           | Search notes (keyword / semantic / tag modes)          |
 | GET    | /api/export/:noteId                 | Yes           | Export a note as PDF, Markdown, or text                |
+| GET    | /api/graph/note/:noteId             | Yes           | Get the per-note hierarchical graph as `{ elements, scores }`; optional `?expanded=kw1,kw2` |
+| GET    | /api/graph/note/:noteId/expand/:keyword | Yes       | Lazily load Level-2 sub-keyword nodes for one keyword, as `{ elements: [...] }` |
+| GET    | /api/graph/global                   | Yes           | Get global graph data as `{ elements: [...] }` (Cytoscape format); identical to `/api/notes/graph` |
 ---
 
 ## Tech Stack Summary
