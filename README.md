@@ -16,7 +16,7 @@ smart linking between related notes.
 - LLM integration via Groq API for AI-powered note insights
 - JWT authentication with bcryptjs password hashing
 - PDF and .txt file upload with automatic text extraction
-- Export to PDF and JSON
+- Per-note export to PDF, Markdown, or plain text
 - Full REST API covering auth, notes, search, file upload, export, and AI features
 
 ## Tech Stack
@@ -59,7 +59,7 @@ Deployment: Vercel (frontend), Railway (backend)
 - **Color-code notes and graph nodes** by topic cluster so related subjects appear in the same color
 - **Interactive knowledge graph** (Cytoscape.js) showing all connections visually
 - **Upload notes** from `.txt` or `.pdf` files — text is extracted automatically
-- **Export all notes** as a PDF document or JSON file
+- **Export a note** as PDF, Markdown, or plain text; export any AI-generated result (summary, flashcards, key concepts, ELI5, exam questions) as a standalone HTML file
 - **Remove wrong links** manually from the Related Notes panel
 - **Search notes** by title, content, keywords, or category
 - **User authentication** — each user has their own private notes
@@ -171,7 +171,8 @@ digital-second-brain/
 │   │   │   ├── axiosInstance.js  ← HTTP client with auto-JWT and error handling
 │   │   │   └── notes.js          ← All API call functions used by components
 │   │   ├── components/
-│   │   │   ├── ExportButtons.jsx ← PDF and JSON export buttons
+│   │   │   ├── ExportButtons.jsx ← All-notes export UI (not currently rendered by any page)
+│   │   │   ├── ExportMenu.jsx    ← Per-note export menu (PDF/Markdown/Text + AI-export as HTML), used in Dashboard.jsx
 │   │   │   ├── KnowledgeGraph.jsx← Cytoscape.js graph visualization
 │   │   │   ├── Navbar.jsx        ← Top navigation bar
 │   │   │   ├── NoteCard.jsx      ← Individual note display card (color-coded)
@@ -296,7 +297,7 @@ Unzip the downloaded `digital-second-brain.zip` file. You'll get a folder called
    npm install
    ```
 
-   This installs: react, react-dom, react-router-dom, cytoscape, jspdf, axios, vite, tailwindcss, and more.
+   This installs: react, react-dom, react-router-dom, cytoscape, axios, vite, tailwindcss, and more.
 
    Again, wait for the command prompt to return. This may take 1–2 minutes.
 
@@ -391,8 +392,9 @@ You will see the login screen. Click "Register" to create an account, then log i
 
 ### Exporting Notes
 
-- Click **"Export as PDF"** to download a formatted PDF with all your notes
-- Click **"Export as JSON"** to download a JSON file (useful for backup or importing elsewhere)
+- Open a note and click **Export** to download that note as a PDF, Markdown, or plain-text file
+- From the same menu, export any AI-generated result (summary, flashcards, key concepts, ELI5, exam questions) as a standalone HTML file
+- There is currently no bulk "export all notes" action in the running app — a component for it (`ExportButtons.jsx`, with an all-notes Markdown export and a flashcards-JSON export) exists in the source but isn't wired into any page yet
 
 ### Viewing Related Notes
 
@@ -521,7 +523,7 @@ Here is the complete picture of how the frontend, backend, and database talk to 
 | Styling      | Tailwind CSS         | Utility-first CSS framework                 |
 | Build Tool   | Vite                 | Fast development server and bundler         |
 | Graph        | Cytoscape.js         | Interactive knowledge graph visualization   |
-| PDF Export   | jsPDF                | Generate PDF files in the browser           |
+| PDF Export   | pdfkit               | Generate PDF files server-side              |
 | HTTP Client  | Axios                | API calls with auto JWT attachment          |
 | Routing      | React Router v6      | Client-side page navigation                 |
 | Backend      | Node.js + Express.js | REST API server                             |
