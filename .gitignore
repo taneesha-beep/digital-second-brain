@@ -4,3 +4,4 @@ frontend/.env
 .DS_Store
 second-brain-report.docx
 digital-second-brain-technical-report.md
+frontend/dist/
