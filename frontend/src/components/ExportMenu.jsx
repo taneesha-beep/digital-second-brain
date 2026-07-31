@@ -9,6 +9,23 @@ const downloadFile = (content, filename, mime) => {
   URL.revokeObjectURL(url);
 };
 
+const EXPORT_MIME = {
+  pdf:      'application/pdf',
+  markdown: 'text/markdown',
+  text:     'text/plain;charset=utf-8'
+};
+
+const EXPORT_EXT = { pdf: 'pdf', markdown: 'md', text: 'txt' };
+
+// The server names the file in Content-Disposition. Reading it cross-origin
+// needs the header on the CORS exposedHeaders list; fall back to the note id
+// if it is unreadable so the download still succeeds with a usable name.
+function filenameFrom(res, noteId, format) {
+  const cd = res.headers?.['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/.exec(cd);
+  return match ? match[1] : `note-${noteId}.${EXPORT_EXT[format]}`;
+}
+
 function buildHtml(title, bodyHtml) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>
@@ -92,7 +109,6 @@ export default function ExportMenu({ noteId }) {
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
   const [busy, setBusy]       = useState('');
   const rootRef = useRef(null);
-  const apiBase = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:5001/api';
   useEffect(() => {
     const fn = (e) => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', fn);
@@ -107,11 +123,24 @@ export default function ExportMenu({ noteId }) {
     setOpen(v => !v);
   };
 
-  const runFileExport = (format) => {
-    if (!noteId) return;
+  // Fetched rather than opened in a new tab so the session JWT rides in the
+  // Authorization header (via the axios interceptor) instead of the query
+  // string, where it would leak into logs, history, and Referer headers.
+  const runFileExport = async (format) => {
+    if (!noteId || busy) return;
     setOpen(false);
-    const token = localStorage.getItem('token');
-    window.open(`${apiBase}/export/${noteId}?format=${format}&token=${token}`, '_blank');
+    setBusy(format);
+    try {
+      const res = await api.get(`/export/${noteId}`, {
+        params: { format },
+        responseType: 'blob'
+      });
+      downloadFile(res.data, filenameFrom(res, noteId, format), EXPORT_MIME[format]);
+    } catch (err) {
+      alert('Export failed: ' + (err?.response?.data?.message || err.message));
+    } finally {
+      setBusy('');
+    }
   };
 
   const runAIExport = async (feature) => {

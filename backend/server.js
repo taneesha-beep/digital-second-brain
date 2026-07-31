@@ -13,15 +13,29 @@ const exportRoutes = require('./routes/export');
 
 const app = express();
 
+// The Origin header is attacker-controlled, so a substring test is not a
+// check: `origin.includes('vercel.app')` accepted evil-vercel.app.attacker.com.
+// Compare the full origin against an exact allowlist instead.
+const ALLOWED_ORIGINS = new Set(
+  (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .concat(['http://localhost:5173', 'http://localhost:4173'])
+);
+
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || origin.includes('vercel.app') || origin.includes('localhost')) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // No Origin header — same-origin navigations, curl, health checks.
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.has(origin)) return callback(null, true);
+    const err = new Error('Not allowed by CORS');
+    err.status = 403;
+    return callback(err);
   },
-  credentials: true
+  credentials: true,
+  // So the export download can read the server-chosen filename.
+  exposedHeaders: ['Content-Disposition']
 }));
 app.use(express.json());
 
@@ -34,6 +48,16 @@ app.use('/api/search', searchRoutes);
 app.use('/api/export', exportRoutes);
 
 app.get('/', (req, res) => res.json({ message: 'Digital Second Brain API v2 is running' }));
+
+// A rejected Origin is a policy decision, not a server fault. Without this the
+// error from the CORS callback falls through to Express's default handler and
+// answers 500 with a stack trace.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  if (status >= 500) console.error('Unhandled error:', err);
+  res.status(status).json({ message: status === 403 ? 'Origin not allowed' : 'Internal server error' });
+});
 
 const PORT      = process.env.PORT      || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/digital_second_brain';
