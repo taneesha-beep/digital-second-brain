@@ -16,12 +16,23 @@ const app = express();
 // The Origin header is attacker-controlled, so a substring test is not a
 // check: `origin.includes('vercel.app')` accepted evil-vercel.app.attacker.com.
 // Compare the full origin against an exact allowlist instead.
+//
+// The deployed frontend is baked in rather than required from the environment.
+// A public hostname is not a secret, and the failure mode of a missing env var
+// here is a totally broken production app, which is a bad thing to make
+// configurable. CORS_ALLOWED_ORIGINS adds to this list; it never replaces it.
+const DEFAULT_ORIGINS = [
+  'https://taneesha-digital-second-brain.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:4173'
+];
+
 const ALLOWED_ORIGINS = new Set(
   (process.env.CORS_ALLOWED_ORIGINS || '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean)
-    .concat(['http://localhost:5173', 'http://localhost:4173'])
+    .concat(DEFAULT_ORIGINS)
 );
 
 app.use(cors({
