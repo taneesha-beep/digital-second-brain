@@ -1,7 +1,6 @@
 {
-  "dependencies": {
-    "@google/generative-ai": "^0.24.1",
-    "pdfkit": "^0.18.0",
-    "react-force-graph-2d": "^1.29.1"
-  }
+  "name": "digital-second-brain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Repo root. The application manifests live in backend/ and frontend/."
 }
