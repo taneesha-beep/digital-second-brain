@@ -6,11 +6,7 @@ second-brain-report.docx
 digital-second-brain-technical-report.md
 frontend/dist/
 data/raw/
-
-# ── Private planning docs ────────────────────────────────────────────────────
-# Deliberately untracked, NOT deleted. They live in docs/ so Claude Code loads
-# them every session and every path stays stable; git simply never publishes
-# them. Do not commit these — several contain personal career material.
+CLAUDE.md
 docs/ROADMAP.md
 docs/END-STATE.md
 docs/GETTING-STARTED.md
