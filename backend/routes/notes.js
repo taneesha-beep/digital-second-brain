@@ -94,7 +94,10 @@ router.post('/', async (req, res) => {
 
 // ── PUT /api/notes/:id ────────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
-  const { title, content, contentText, category, tags, embedding } = req.body;
+  // Client-writable fields only. `keywords` and `embedding` are derived
+  // server-side; accepting them from the body let a caller desync a note's
+  // vector from its text and poison every downstream link.
+  const { title, content, contentText, category, tags } = req.body;
   try {
     const note = await Note.findOne({ _id: req.params.id, user: req.user._id });
     if (!note) return res.status(404).json({ message: 'Note not found' });
@@ -109,7 +112,6 @@ router.put('/:id', async (req, res) => {
       note.contentText = blockNoteToPlainText(note.content);
     }
     if (Array.isArray(tags))       note.tags      = tags;
-    if (Array.isArray(embedding))  note.embedding = embedding;
     if (category !== undefined)    note.category  = category;
 
     // Extract keywords from updated text, using the user's other notes as the corpus

@@ -1,26 +1,20 @@
 const express = require('express');
 const PDFDocument = require('pdfkit');
-const jwt = require('jsonwebtoken');
 const Note = require('../models/Note');
+const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Custom auth for export: check token from query param
-const authExport = (req, res, next) => {
-  const token = req.query.token;
-  if (!token) {
-    return res.status(401).json({ message: 'No token provided' });
-  }
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.id };
-    next();
-  } catch (err) {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
-};
-
-router.use(authExport);
+// This route used to accept the session JWT as ?token=, because the download
+// was triggered by window.open() and a navigation cannot carry headers. URLs
+// leak: they land in server access logs, browser history, proxy logs, and the
+// Referer header sent to third parties, and the token leaked was the full
+// session token rather than anything export-scoped.
+//
+// The client now fetches the export with XHR and saves the response as a Blob,
+// so the token travels in the Authorization header like every other request
+// and this route can use the standard middleware.
+router.use(protect);
 
 function sanitizeFilename(value = 'note') {
   return String(value)

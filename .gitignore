@@ -5,3 +5,13 @@ frontend/.env
 second-brain-report.docx
 digital-second-brain-technical-report.md
 frontend/dist/
+data/raw/
+CLAUDE.md
+docs/FROZEN.md
+docs/ROADMAP.md
+docs/END-STATE.md
+docs/GETTING-STARTED.md
+docs/HANDOFF.md
+docs/HANDOFF-2.md
+docs/LEARNING.md
+docs/INTERVIEW-NOTES.md
