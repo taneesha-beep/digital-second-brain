@@ -150,6 +150,32 @@ failures currently only reach `console.error`.
 
 ## Running locally
 
+### With Docker (nothing to install but Docker)
+
+```bash
+docker compose up
+```
+
+Frontend on `http://localhost:4173`, API on `http://localhost:5001`, Mongo in a
+container with a persistent volume. No `.env` file is needed — Compose supplies a
+local-only `JWT_SECRET` and points the API at the containerised database. LLM features
+need a key; export `GROQ_API_KEY` before `up` to enable them, and everything else works
+without one.
+
+Images are pinned by digest rather than by tag, so the environment is fixed rather than
+approximately fixed. That matters because a separate one-off container rebuilds the
+Stack Exchange evaluation corpus and its output is checked byte-for-byte against a
+published SHA-256:
+
+```bash
+docker compose run corpus
+```
+
+That one needs the raw dump in `data/raw/`, which is not in the repository — see
+`docs/EVALUATION.md` for where it comes from.
+
+### With Node directly
+
 **Prerequisites:** Node 18+, a MongoDB connection string, a Groq API key
 (free at `console.groq.com`).
 
@@ -168,7 +194,7 @@ npm install
 npm run dev
 ```
 
-Create `backend/.env`:
+Create `backend/.env` — `.env.example` in the repo root is a template:
 
 ```
 PORT=5001
