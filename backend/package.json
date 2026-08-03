@@ -9,7 +9,8 @@
     "test": "jest",
     "corpus:build": "node scripts/build-corpus.js",
     "qrels:build": "node scripts/build-qrels.js",
-    "splits:build": "node scripts/build-splits.js"
+    "splits:build": "node scripts/build-splits.js",
+    "bias:analyze": "node scripts/analyze-ground-truth.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

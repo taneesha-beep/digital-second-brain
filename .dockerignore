@@ -1,0 +1,32 @@
+# Keep the build context small and secret-free.
+#
+# data/ is ~200 MB of Stack Exchange XML. It must never enter an image layer —
+# it is bind-mounted at run time instead, so the corpus container reads the
+# host's dump rather than a copy frozen into the image.
+
+node_modules
+**/node_modules
+
+data
+frontend/dist
+
+# Never bake credentials into a layer.
+.env
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+.gitignore
+.github
+.claude
+
+# Gitignored planning material — several files contain personal career notes.
+docs
+
+.DS_Store
+**/.DS_Store
+*.log
+Dockerfile
+.dockerignore
+docker-compose.yml

@@ -1,0 +1,82 @@
+name: digital-second-brain
+
+# `docker compose up`          -> mongo + api + web, a working app
+# `docker compose run corpus`  -> one-off corpus build, checksum printed
+#
+# backend/.env is deliberately NOT wired in with env_file. It holds a real
+# Atlas MONGO_URI, and reading it here would silently point this stack at the
+# production database. Everything below is set explicitly; only GROQ_API_KEY is
+# taken from the host shell, and only if you export it.
+
+services:
+  mongo:
+    # Pinned by digest for the same reason as the Node base image. Irrelevant to
+    # the corpus checksum — the corpus build never touches Mongo — but free.
+    image: mongo:7@sha256:9bdaeb6dac6e7e762e84e2f84103d1f9bb078fa1ba6bde8bb9d2274f655ad173
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      PORT: 5001
+      MONGO_URI: mongodb://mongo:27017/digital_second_brain
+      # A labelled local default, not a credential. Production is Railway with
+      # its own environment. Override by exporting JWT_SECRET before `up`.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-not-a-secret-change-me}
+      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      # Empty unless you export it. The app boots and works without one; only
+      # the LLM features fail, with an explicit message from llm.service.js.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    ports:
+      - "5001:5001"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      target: web
+      args:
+        # Baked in at build time. The browser runs on the host, so this is the
+        # published api port above.
+        VITE_API_URL: http://localhost:5001
+    ports:
+      - "4173:4173"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  corpus:
+    build:
+      context: .
+      target: corpus
+    # No depends_on, no network, no database.
+    #
+    # The corpus build is a pure text transform: XML in, JSONL out. Giving it a
+    # database would add a version, a storage engine and a startup ordering to
+    # the set of things that can move between two runs of a step whose entire
+    # purpose is that its output does not move. It would also be the first crack
+    # in the Phase 2.1 boundary — retrieval must not depend on Mongo, Express or
+    # the Note model — and would let this step fail for reasons that have
+    # nothing to do with the corpus.
+    volumes:
+      - ./data:/app/data
+    # Kept out of `docker compose up`. `docker compose run corpus` enables the
+    # profile on its own. Without this, `up` on a clean clone would try to build
+    # a corpus from a dump that is not there (data/ is gitignored) and look
+    # broken when it is behaving correctly.
+    profiles: ["corpus"]
+
+volumes:
+  mongo-data:
