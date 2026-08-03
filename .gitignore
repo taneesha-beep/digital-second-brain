@@ -7,6 +7,8 @@ digital-second-brain-technical-report.md
 frontend/dist/
 data/raw/
 data/corpus/
+data/qrels/
+data/splits/
 CLAUDE.md
 .claude/hooks/
 docs/FROZEN.md
