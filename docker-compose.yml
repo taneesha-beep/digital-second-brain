@@ -41,7 +41,15 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-    restart: unless-stopped
+    # No restart policy anywhere in this file, deliberately. `unless-stopped`
+    # would make Docker Desktop bring the whole stack back on every launch and
+    # after every reboot, so a local dev stack would keep reappearing until
+    # explicitly torn down. Default `no` means these run when asked and not
+    # otherwise.
+    #
+    # It also keeps failures visible: the api exits 1 if it cannot reach Mongo,
+    # and a restart loop would hide that behind a container that looks like it
+    # is merely slow to come up. Same reasoning as the corpus service below.
 
   web:
     build:
@@ -55,7 +63,6 @@ services:
       - "4173:4173"
     depends_on:
       - api
-    restart: unless-stopped
 
   corpus:
     build:
