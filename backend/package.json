@@ -10,7 +10,8 @@
     "corpus:build": "node scripts/build-corpus.js",
     "qrels:build": "node scripts/build-qrels.js",
     "splits:build": "node scripts/build-splits.js",
-    "bias:analyze": "node scripts/analyze-ground-truth.js"
+    "bias:analyze": "node scripts/analyze-ground-truth.js",
+    "parity:v1": "node scripts/parity-v1.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
