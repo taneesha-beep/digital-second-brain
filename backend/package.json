@@ -11,7 +11,8 @@
     "qrels:build": "node scripts/build-qrels.js",
     "splits:build": "node scripts/build-splits.js",
     "bias:analyze": "node scripts/analyze-ground-truth.js",
-    "parity:v1": "node scripts/parity-v1.js"
+    "parity:v1": "node scripts/parity-v1.js",
+    "eval": "node scripts/run-eval.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

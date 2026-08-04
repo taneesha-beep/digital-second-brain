@@ -1,0 +1,119 @@
+{
+  "provisional": true,
+  "provisionalReason": "eval/metrics.js is not validated against pytrec_eval until roadmap 2.4. No number in this file may be quoted.",
+  "runId": "v1-overlap.dev.93bc8d65",
+  "label": "v1-overlap",
+  "site": "cooking",
+  "split": "dev",
+  "retriever": {
+    "version": "v1-overlap",
+    "params": {
+      "idfCorpus": "leave-one-out",
+      "topN": 10,
+      "threshold": 0.15,
+      "cap": 8,
+      "scorePrecision": 4,
+      "lengthBonus": true
+    },
+    "docCount": 27325,
+    "digest": "93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30"
+  },
+  "k": 10,
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "command": "npm run eval -- --retriever v1-overlap --split dev",
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "matchesManifest": true
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1",
+      "matchesManifest": true
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.dev.txt",
+      "sha256": "38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf",
+      "matchesManifest": true
+    }
+  ],
+  "output": {
+    "run": "results/runs/v1-overlap.dev.run",
+    "lines": 17919,
+    "bytes": 904379,
+    "sha256": "9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e"
+  },
+  "queries": {
+    "total": 2304,
+    "scored": 2304,
+    "unjudgeable": 0,
+    "unjudgeableIds": [],
+    "zeroResult": 11,
+    "zeroResultFile": "results/runs/v1-overlap.dev.zero.txt"
+  },
+  "metrics": {
+    "ndcg": {
+      "1": 0.09707754629629631,
+      "5": 0.1290594680121593,
+      "8": 0.14016693655110876,
+      "10": 0.14002513715403433
+    },
+    "p": {
+      "1": 0.10199652777777778,
+      "5": 0.04930555555555596,
+      "8": 0.037543402777777776,
+      "10": 0.030034722222222372
+    },
+    "r": {
+      "1": 0.07114701928224995,
+      "5": 0.15816944168682884,
+      "8": 0.18865224099868316,
+      "10": 0.18865224099868316
+    },
+    "mrr": 0.15196345899470887
+  },
+  "conventions": {
+    "gain": "2^grade - 1",
+    "discount": "1 / log2(rank + 1)",
+    "idcg": "judged grades sorted descending, truncated at k",
+    "zeroResultQueries": "scored 0, included in the mean",
+    "unjudgeableQueries": "excluded from the mean, counted separately"
+  },
+  "latencyMs": {
+    "note": "per-query search() only; index build reported separately",
+    "mean": 0.8034403784722219,
+    "p50": 0.688167,
+    "p95": 1.825667,
+    "max": 4.290709
+  },
+  "timingsMs": {
+    "load": 130.884375,
+    "index": 1677.631958,
+    "search": 1873.485792,
+    "total": 3682.002125
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "cpus": 8,
+    "totalMemMiB": 8192,
+    "peakRssMiB": 350
+  },
+  "git": {
+    "commit": "6f7058fabc62f6ee21d9e63ca30b87f85f1bddee",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
+  },
+  "generatedAt": "2026-08-04T12:15:52.217Z"
+}
