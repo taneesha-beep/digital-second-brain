@@ -1,5 +1,5 @@
 METRIC VALIDATION — backend/eval/metrics.js vs pytrec_eval
-roadmap 2.4 · 2026-08-04 12:57:39Z
+roadmap 2.4 · 2026-08-04 13:03:22Z
 ==============================================================================
 
 1. ENVIRONMENT
@@ -14,7 +14,7 @@ roadmap 2.4 · 2026-08-04 12:57:39Z
                    so the C version is NOT claimed here)
   python           3.9.6 · darwin
   node             v25.8.1
-  git commit       683015edba1d92e001ac6d9fb4727e6034f216df
+  git commit       43fb101ea3876d82f9462daa3eca7a8fbf0cff4a
   tolerance        1e-06
 
 2. WHAT THE REFERENCE ACTUALLY DOES  (probed against the installed binary)

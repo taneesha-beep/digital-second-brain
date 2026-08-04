@@ -97,16 +97,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.570533980468752,
-    "p50": 0.527833,
-    "p95": 1.097,
-    "max": 2.011459
+    "mean": 0.550774764756945,
+    "p50": 0.514292,
+    "p95": 1.042458,
+    "max": 1.959458
   },
   "timingsMs": {
-    "load": 99.415334,
-    "index": 1397.706292,
-    "search": 1328.596125,
-    "total": 2825.717751
+    "load": 104.707167,
+    "index": 1343.247875,
+    "search": 1284.166208,
+    "total": 2732.12125
   },
   "environment": {
     "node": "v25.8.1",
@@ -115,12 +115,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 353
+    "peakRssMiB": 372
   },
   "git": {
-    "commit": "683015edba1d92e001ac6d9fb4727e6034f216df",
-    "dirty": true,
+    "commit": "43fb101ea3876d82f9462daa3eca7a8fbf0cff4a",
+    "dirty": false,
     "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
   },
-  "generatedAt": "2026-08-04T12:57:27.862Z"
+  "generatedAt": "2026-08-04T13:00:05.546Z"
 }
