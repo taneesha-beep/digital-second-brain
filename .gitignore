@@ -16,6 +16,9 @@ data/splits/
 # can commit metric-validation.txt from the same tree. See EVALUATION.md §8.5.
 results/runs/*.run
 results/runs/*.zero.txt
+# The 2.4 validation venv. The pins that matter are committed in
+# scripts/requirements.txt, hashed; the installed tree is derived from them.
+scripts/.venv/
 CLAUDE.md
 .claude/hooks/
 docs/FROZEN.md

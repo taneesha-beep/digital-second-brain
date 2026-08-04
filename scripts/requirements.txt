@@ -1,0 +1,41 @@
+# Reference implementation for roadmap 2.4 — metric validation.
+#
+# WHY THIS FORK. `pytrec_eval==0.5` publishes an sdist only, so pip compiles it
+# against whatever C compiler is on the box: the reference implementation's
+# bytes would become a function of the local Xcode install. The terrier fork
+# publishes prebuilt wheels, so the artifact is a fixed set of bytes.
+#
+# WHY --hash. Phase 1.6 pinned the base image by digest rather than by tag,
+# because a tag names a version and a digest names bytes. --require-hashes is
+# the same move for Python: pip either installs exactly this artifact or fails
+# loudly. A bare `==` pins a name on an index that can yank and republish.
+#
+# The hash below is `shasum -a 256` over the downloaded wheel, measured on
+# 2026-08-04 — not copied from a web page.
+#
+#   pytrec_eval_terrier-0.5.10-cp39-cp39-macosx_10_9_universal2.whl
+#
+# Other platforms resolve to a different wheel for the same version and will
+# fail --require-hashes until their hash is added here. That failure is the
+# feature: it names the artifact that has not been vetted instead of quietly
+# validating against different bytes.
+#
+# Install:
+#   python3 -m venv scripts/.venv
+#   scripts/.venv/bin/pip install --require-hashes -r scripts/requirements.txt
+
+pytrec-eval-terrier==0.5.10 \
+    --hash=sha256:2afaff86a8eb66a766c996fb8955f6c0c601bc2b78ff678412de394f60a965d7
+
+# Declared dependency of the above. --require-hashes refuses to resolve a
+# transitive `numpy>=1.15.1` without a pin, which is the mode working as
+# intended: an unpinned transitive dependency is exactly the gap a version pin
+# on the top-level package leaves open. Hash measured the same way.
+#
+#   numpy-2.0.2-cp39-cp39-macosx_14_0_arm64.whl
+numpy==2.0.2 \
+    --hash=sha256:2b2955fa6f11907cf7a70dab0d0755159bca87755e831e47932367fc8f2f2d0b
+
+#   scipy-1.13.1-cp39-cp39-macosx_12_0_arm64.whl
+scipy==1.13.1 \
+    --hash=sha256:8335549ebbca860c52bf3d02f80784e91a004b71b059e3eea9678ba994796a24

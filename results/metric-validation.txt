@@ -1,0 +1,204 @@
+METRIC VALIDATION — backend/eval/metrics.js vs pytrec_eval
+roadmap 2.4 · 2026-08-04 13:03:22Z
+==============================================================================
+
+1. ENVIRONMENT
+------------------------------------------------------------------------------
+  reference        pytrec-eval-terrier 0.5.10
+                   wheel pytrec_eval_terrier-0.5.10-cp39-cp39-macosx_10_9_universal2.whl
+                   sha256 2afaff86a8eb66a766c996fb8955f6c0c601bc2b78ff678412de394f60a965d7
+                   hash-pinned in scripts/requirements.txt, installed
+                   with pip --require-hashes
+  supported_measures 34 (fingerprint of the vendored trec_eval C source; the
+                   compiled artifact carries no extractable version string,
+                   so the C version is NOT claimed here)
+  python           3.9.6 · darwin
+  node             v25.8.1
+  git commit       43fb101ea3876d82f9462daa3eca7a8fbf0cff4a
+  tolerance        1e-06
+
+2. WHAT THE REFERENCE ACTUALLY DOES  (probed against the installed binary)
+------------------------------------------------------------------------------
+  tie-break on equal scores   docid DESCENDING
+    two docs tied at 1.0, only the lexicographically LATER one judged
+    relevant -> ndcg_cut_1 = 1.0
+    retrieval/index.js sorts ties docid ASCENDING (EVALUATION.md §7.2),
+    so the two rules are opposites. Step C is what removes this.
+
+  queries with no run lines   OMITTED from the output entirely
+    qrels holds q1 and q2, run holds only q1 -> evaluate() returns ['q1']
+    Aggregating that directly divides by the wrong N. Step B is what
+    removes this; §9.1 scores them 0 and keeps them in the mean.
+
+  gain formula (ndcg_cut)     LINEAR, gain = grade
+    grade-1 doc at rank 1, grade-2 doc at rank 2:
+      pytrec_eval             0.8597186998521972
+      linear-gain prediction  0.8597186998521972   <- matches
+      2^g-1 prediction (§9.1) 0.7967075809905066
+    A 0.0630 difference on one query, not a rounding
+    error. 2,756 of 16,678 judgments are grade 2, so this is visible
+    on the real key. Step D is what removes it.
+
+  recip_rank depth            searches the WHOLE run file
+    first relevant document at rank 15:
+      pytrec_eval on the full 15-deep run   0.066667  (= 1/15)
+      metrics.js on the list truncated at 10 0.000000
+    Both are correct about the list they were given. The reported MRR
+    is therefore recip_rank@10 — the runner truncates at k=10 before
+    the scorer sees anything, so agreement on the dev runs below is
+    real but conditional on that truncation, not on the definition
+    being depth-unbounded. Labelled MRR@10 from here on.
+
+3. RUN: v1-overlap.dev
+==============================================================================
+  runid            v1-overlap.dev.93bc8d65
+  params           {"idfCorpus": "leave-one-out", "topN": 10, "threshold": 0.15, "cap": 8, "scorePrecision": 4, "lengthBonus": true}
+  digest           93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
+
+  inputs, SHA-256 recomputed now (not read from the sidecar):
+    corpus   data/corpus/cooking.jsonl        db8902c5b53042c4…  match
+    qrels    data/qrels/cooking.qrels         d92fb8c6b37a2224…  match
+    split    data/splits/cooking.dev.txt      38ff8bae954bee19…  match
+
+  bridge cross-check — metrics.js over the written run file vs the
+  aggregate the runner recorded in its committed sidecar:
+    all 13 aggregate values identical to exact float equality: yes
+    judgments dropped outside corpus: 0
+    queries 2304 · scored 2304 · unjudgeable 0 · zero-result 11
+
+  LADDER — one variable per step, aggregate nDCG@8 shown
+------------------------------------------------------------------------------
+    step                             nDCG@8  vs metrics.js  queries
+    A  raw                         0.140559      -0.000392     2293
+    B  + zero-result qids (11)     0.139887      +0.000279     2304
+    C  + rank-order ties           0.140142      +0.000025     2304
+    D  + 2^g-1 gain                0.140167      +0.000000     2304
+    metrics.js (§9.1)              0.140167      +0.000000     2304
+
+  AGGREGATE, step D
+------------------------------------------------------------------------------
+    metric           metrics.js  pytrec_eval        delta
+    ndcg_cut_1         0.097078     0.097078   +0.000e+00
+    ndcg_cut_5         0.129059     0.129059   +2.776e-17
+    ndcg_cut_8         0.140167     0.140167   +0.000e+00
+    ndcg_cut_10        0.140025     0.140025   +0.000e+00
+    P_1                0.101997     0.101997   +0.000e+00
+    P_5                0.049306     0.049306   +0.000e+00
+    P_8                0.037543     0.037543   +0.000e+00
+    P_10               0.030035     0.030035   +0.000e+00
+    recall_1           0.071147     0.071147   +0.000e+00
+    recall_5           0.158169     0.158169   +0.000e+00
+    recall_8           0.188652     0.188652   +0.000e+00
+    recall_10          0.188652     0.188652   +0.000e+00
+    recip_rank         0.151963     0.151963   +0.000e+00
+
+  PER QUERY, step D
+------------------------------------------------------------------------------
+    comparisons        29,952  (2,304 queries x 13 metrics)
+    beyond 1e-06       0
+    max |delta|        1.110e-16  at qid 103210, ndcg_cut_5
+    max |delta| agg    2.776e-17
+
+    RESULT             PASS
+
+4. RUN: v1-overlap-uncapped.dev
+==============================================================================
+  runid            v1-overlap-uncapped.dev.1154b598
+  params           {"idfCorpus": "leave-one-out", "topN": 10, "threshold": 0.15, "cap": null, "scorePrecision": 4, "lengthBonus": true}
+  digest           1154b598df16ef3cfb7326d7b43c29954896763428b3dcd8c0da8adf1edd726d
+
+  inputs, SHA-256 recomputed now (not read from the sidecar):
+    corpus   data/corpus/cooking.jsonl        db8902c5b53042c4…  match
+    qrels    data/qrels/cooking.qrels         d92fb8c6b37a2224…  match
+    split    data/splits/cooking.dev.txt      38ff8bae954bee19…  match
+
+  bridge cross-check — metrics.js over the written run file vs the
+  aggregate the runner recorded in its committed sidecar:
+    all 13 aggregate values identical to exact float equality: yes
+    judgments dropped outside corpus: 0
+    queries 2304 · scored 2304 · unjudgeable 0 · zero-result 11
+
+  LADDER — one variable per step, aggregate nDCG@8 shown
+------------------------------------------------------------------------------
+    step                             nDCG@8  vs metrics.js  queries
+    A  raw                         0.140049      +0.000118     2293
+    B  + zero-result qids (11)     0.139380      +0.000787     2304
+    C  + rank-order ties           0.140142      +0.000025     2304
+    D  + 2^g-1 gain                0.140167      +0.000000     2304
+    metrics.js (§9.1)              0.140167      +0.000000     2304
+
+  AGGREGATE, step D
+------------------------------------------------------------------------------
+    metric           metrics.js  pytrec_eval        delta
+    ndcg_cut_1         0.097078     0.097078   +0.000e+00
+    ndcg_cut_5         0.129059     0.129059   +2.776e-17
+    ndcg_cut_8         0.140167     0.140167   +0.000e+00
+    ndcg_cut_10        0.145111     0.145111   +0.000e+00
+    P_1                0.101997     0.101997   +0.000e+00
+    P_5                0.049306     0.049306   +0.000e+00
+    P_8                0.037543     0.037543   +0.000e+00
+    P_10               0.032682     0.032682   +0.000e+00
+    recall_1           0.071147     0.071147   +0.000e+00
+    recall_5           0.158169     0.158169   +0.000e+00
+    recall_8           0.188652     0.188652   +0.000e+00
+    recall_10          0.204572     0.204572   +0.000e+00
+    recip_rank         0.153835     0.153835   +0.000e+00
+
+  PER QUERY, step D
+------------------------------------------------------------------------------
+    comparisons        29,952  (2,304 queries x 13 metrics)
+    beyond 1e-06       0
+    max |delta|        1.110e-16  at qid 103210, ndcg_cut_5
+    max |delta| agg    2.776e-17
+
+    RESULT             PASS
+
+5. bpref ON A POSITIVE-ONLY KEY  (roadmap 2.4's open question)
+------------------------------------------------------------------------------
+  All 16,678 judgments are positive (EVALUATION.md §5.1), so the
+  judged-nonrelevant set bpref exists to count is empty.
+
+  run                           bpref  recall_1000   equal?
+  v1-overlap                 0.188652     0.188652   yes
+  v1-overlap-uncapped        0.204572     0.204572   yes
+
+  MEASURED: bpref is identically recall at the run's depth, to 1e-12.
+  The roadmap's predicted vacuous ~1.00 is WRONG, and the real
+  degeneracy is worse in the way that matters: 1.00 announces itself,
+  a plausible number that silently duplicates an existing column does
+  not. Decision unchanged — no bpref column — reason corrected.
+
+6. WHAT THIS DIFF DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+  A passing check is easy to over-read, so the gaps are named here
+  rather than left for someone to assume were covered.
+
+  - The unjudgeable-query branch of §9.1 is UNTESTED. metrics.js returns
+    null and excludes those queries from the mean; cooking has 0 of them
+    (build-qrels.js dropped the 74 out-of-corpus endpoints at 1.3), so no
+    query in either run file exercises the path. It stays covered by unit
+    test only until a corpus that has some appears.
+  - MRR is validated as recip_rank@10, not as unbounded MRR. §2 above
+    measures the gap the truncation hides.
+  - Tie ordering is bridged, not reconciled. The run files' rank column
+    is not recoverable from their score column, so a TREC tool reading
+    one of these files without step C's transform scores a different
+    ranking than this harness intends. Measured cost at nDCG@8 is small
+    but non-zero; see step B->C in each ladder.
+  - Only v1-overlap is covered, on dev only. Each later rung on the
+    ladder needs its own run through this script — the check is of the
+    scorer, but a new retriever can produce result shapes (longer lists,
+    different tie density) that this pair does not exercise.
+
+7. VERDICT
+==============================================================================
+  v1-overlap               PASS  max|delta| 1.110e-16 over 29,952 per-query comparisons
+  v1-overlap-uncapped      PASS  max|delta| 1.110e-16 over 29,952 per-query comparisons
+
+  backend/eval/metrics.js agrees with pytrec_eval to within 1e-06 on every
+  metric, at every k, for every query in both run files, once three
+  differences are accounted for one at a time: the zero-result query
+  population (§8.3), tie ordering (§7.2), and the gain formula (§9.1).
+  The first two are properties of the harness that the reference
+  cannot see; the third is a documented convention difference, not a
+  defect in either implementation.

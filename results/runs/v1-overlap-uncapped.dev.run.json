@@ -1,6 +1,12 @@
 {
-  "provisional": true,
-  "provisionalReason": "eval/metrics.js is not validated against pytrec_eval until roadmap 2.4. No number in this file may be quoted.",
+  "provisional": false,
+  "metricsValidation": {
+    "reference": "pytrec-eval-terrier 0.5.10",
+    "tolerance": 0.000001,
+    "maxAbsDelta": 1.11e-16,
+    "evidence": "results/metric-validation.txt",
+    "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
+  },
   "runId": "v1-overlap-uncapped.dev.1154b598",
   "label": "v1-overlap-uncapped",
   "site": "cooking",
@@ -86,20 +92,21 @@
     "discount": "1 / log2(rank + 1)",
     "idcg": "judged grades sorted descending, truncated at k",
     "zeroResultQueries": "scored 0, included in the mean",
-    "unjudgeableQueries": "excluded from the mean, counted separately"
+    "unjudgeableQueries": "excluded from the mean, counted separately",
+    "mrr": "recip_rank@10 — the list is truncated at k before scoring"
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.6752723098958324,
-    "p50": 0.592292,
-    "p95": 1.296541,
-    "max": 33.608209
+    "mean": 0.5580419665798632,
+    "p50": 0.514,
+    "p95": 1.072375,
+    "max": 2.500917
   },
   "timingsMs": {
-    "load": 106.677958,
-    "index": 1389.970459,
-    "search": 1573.061083,
-    "total": 3069.7095
+    "load": 107.779792,
+    "index": 1540.513333,
+    "search": 1301.100917,
+    "total": 2949.394042
   },
   "environment": {
     "node": "v25.8.1",
@@ -108,12 +115,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 340
+    "peakRssMiB": 331
   },
   "git": {
-    "commit": "6f7058fabc62f6ee21d9e63ca30b87f85f1bddee",
-    "dirty": false,
+    "commit": "43fb101ea3876d82f9462daa3eca7a8fbf0cff4a",
+    "dirty": true,
     "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
   },
-  "generatedAt": "2026-08-04T12:16:08.215Z"
+  "generatedAt": "2026-08-04T13:03:22.302Z"
 }
