@@ -1,0 +1,134 @@
+{
+  "_": "PRE-REGISTERED COMPARISONS — roadmap 2.5. Read _why before editing.",
+
+  "_why": [
+    "Six rungs is 15 pairwise comparisons; times 13 reported metrics is 195",
+    "p-values, of which about 10 come up significant at alpha=0.05 on pure noise.",
+    "Correcting a family that size would also destroy the power the paired test",
+    "was built to buy. So the family is CONSTRAINED first and corrected second.",
+    "",
+    "This file was written at 2.5, on 2026-08-04, when exactly ONE of the",
+    "comparisons below had both of its runs in existence (cap-ablation). Every",
+    "other entry names runs that did not yet exist. That is the point:",
+    "pre-registration is only credible before the results are visible, and git",
+    "history is what makes the timing checkable rather than asserted.",
+    "",
+    "compare-runs.js reads this file and SUPPRESSES the p-value for any pair not",
+    "listed. Adding a comparison therefore requires editing and committing this",
+    "file, which timestamps the decision. That is the enforcement mechanism —",
+    "not a promise in a document."
+  ],
+
+  "primaryMetric": {
+    "metric": "ndcg",
+    "k": 8,
+    "why": [
+      "The metric the roadmap's results table column and CLAUDE.md's 0.1-0.4",
+      "plausibility band are both already stated in. Changing the headline",
+      "metric between phases would be its own inconsistency."
+    ]
+  },
+
+  "correction": {
+    "method": "holm-bonferroni",
+    "familyWiseAlpha": 0.05,
+    "why": [
+      "Holm rather than plain Bonferroni: identical family-wise error control,",
+      "uniformly more powerful, and it needs no extra assumption.",
+      "",
+      "APPLIED WHEN THE FAMILY IS COMPLETE, not per comparison. Rungs land one",
+      "per session across Phase 3, so a comparison run today reports its RAW p",
+      "plus the registered family size. Holm needs every p in the family at once;",
+      "adjusting against a family that is still filling up would give a different",
+      "answer each session."
+    ]
+  },
+
+  "comparisons": [
+    {
+      "id": "cap-ablation",
+      "a": "v1-overlap-uncapped",
+      "b": "v1-overlap",
+      "split": "dev",
+      "phase": "2.4/2.5",
+      "primaryMetric": { "metric": "ndcg", "k": 10 },
+      "primaryMetricOverride": [
+        "k=10 rather than the family default k=8, DECLARED IN ADVANCE and for a",
+        "mechanical reason rather than a measured one: the cap acts only at ranks",
+        "9 and 10, so nDCG@8 cannot see it by construction. EVALUATION.md §9.3",
+        "already measured @1, @5 and @8 as identical to four decimals.",
+        "",
+        "Choosing k=10 here after observing a null at k=8 would be metric-shopping.",
+        "Choosing it because Math.min(k, 8) === k for k <= 8 is not."
+      ]
+    },
+    {
+      "id": "ladder-v1-v2",
+      "a": "v2-jaccard",
+      "b": "v1-overlap",
+      "split": "dev",
+      "phase": "3"
+    },
+    {
+      "id": "ladder-v2-v3",
+      "a": "v3-idf",
+      "b": "v2-jaccard",
+      "split": "dev",
+      "phase": "3"
+    },
+    {
+      "id": "ladder-v3-v4",
+      "a": "v4-bm25",
+      "b": "v3-idf",
+      "split": "dev",
+      "phase": "3"
+    },
+    {
+      "id": "ladder-v4-v5",
+      "a": "v5-embeddings",
+      "b": "v4-bm25",
+      "split": "dev",
+      "phase": "3"
+    },
+    {
+      "id": "ladder-v5-v6",
+      "a": "v6-hybrid",
+      "b": "v5-embeddings",
+      "split": "dev",
+      "phase": "3"
+    },
+    {
+      "id": "sweep-tuned-vs-shipped",
+      "a": "v1-overlap-tuned",
+      "b": "v1-overlap",
+      "split": "test",
+      "phase": "2.7/3.6",
+      "caveat": [
+        "SPLIT IS test, DELIBERATELY. 2.7 selects the threshold and k by sweeping",
+        "dev, so testing the winner against the shipped defaults ON dev would be",
+        "testing a configuration against the data that chose it. The comparison is",
+        "only meaningful on test, which is opened once, at 3.6.",
+        "",
+        "Named now rather than discovered at 2.7, because the moment to notice a",
+        "circularity is before the sweep, not after it has produced a number."
+      ]
+    }
+  ],
+
+  "_labelsAreForward": [
+    "Rung labels above (v2-jaccard … v6-hybrid) are the names Phase 3 is",
+    "EXPECTED to use, per ROADMAP.md's six-rung ladder. If a rung ships under a",
+    "different label, update the entry here in the same commit that ships it —",
+    "the entry is the registration, the label is only how the tool finds it.",
+    "Renaming an entry is not the same as adding one, and the diff shows which."
+  ],
+
+  "_ladderIsAdjacentOnly": [
+    "Only ADJACENT rungs are registered, five comparisons, not all 15 pairs. The",
+    "ladder is a sequence of one-variable steps (CLAUDE.md: never change two",
+    "variables at once), so 'did this step help' is the question each rung was",
+    "built to answer. v4-vs-v1 is a legitimate thing to look at and the harness",
+    "will print its difference and interval — it just will not print a p-value,",
+    "because that comparison was not the experiment."
+  ]
+}
