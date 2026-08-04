@@ -16,9 +16,20 @@
  * that 2.4's validation script can call them directly.
  *
  * ============================================================================
- * NOTHING HERE IS VALIDATED YET. Roadmap 2.4 diffs this implementation against
- * pytrec_eval and requires agreement to 1e-6. Until that passes, every number
- * this file produces is PROVISIONAL and may not be quoted anywhere.
+ * VALIDATED AGAINST pytrec_eval AT ROADMAP 2.4 — max |delta| 1.11e-16 over
+ * 29,952 per-query comparisons on each of two run files, against a tolerance of
+ * 1e-6. Evidence and method: results/metric-validation.txt.
+ *
+ * Three differences from trec_eval had to be accounted for one at a time, and
+ * only the third is about this file: the zero-result query population (§8.3),
+ * tie ordering (§7.2), and the gain formula below. trec_eval's ndcg_cut uses
+ * LINEAR gain and takes no gain parameter; the conventions here use 2^g - 1,
+ * which is the Burges et al. (2005) variant PRIMER.md §5.2 teaches. The two are
+ * bridged exactly by mapping qrels grades through 2^g - 1, which is the
+ * mechanism trec_eval's own documentation names for this.
+ *
+ * ANY CHANGE HERE INVALIDATES THAT. Re-run:
+ *   scripts/.venv/bin/python scripts/validate_metrics.py
  * ============================================================================
  *
  * THE CONVENTIONS THIS FILE IMPLEMENTS, WRITTEN DOWN SO 2.4 HAS A TARGET.
@@ -139,6 +150,13 @@ function recallAtK(ranked, judgments, k) {
  * Unbounded by k by convention — trec_eval's `recip_rank` searches the whole
  * run. The runner caps the list at k before calling, so what is reported here
  * is reciprocal rank within the retrieved depth; the sidecar records that k.
+ *
+ * Measured at 2.4 rather than left as a caveat: with the first relevant
+ * document at rank 15, pytrec_eval on the full run returns 1/15 = 0.0667 and
+ * this function on the same list truncated at 10 returns 0. Both are right
+ * about the list they were handed. The runner therefore labels its output
+ * MRR@10, since agreement on the dev runs holds only because the run file is
+ * itself truncated at 10 — a property of the harness, not of the definition.
  */
 function reciprocalRank(ranked, judgments) {
   const j = normaliseJudgments(judgments);

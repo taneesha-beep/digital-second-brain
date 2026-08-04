@@ -12,10 +12,15 @@
  *                   --param cap=null --label v1-overlap-uncapped
  *
  * ============================================================================
- * EVERY NUMBER THIS SCRIPT PRINTS IS PROVISIONAL. Roadmap 2.4 validates
- * eval/metrics.js against pytrec_eval to 1e-6 and has not run. Until it passes,
- * nothing here may be quoted in the roadmap's results tables, the README, or
- * anywhere else.
+ * VALIDATED AT ROADMAP 2.4. eval/metrics.js agrees with pytrec_eval to within
+ * 1e-6 — max |delta| 1.11e-16 over 29,952 per-query comparisons on each of two
+ * run files. Evidence: results/metric-validation.txt. Re-check after any change
+ * to metrics.js or to what this script feeds it:
+ *
+ *   scripts/.venv/bin/python scripts/validate_metrics.py
+ *
+ * One scope limit that survived validation: MRR is reported as recip_rank@kMax,
+ * because this script truncates every list at kMax before the scorer sees it.
  * ============================================================================
  *
  * ALL FILE LOADING LIVES HERE, NOT IN backend/retrieval/. A test walks that
@@ -337,7 +342,14 @@ function printTable(summary, ks) {
   for (const [name, row] of [['nDCG', summary.ndcg], ['P', summary.p], ['R', summary.r]]) {
     console.log(`  ${pad(name, 8)} ` + ks.map((k) => pad(formatCell(row[k]), 8)).join(' '));
   }
-  console.log(`  ${pad('MRR', 8)} ` + pad(formatCell(summary.mrr), 8));
+  // MRR@10, not MRR. The metric is unbounded by k by convention and
+  // trec_eval's recip_rank searches the whole run file, but this runner
+  // truncates every list at kMax before the scorer sees it, so a first
+  // relevant document below rank 10 cannot be found and a capped v1 cannot
+  // see below rank 8. Validated as recip_rank@10 at roadmap 2.4
+  // (results/metric-validation.txt §2); the label says so rather than leaving
+  // the depth to the sidecar's `k` field. Numeric value unchanged.
+  console.log(`  ${pad(`MRR@${Math.max(...ks)}`, 8)} ` + pad(formatCell(summary.mrr), 8));
 }
 
 // ---------------------------------------------------------------------------
@@ -359,7 +371,7 @@ function main() {
   }
 
   console.log(`eval ${label} on ${site}.${split}`);
-  console.log('  PROVISIONAL — eval/metrics.js is not yet validated against pytrec_eval (roadmap 2.4)\n');
+  console.log('  metrics validated against pytrec_eval to 1e-6 (roadmap 2.4) -> results/metric-validation.txt\n');
 
   // --- load -----------------------------------------------------------------
   const tLoad = process.hrtime.bigint();
@@ -468,9 +480,14 @@ function main() {
   const meanLatency = ids.length === 0 ? null : Number(latencies.reduce((a, b) => a + b, 0)) / ids.length;
 
   const sidecar = {
-    provisional: true,
-    provisionalReason:
-      'eval/metrics.js is not validated against pytrec_eval until roadmap 2.4. No number in this file may be quoted.',
+    provisional: false,
+    metricsValidation: {
+      reference: 'pytrec-eval-terrier 0.5.10',
+      tolerance: 1e-6,
+      maxAbsDelta: 1.11e-16,
+      evidence: 'results/metric-validation.txt',
+      recheck: 'scripts/.venv/bin/python scripts/validate_metrics.py'
+    },
     runId,
     label,
     site,
@@ -507,7 +524,8 @@ function main() {
       discount: '1 / log2(rank + 1)',
       idcg: 'judged grades sorted descending, truncated at k',
       zeroResultQueries: 'scored 0, included in the mean',
-      unjudgeableQueries: 'excluded from the mean, counted separately'
+      unjudgeableQueries: 'excluded from the mean, counted separately',
+      mrr: `recip_rank@${kMax} — the list is truncated at k before scoring`
     },
     latencyMs: {
       note: 'per-query search() only; index build reported separately',
@@ -554,7 +572,7 @@ function main() {
       console.log('     undecoded HTML entities, or qrels ids not matching corpus ids.');
     } else if (headline >= 0.1 && headline <= 0.4) {
       console.log(`\n  nDCG@8 ${headline.toFixed(4)} is inside CLAUDE.md's 0.1-0.4 plausibility band for lexical`);
-      console.log('  retrieval on Stack Exchange duplicate/related judgments. Still provisional until 2.4.');
+      console.log('  retrieval on Stack Exchange duplicate/related judgments.');
     } else {
       // Between the alarm thresholds but outside the "unremarkable" band. Named
       // as its own case rather than rounded into either: 0.06 is not a bug
@@ -562,7 +580,7 @@ function main() {
       // claim the band does not support.
       console.log(`\n  nDCG@8 ${headline.toFixed(4)} is outside CLAUDE.md's 0.1-0.4 "unremarkable" band but does`);
       console.log('  not trip either alarm threshold (~0.05, ~0.7). Neither reassuring nor alarming;');
-      console.log('  worth explaining rather than reporting flat. Still provisional until 2.4.');
+      console.log('  worth explaining rather than reporting flat.');
     }
   }
 }

@@ -12,7 +12,8 @@
     "splits:build": "node scripts/build-splits.js",
     "bias:analyze": "node scripts/analyze-ground-truth.js",
     "parity:v1": "node scripts/parity-v1.js",
-    "eval": "node scripts/run-eval.js"
+    "eval": "node scripts/run-eval.js",
+    "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
