@@ -1,0 +1,151 @@
+# v1-overlap parity — mini-corpus.jsonl — 34 documents
+KW   001  sourdough,starter,won,dough,rise,somewhere,active,barely,around,mixing
+LINK 001   1  002  0.2000  starter,sourdough
+KW   002  starter,feed,sourdough,often,refrigeration,vinegary,underfed,sluggish,counter,feeding
+LINK 002   1  001  0.2000  sourdough,starter
+KW   003  knead,kneading,dough,gluten,immediately,windowpane,long,bread,minutes,develop
+LINK 003   1  004  0.2000  bread,dough
+KW   004  temperature,fermentation,best,proportionally,bulk,ferments,bread,slowly,dough,raise
+LINK 004   1  003  0.2000  dough,bread
+KW   005  tight,dense,crumb,little,bread,underproofing,instant,yeast,weak,every
+LINK 005   1  006  0.2000  yeast,instant
+KW   006  yeast,instant,fresh,substitute,conversion,different,calls,schedule,recipe,fermentation
+LINK 006   1  005  0.2000  instant,yeast
+KW   007  protein,flour,crumb,change,content,either,hydration,plain,extra,really
+KW   008  shape,deflating,dough,without,loaf,recovers,knock,never,final,gentler
+KW   009  steam,spring,oven,need,almost,crust,early,without,sets,gets
+KW   010  overnight,cold,retard,flavour,worth,retarding,improves,easier,dough,score
+KW   011  hydration,pizza,dough,everything,stretch,higher,sounds,sticks,relax,tears
+KW   012  angle,knife,sharpen,kitchen,consistent,shallower,european,twenty,faster,whetstone
+LINK 012   1  013  0.3000  knife,sharpen,whetstone
+LINK 012   2  016  0.2000  knife,whetstone
+KW   013  honing,steel,knife,sharpen,actually,straighten,sharper,remove,metal,whetstone
+LINK 013   1  012  0.3000  knife,sharpen,whetstone
+LINK 013   2  014  0.2000  steel,knife
+LINK 013   3  016  0.2000  knife,whetstone
+KW   014  carbon,steel,knife,rusting,stop,underneath,develops,protect,patina,spots
+LINK 014   1  013  0.2000  steel,knife
+KW   015  board,plastic,wooden,cutting,edges,knife,edge,material,dulls,gentler
+LINK 015   1  016  0.2000  knife,cutting
+KW   016  dull,knife,quickly,sharpening,problem,within,wrong,cutting,whetstone,week
+LINK 016   1  012  0.2000  knife,whetstone
+LINK 016   2  013  0.2000  knife,whetstone
+LINK 016   3  015  0.2000  cutting,knife
+KW   017  350,oven,runs,hot,degrees,difference,calibrate,subtract,overdone,thermometer
+LINK 017   1  020  0.2000  thermometer,oven
+KW   018  convection,180,convert,setting,conventional,shorten,temperature,instead,says,drop
+KW   019  stone,pizza,preheat,base,long,need,hotter,half,hour,pale
+KW   020  thermometer,oven,buying,worth,anything,domestic,results,typical,tell,baking
+LINK 020   1  017  0.2000  oven,thermometer
+KW   021  pasta,water,salty,goes,salt
+LINK 021   1  030  0.4000  goes,salt
+LINK 021   2  025  0.2000  water
+LINK 021   3  026  0.2000  water
+LINK 021   4  027  0.2000  salt
+LINK 021   5  029  0.2000  salt
+LINK 021   6  031  0.2000  salty
+LINK 021   7  032  0.2000  salt
+LINK 021   8  034  0.2000  salt
+KW   022  steak,rest,long,resting,juices,keep
+LINK 022   1  003  0.1667  long
+LINK 022   2  019  0.1667  long
+LINK 022   3  027  0.1667  long
+LINK 022   4  033  0.1667  long
+KW   023  basil,store,fresh,best,fridge
+LINK 023   1  004  0.2000  best
+LINK 023   2  006  0.2000  fresh
+KW   024  stock,freeze,chicken,freezing,ruin,flavour
+LINK 024   1  010  0.1667  flavour
+LINK 024   2  026  0.1667  chicken
+LINK 024   3  027  0.1667  chicken
+LINK 024   4  033  0.1667  chicken
+KW   025  turkey,brine,need,overnight,means,help,water,wet,poultry,soak
+LINK 025   1  026  0.6000  brine,means,water,wet,poultry,soak
+LINK 025   2  029  0.4000  turkey,brine,poultry,soak
+LINK 025   3  027  0.3000  brine,poultry,soak
+LINK 025   4  028  0.3000  brine,wet,poultry
+LINK 025   5  030  0.3000  brine,poultry,soak
+LINK 025   6  031  0.3000  poultry,brine,soak
+LINK 025   7  032  0.3000  brine,poultry,soak
+LINK 025   8  033  0.3000  poultry,brine,soak
+KW   026  breast,chicken,brine,hours,means,worth,water,wet,poultry,soak
+LINK 026   1  025  0.6000  brine,means,water,wet,poultry,soak
+LINK 026   2  027  0.4000  chicken,brine,poultry,soak
+LINK 026   3  033  0.4000  poultry,chicken,brine,soak
+LINK 026   4  028  0.3000  brine,wet,poultry
+LINK 026   5  029  0.3000  brine,poultry,soak
+LINK 026   6  030  0.3000  brine,poultry,soak
+LINK 026   7  031  0.3000  poultry,brine,soak
+LINK 026   8  032  0.3000  brine,poultry,soak
+KW   027  whole,long,chicken,brine,turns,texture,spongy,poultry,soak,salt
+LINK 027   1  033  0.7000  poultry,texture,spongy,chicken,long,brine,soak
+LINK 027   2  026  0.4000  chicken,brine,poultry,soak
+LINK 027   3  029  0.4000  brine,poultry,salt,soak
+LINK 027   4  030  0.4000  brine,salt,poultry,soak
+LINK 027   5  032  0.4000  brine,poultry,salt,soak
+LINK 027   6  034  0.4000  poultry,brine,salt,soak
+LINK 027   7  025  0.3000  brine,poultry,soak
+LINK 027   8  031  0.3000  poultry,brine,soak
+KW   028  better,brine,dry,uncovered,wet,leave,instead,onto,rub,poultry
+LINK 028   1  025  0.3000  brine,wet,poultry
+LINK 028   2  026  0.3000  brine,wet,poultry
+LINK 028   3  027  0.2000  brine,poultry
+LINK 028   4  029  0.2000  brine,poultry
+LINK 028   5  030  0.2000  brine,poultry
+LINK 028   6  031  0.2000  poultry,brine
+LINK 028   7  032  0.2000  brine,poultry
+LINK 028   8  033  0.2000  poultry,brine
+KW   029  frozen,turkey,brine,must,thaw,poultry,salt,soak
+LINK 029   1  025  0.5000  turkey,brine,poultry,soak
+LINK 029   2  027  0.5000  brine,poultry,soak,salt
+LINK 029   3  030  0.5000  brine,salt,poultry,soak
+LINK 029   4  032  0.5000  brine,poultry,salt,soak
+LINK 029   5  034  0.5000  poultry,brine,salt,soak
+LINK 029   6  026  0.3750  brine,poultry,soak
+LINK 029   7  031  0.3750  poultry,brine,soak
+LINK 029   8  033  0.3750  poultry,brine,soak
+KW   030  brine,goes,salt,stronger,wildly,recipes,vary,poultry,soak
+LINK 030   1  027  0.4444  brine,poultry,soak,salt
+LINK 030   2  029  0.4444  brine,poultry,salt,soak
+LINK 030   3  032  0.4444  brine,poultry,salt,soak
+LINK 030   4  034  0.4444  poultry,brine,salt,soak
+LINK 030   5  025  0.3333  brine,poultry,soak
+LINK 030   6  026  0.3333  brine,poultry,soak
+LINK 030   7  031  0.3333  poultry,brine,soak
+LINK 030   8  033  0.3333  poultry,brine,soak
+KW   031  rinse,brining,surface,rinsing,poultry,tastes,undo,salty,brine,soak
+LINK 031   1  033  0.4000  brining,poultry,brine,soak
+LINK 031   2  025  0.3000  brine,poultry,soak
+LINK 031   3  026  0.3000  brine,poultry,soak
+LINK 031   4  027  0.3000  brine,poultry,soak
+LINK 031   5  029  0.3000  brine,poultry,soak
+LINK 031   6  030  0.3000  brine,poultry,soak
+LINK 031   7  032  0.3000  brine,poultry,soak
+LINK 031   8  034  0.3000  poultry,brine,soak
+KW   032  reuse,brine,reusing,fine,safe,looks,poultry,salt,soak
+LINK 032   1  027  0.4444  brine,poultry,soak,salt
+LINK 032   2  029  0.4444  brine,poultry,salt,soak
+LINK 032   3  030  0.4444  brine,salt,poultry,soak
+LINK 032   4  034  0.4444  poultry,brine,salt,soak
+LINK 032   5  025  0.3333  brine,poultry,soak
+LINK 032   6  026  0.3333  brine,poultry,soak
+LINK 032   7  031  0.3333  poultry,brine,soak
+LINK 032   8  033  0.3333  poultry,brine,soak
+KW   033  rubbery,brining,poultry,brined,texture,spongy,chicken,long,brine,soak
+LINK 033   1  027  0.7000  long,chicken,brine,texture,spongy,poultry,soak
+LINK 033   2  026  0.4000  chicken,brine,poultry,soak
+LINK 033   3  031  0.4000  brining,poultry,brine,soak
+LINK 033   4  025  0.3000  brine,poultry,soak
+LINK 033   5  029  0.3000  brine,poultry,soak
+LINK 033   6  030  0.3000  brine,poultry,soak
+LINK 033   7  032  0.3000  brine,poultry,soak
+LINK 033   8  034  0.3000  poultry,brine,soak
+KW   034  pork,poultry,brine,dries,loin,work,salt,soak
+LINK 034   1  027  0.5000  brine,poultry,soak,salt
+LINK 034   2  029  0.5000  brine,poultry,salt,soak
+LINK 034   3  030  0.5000  brine,salt,poultry,soak
+LINK 034   4  032  0.5000  brine,poultry,salt,soak
+LINK 034   5  025  0.3750  brine,poultry,soak
+LINK 034   6  026  0.3750  brine,poultry,soak
+LINK 034   7  031  0.3750  poultry,brine,soak
+LINK 034   8  033  0.3750  poultry,brine,soak
