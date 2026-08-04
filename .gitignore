@@ -9,6 +9,13 @@ data/raw/
 data/corpus/
 data/qrels/
 data/splits/
+# Run files are derived data: `npm run eval` regenerates them in ~3 s from
+# inputs pinned by SHA-256, which is what Phase 1 bought. The *.run.json
+# sidecars beside them ARE committed — they hold the provenance, which is the
+# part that does not regenerate. Per-file rather than ignoring results/, so 2.4
+# can commit metric-validation.txt from the same tree. See EVALUATION.md §8.5.
+results/runs/*.run
+results/runs/*.zero.txt
 CLAUDE.md
 .claude/hooks/
 docs/FROZEN.md
