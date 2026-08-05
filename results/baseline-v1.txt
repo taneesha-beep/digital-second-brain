@@ -23,6 +23,14 @@ ABOUT the numbers, which is the category that gets committed.
     p95      1.0 ms      per-query search() only — see §5 for why one decimal
     vs prev  —           v1 is the first rung; there is no previous
 
+  NO bpref. It is the standard mitigation for incomplete judgments and it does
+  not work on this key. Measured through pytrec_eval at 2.4, on a positive-only
+  key it collapses to recall at the run's depth, matching recall_1000 to 1e-12
+  (0.188652 capped, 0.204572 uncapped) — a column that would silently duplicate
+  R@10 under a name implying robustness to incompleteness. The results table's
+  bpref column was dropped rather than left blank, because a blank reads "not
+  measured yet" and this was measured and rejected. EVALUATION.md §5.1, §10.4.
+
   The full grid, all four k, from the committed sidecar's metrics block:
 
       metric       @1       @5       @8      @10
