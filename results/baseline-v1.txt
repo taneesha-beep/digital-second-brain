@@ -1,0 +1,277 @@
+BASELINE — v1-overlap on cooking.dev, the shipped algorithm measured
+roadmap 2.6 · 2026-08-05 16:40:35Z
+==============================================================================
+
+The first measured number this project has ever had for its own link-scoring
+algorithm. Every figure below traces to results/runs/v1-overlap.dev.run.json,
+which is committed, or to the five-run latency measurement recorded in §5.
+
+Generated from a clean tree at 976822b. The run files themselves are
+gitignored and regenerate in ~3 s (EVALUATION.md §8.5); this file is evidence
+ABOUT the numbers, which is the category that gets committed.
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+  version        v1-overlap
+  description    shipped: overlap coefficient, top-10 keywords, thr 0.15, cap 8
+
+    nDCG@8   0.1402
+      P@8    0.0375
+      R@8    0.1887
+    MRR@10   0.1520
+    p95      1.0 ms      per-query search() only — see §5 for why one decimal
+    vs prev  —           v1 is the first rung; there is no previous
+
+  The full grid, all four k, from the committed sidecar's metrics block:
+
+      metric       @1       @5       @8      @10
+    --------------------------------------------
+        nDCG   0.0971   0.1291   0.1402   0.1400
+           P   0.1020   0.0493   0.0375   0.0300
+           R   0.0711   0.1582   0.1887   0.1887
+      MRR@10   0.1520
+
+  Full precision, as stored:
+    ndcg@8  0.14016693655110876      p@8  0.037543402777777776
+    r@8     0.18865224099868316      mrr  0.15196345899470887
+
+  WHERE IT LANDS. nDCG@8 = 0.1402 sits inside CLAUDE.md's 0.1-0.4 plausibility
+  band for lexical retrieval on Stack Exchange duplicate/related judgments. Not
+  above ~0.7, so the self-retrieval alarm does not fire. Not below ~0.05, so the
+  tokenizer / entity-decode / id-mismatch alarm does not fire. Nothing needed
+  chasing down before reporting it.
+
+  STILL A LOWER BOUND. PostLinks gives positive judgments only, so unlinked
+  genuinely-related pairs score as errors (EVALUATION.md §5.1). Metric
+  validation (§10, max |delta| 1.11e-16 against pytrec_eval) does not touch
+  incompleteness. Two separate qualifiers; neither retires the other.
+
+
+2. ENVIRONMENT
+------------------------------------------------------------------------------
+  hardware       MacBook Pro (Mac14,7) · Apple M2 · arm64 · 8 GB RAM
+  os             macOS 26.6 (darwin 25.6.0)
+  runtime        Node v25.8.1 · no dependency on the Node eval path
+  corpus         cooking, N=27,325 docs
+                 db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd
+  qrels          16,678 judgments over 9,218 queries
+                 d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1
+  split          dev, 2,304 queries
+                 38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf
+  retriever      v1-overlap
+                 {"idfCorpus":"leave-one-out","topN":10,"threshold":0.15,
+                  "cap":8,"scorePrecision":4,"lengthBonus":true}
+                 digest 93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
+  queries        2,304 scored · 0 unjudgeable and excluded · 11 zero-result
+                 (0.48%), scored 0 and kept in the mean (§8.3)
+  tests          89 across 5 suites, passing
+
+  The p95 in §1 is an UNCONTROLLED measurement on a laptop with a browser
+  open. It is reported at one significant figure for that reason. A controlled
+  retrieval-latency figure against a published budget is roadmap 6.5's job, not
+  this row's.
+
+
+3. THE idfCorpus DECISION — leave-one-out
+------------------------------------------------------------------------------
+  Opened by the 4 Aug correction that the IDF is live, not inert. Both existing
+  dev runs used the default; the param was RECORDED in every digest and every
+  run file, and was not DECIDED. It is decided here.
+
+  What the three options measure (backend/retrieval/v1-overlap.js:188-227):
+
+    none            df=0, docCount=1, so idf = ln(2)+1 for every term.
+                    The brand-new-account path — a user with no other notes.
+    leave-one-out   df over every OTHER corpus document, docCount = N-1.
+                    Reproduces loadUserCorpus(userId, {excludeId}), which is
+                    what all three production callers pass.
+    all             df over the whole corpus including the document itself.
+                    Corresponds to no shipped call site.
+
+  DECISION: leave-one-out. Three reasons, in order of weight.
+
+  (a) The parity proof is already banked under it. All 116 ranked links in
+      results/parity/v1-shipped.txt == v1-harness.txt (83f9e35e…) were produced
+      at idfCorpus: 'leave-one-out', and the equivalence is exact rather than
+      approximate: df_loo(w,X) = df(w) - [w in X] with docCount = N-1
+      (EVALUATION.md §7.1). Choosing anything else would populate this row with
+      a configuration that 2.1's byte-identity claim does not cover — the one
+      committed artifact tying this harness to the shipped linker would stop
+      describing the thing being measured.
+
+  (b) 'none' is a real shipped path but its degenerate corner. With idf
+      constant, ranking collapses to count x (1 + ln len), and PRIMER §3.3
+      records what that does: the keyword list drifts toward "the longest words
+      present". Banking that as the baseline that five later rungs are measured
+      against would flatter all five for a reason unrelated to any of them.
+
+  (c) 'all' matches no production caller and lets the query influence its own
+      df table. Not the self-retrieval trap — §7.3 keeps the two exclusions
+      distinct — but there is no reason to take it.
+
+  NOTHING WAS RE-RUN. The decision landed on the default, so both committed
+  sidecars, results/metric-validation.txt, and the cap-ablation comparison all
+  remain descriptions of the configuration this row reports. §4 verifies that
+  by regeneration rather than asserting it.
+
+  WHAT THIS ROW IS NOT. "How good is the algorithm I shipped" and "how good is
+  this scoring function" are not the same question, and this row answers the
+  second under the first's rule. Three gaps, each recorded elsewhere:
+
+    - The deployed IDF scope is a user's <=500 OWN notes, unsorted
+      (utils/corpus.js:6). This eval's is 27,325 Stack Exchange documents.
+      No configuration on this corpus is literally the shipped one, because
+      the shipped scope is a property of a notebook that does not exist here.
+      What leave-one-out preserves is the shipped RULE — document frequencies
+      come from the other documents in the collection you retrieve over, query
+      excluded — under a substituted collection.
+    - Shipped keyword lists are snapshots from different corpus epochs
+      (§7.2; roadmap 4.6). The harness extracts all of them from one corpus
+      state, so this measures a CLEANER system than the deployed one.
+    - Shipped storage then mangles the ranked list with last-writer-wins
+      bidirectional writes. v1-overlap re-expresses linker.service.js:24-36,
+      not 40-64 (§7.5) — quantified at 15 differing lines in §7.6.
+
+  So: the shipped scoring function, under the shipped IDF rule, on an external
+  corpus. Not "what the deployed app scores."
+
+  COST AT 3.2, NAMED NOW. Roadmap 3.2's stated IDF ablation is "IDF over all
+  27,325 documents versus over a <=500-note user slice". This decision spends
+  the first arm on the baseline — and the second arm is NOT RUNNABLE on this
+  corpus at all, because it contains no users and no <=500-note slices. The
+  axis this param actually spans is leave-one-out vs none: "does the rarity
+  signal help", not "which scope of rarity signal". 3.2's framing needs
+  correcting a second time, and against this baseline that flip is a clean
+  one-variable change (idfCorpus only, everything else held).
+
+
+4. REPRODUCTION — verified, not assumed
+------------------------------------------------------------------------------
+  Both dev runs were regenerated from a clean tree at 976822b and compared
+  against the sidecars committed at 43fb101.
+
+    v1-overlap.dev.run
+      sha256 recomputed  9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e
+      sidecar says       9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e
+      MATCH · 17,919 lines · 904,379 bytes, both identical
+      all 13 metrics equal to EXACT FLOAT EQUALITY, not to four decimals
+      params, digest, inputs and queries blocks identical
+
+    v1-overlap-uncapped.dev.run
+      sha256 recomputed  e8aeaede93c64dca2effaf0619ecfeb8e0f4cd80641af87f32a4a2e566b24c73
+      sidecar says       e8aeaede93c64dca2effaf0619ecfeb8e0f4cd80641af87f32a4a2e566b24c73
+      MATCH · 22,213 lines · 1,323,010 bytes, both identical
+      all 13 metrics equal to EXACT FLOAT EQUALITY
+
+  THE SIDECARS WERE DELIBERATELY NOT REFRESHED. They are restored to their
+  43fb101 bytes. 2.4 refreshed them because the sidecar SCHEMA changed
+  (provisional lifted, metricsValidation block added, MRR relabelled). Nothing
+  changed here, and EVALUATION.md §9.3, §10 and §11.6 all point at those exact
+  runs. Rewriting generatedAt and a git commit on artifacts three documents
+  already cite, to record no new fact, is churn.
+
+
+5. LATENCY — measured five times, and that changed the precision
+------------------------------------------------------------------------------
+  EVALUATION.md §9.4 records a 38% wall-time spread across five runs with
+  byte-identical output, which is the stated reason to distrust timings on this
+  machine. That spread is on TOTAL WALL TIME, dominated by load + index(). The
+  column here wants p95 of per-query search(). Those are different quantities,
+  and before this session there was exactly ONE recorded p95 per configuration
+  and no repeat measurement at all — the p95's stability was assumed.
+
+  Five consecutive capped dev runs, all producing run-file sha256 9618f1bf…:
+
+    run   p95        p50        mean       max        wall
+    ----------------------------------------------------------
+      1   1.009166   0.490875   0.531604    2.308208  2642.4
+      2   1.067541   0.521333   0.569609   21.328750  2717.9
+      3   1.028666   0.502500   0.537926    1.800291  2624.2
+      4   1.040917   0.499333   0.539821    2.069583  2629.4
+      5   1.036958   0.501916   0.543349    3.069334  2625.3
+
+    p95     min 1.0092  median 1.0370  max 1.0675   spread  5.8%
+    p50     min 0.4909  median 0.5019  max 0.5213   spread  6.2%
+    mean    min 0.5316  median 0.5398  max 0.5696   spread  7.1%
+    max     min 1.8003  median 2.3082  max 21.3287  spread 1085%
+
+  Two independent measurements of the same configuration fall inside that
+  range: 1.042458 ms in the committed sidecar (43fb101, a different session)
+  and 1.040458 ms in the first re-run of this session. Seven measurements, all
+  in [1.009, 1.073].
+
+  SO THE COLUMN READS 1.0 ms. The leading digit is stable across all seven and
+  the second is not, so one significant figure is what the measurement supports
+  — the same confidence level §9.4 already committed to. Two decimals would
+  assert stability in the hundredths that a laptop with a browser open does not
+  have.
+
+  THE 38% DOES NOT TRANSFER, and that is worth stating rather than leaving as
+  an inherited caveat. A p95 over 2,304 samples is a far more stable statistic
+  than a single wall-clock total: 5.8% against 38%. Run 2 shows why directly —
+  one query took 21.3 ms (almost certainly a GC pause), which moved max by an
+  order of magnitude and the mean by 7%, and moved p95 by 0.03 ms. max is not a
+  quotable statistic here; p95 is, at one figure.
+
+  index() is reported separately and never amortised into the per-query
+  number: ~1.29-1.31 s across these five runs, once per run rather than once
+  per query.
+
+  The cap cannot be said to affect latency in either direction. Mechanically it
+  should not — rank() collects every above-threshold candidate and the wrapper
+  sorts before slicing, so cost tracks candidate count, not the cap — and the
+  uncapped run's p95 (1.024 ms this session, 1.072 ms at 43fb101) straddles the
+  capped range.
+
+
+6. WHY THE CAPPED RUN POPULATES THE ROW
+------------------------------------------------------------------------------
+  v1-overlap (cap 8) is what is deployed. EVALUATION.md §8.4 committed this in
+  writing before any number existed: the uncapped run is a diagnostic and is
+  never quoted as the shipped algorithm.
+
+  The column headers do not determine the row on their own. nDCG@8, P@8 and R@8
+  are identical across both runs — and §11.6 upgraded that from "four decimal
+  places" to EXACT FLOAT EQUALITY on all 2,304 queries individually. What
+  differs is MRR@10 (0.1520 capped vs 0.1538 uncapped) and, within noise, the
+  latency. Capped is the shipped number in both.
+
+  The uncapped run is not discarded: it is EVALUATION.md §9.3's ablation table,
+  §11.6's registered comparison, and its own committed sidecar. It is not a
+  ladder row, because a second "v1" would leave every Phase 3 rung comparing
+  itself against an ambiguous baseline.
+
+
+7. NO COMPARISON WAS RUN, AND THE REGISTRY WAS NOT TOUCHED
+------------------------------------------------------------------------------
+  "vs. prev (p)" is "—" for v1 because v1 is the first rung. All five
+  registered ladder comparisons begin at v1->v2.
+
+  The cap ablation is not a "vs. prev" comparison — it ablates one param inside
+  v1 — and it is already run, registered, and committed at
+  results/comparisons/v1-overlap-uncapped-vs-v1-overlap.dev.txt from a clean
+  tree at 203aeb8. Re-running it would produce a second copy of an existing
+  artifact.
+
+  results/comparisons/registry.json IS UNCHANGED BY THIS SESSION, deliberately.
+  Its credibility rests on six of its seven entries naming runs that did not
+  exist when it was written. The first edit to it must not be the session in
+  which the first rung's results became visible. That includes the
+  leave-one-out-vs-none ablation named in §3 — it belongs to whichever session
+  ships v3, registered in the same commit that ships it.
+
+
+8. WHAT THIS FILE DOES NOT ESTABLISH
+==============================================================================
+  - Absolutes remain lower bounds (§5.1). Validation and incompleteness are two
+    separate qualifiers and this row carries both.
+  - The row is the shipped SCORING FUNCTION under the shipped IDF RULE on an
+    external corpus, with three named gaps between it and the deployed system
+    (§3).
+  - The p95 is an uncontrolled laptop measurement at one significant figure.
+    Roadmap 6.5 is where a controlled figure against a published budget comes
+    from.
+  - dev only. Test is opened once per rung at 3.6 and is not touched here.
+  - One rung. Nothing here says whether the algorithm is good — only what it
+    scores. That comparison starts at 3.1.
