@@ -10,6 +10,8 @@
  *   npm run eval -- --retriever v1-overlap --split dev
  *   npm run eval -- --retriever v1-overlap --split dev \
  *                   --param cap=null --label v1-overlap-uncapped
+ *   npm run eval -- --retriever v1-overlap --split dev \
+ *                   --param threshold=0 --label t0 --outdir results/sweeps/runs
  *
  * ============================================================================
  * VALIDATED AT ROADMAP 2.4. eval/metrics.js agrees with pytrec_eval to within
@@ -78,7 +80,7 @@ const DEFAULT_KS = [1, 5, 8, 10];
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { site: 'cooking', ks: DEFAULT_KS, params: {}, label: null };
+  const args = { site: 'cooking', ks: DEFAULT_KS, params: {}, label: null, outDir: 'results/runs' };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -87,6 +89,14 @@ function parseArgs(argv) {
     else if (flag === '--site' && value) { args.site = value; i += 1; }
     else if (flag === '--label' && value) { args.label = value; i += 1; }
     else if (flag === '--limit' && value) { args.limit = Number.parseInt(value, 10); i += 1; }
+    // Repo-relative output directory, default results/runs. Added at 2.7 so a
+    // 330-point sweep does not deposit 330 runs and 330 sidecars beside the
+    // named runs every later phase cites. The boundary it enforces is
+    // EVALUATION.md §8.5's, extended there: a NAMED configuration gets a
+    // sidecar in results/runs/; a GRID POINT gets a row in a CSV and its run
+    // lands in the ignored results/sweeps/runs/. Nothing about scoring,
+    // indexing or the written run file's contents depends on this flag.
+    else if (flag === '--outdir' && value) { args.outDir = value; i += 1; }
     else if (flag === '--param' && value) {
       const eq = value.indexOf('=');
       if (eq < 1) throw new Error(`--param expects key=value (got ${value})`);
@@ -458,7 +468,7 @@ function main() {
   const summary = aggregate(perQuery, ks);
 
   // --- write ----------------------------------------------------------------
-  const outDir = path.join(REPO_ROOT, 'results', 'runs');
+  const outDir = path.resolve(REPO_ROOT, args.outDir);
   const runFile = path.join(outDir, `${label}.${split}.run`);
   const runBody = lines.length > 0 ? `${lines.join('\n')}\n` : '';
   writeAtomic(runFile, runBody);
@@ -497,7 +507,8 @@ function main() {
     ksReported: ks,
     command: `npm run eval -- --retriever ${retriever} --split ${split}` +
       Object.entries(args.params).map(([k, v]) => ` --param ${k}=${JSON.stringify(v)}`).join('') +
-      (args.label ? ` --label ${args.label}` : ''),
+      (args.label ? ` --label ${args.label}` : '') +
+      (args.outDir === 'results/runs' ? '' : ` --outdir ${args.outDir}`),
     inputs: inputs.map((i) => ({
       name: i.name,
       file: path.relative(REPO_ROOT, i.file),

@@ -16,6 +16,16 @@ data/splits/
 # can commit metric-validation.txt from the same tree. See EVALUATION.md §8.5.
 results/runs/*.run
 results/runs/*.zero.txt
+# 2.7's sweep, and the one place §8.5's rule had to be EXTENDED rather than
+# applied. Sidecars are committed above because per-run provenance does not
+# regenerate. At grid scale it does: the grid is committed code
+# (backend/scripts/sweep-v1.js), and all 342 points share one set of
+# SHA-256-pinned inputs, one environment and one git commit. So the committed
+# unit moves up a level — results/sweeps/v1-sweep.manifest.json carries what
+# every point's sidecar would have carried in common plus the per-point digest
+# table, and v1-threshold.csv carries the results. A NAMED configuration still
+# gets a sidecar in results/runs/; a GRID POINT gets a CSV row. §8.5.
+results/sweeps/runs/
 # The 2.4 validation venv. The pins that matter are committed in
 # scripts/requirements.txt, hashed; the installed tree is derived from them.
 scripts/.venv/

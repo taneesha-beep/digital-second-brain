@@ -14,6 +14,7 @@
     "parity:v1": "node scripts/parity-v1.js",
     "eval": "node scripts/run-eval.js",
     "eval:compare": "node scripts/compare-runs.js",
+    "sweep:v1": "node scripts/sweep-v1.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py"
   },
   "dependencies": {
