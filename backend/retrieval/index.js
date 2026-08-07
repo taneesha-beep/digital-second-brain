@@ -44,7 +44,13 @@
  * inside a tie group routinely.
  */
 
-const { resolveParams, paramsDigest, assertCorpusDocs, assertHits } = require('./types');
+const {
+  resolveParams,
+  paramsDigest,
+  assertCapParam,
+  assertCorpusDocs,
+  assertHits
+} = require('./types');
 
 const registry = new Map();
 
@@ -90,6 +96,9 @@ function index(version, docs, params = {}) {
   assertCorpusDocs(docs);
 
   const resolved = resolveParams(version, retriever.defaultParams, params);
+  // Checked at index() rather than at the first search(), so a mistyped cap
+  // fails before a run file exists rather than after 2,304 queries of it.
+  assertCapParam(version, resolved);
   const byId = new Map();
   for (const doc of docs) byId.set(doc.id, doc);
 
@@ -162,12 +171,18 @@ function search(handle, query, k) {
   // v1-overlap.js for what this replaces in the shipped algorithm.
   collected.sort((a, b) => (b.score - a.score) || (a.docId < b.docId ? -1 : a.docId > b.docId ? 1 : 0));
 
-  const cap = Number.isFinite(handle.params.cap) ? handle.params.cap : Infinity;
+  // assertCapParam has already established that cap is absent, null, or a
+  // positive integer, so `== null` is the whole test. This deliberately no
+  // longer reads Number.isFinite: that predicate does not coerce, so a cap
+  // arriving as the string "8" fell through to Infinity and produced an
+  // uncapped run whose digest recorded cap:"8" (§13.10).
+  const cap = handle.params.cap == null ? Infinity : handle.params.cap;
   const hits = collected.slice(0, Math.min(k, cap));
 
   return assertHits(hits, { k, excludeId: queryId });
 }
 
 register(require('./v1-overlap'));
+register(require('./v2-jaccard'));
 
 module.exports = { index, search, describe, register, versions };

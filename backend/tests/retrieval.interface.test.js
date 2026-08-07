@@ -134,6 +134,58 @@ describe('params and provenance', () => {
     expect(() => retrieval.index('v1-overlap', DOCS, { idfCorpus: 'some' })).toThrow(/idfCorpus/);
     expect(() => retrieval.index('v1-overlap', DOCS, { threshold: -1 })).toThrow(/threshold/);
   });
+
+  describe('cap is validated, because the interface is what reads it', () => {
+    // Opened by 2.7 (EVALUATION.md §13.10) and fixed at 3.1. index.js used to
+    // test the cap with Number.isFinite, which does not coerce — so a cap
+    // arriving as the STRING "8" fell through to Infinity and produced an
+    // UNCAPPED run whose digest recorded cap:"8". A run that lies about itself.
+
+    test('a cap that is not a number is rejected rather than silently ignored', () => {
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: '8' })).toThrow(/cap must be null/);
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: true })).toThrow(/cap must be null/);
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: 'Infinity' })).toThrow(/cap must be null/);
+    });
+
+    test('the specific defect: a string cap used to uncap the run', () => {
+      // The regression this fix exists for, stated as the behaviour rather
+      // than as the predicate. Three documents can be returned at k=3; a real
+      // cap of 1 returns one. Before the fix, "1" also returned three.
+      const capped = retrieval.index('v1-overlap', DOCS, { cap: 1, threshold: 0 });
+      expect(retrieval.search(capped, 'a', 3).length).toBe(1);
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: '1', threshold: 0 })).toThrow();
+    });
+
+    test('a non-integer or non-positive cap is rejected too', () => {
+      // slice truncates, so cap 8.5 behaves as 8 while the digest says 8.5 —
+      // the same defect in a quieter form.
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: 8.5 })).toThrow(/cap must be null/);
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: 0 })).toThrow(/cap must be null/);
+      expect(() => retrieval.index('v1-overlap', DOCS, { cap: -1 })).toThrow(/cap must be null/);
+    });
+
+    test('the two spellings that must keep working, do', () => {
+      // Every committed run uses one of these: cap 8 (v1 as shipped) and
+      // cap null (the uncapped ablation, `--param cap=null`). Neither moves.
+      expect(retrieval.index('v1-overlap', DOCS, { cap: 8 }).params.cap).toBe(8);
+      expect(retrieval.search(retrieval.index('v1-overlap', DOCS, { cap: null }), 'a', 3)).toHaveLength(
+        retrieval.search(retrieval.index('v1-overlap', DOCS, {}), 'a', 3).length
+      );
+    });
+
+    test('a retriever declaring no cap at all is uncapped, not rejected', () => {
+      retrieval.register({
+        version: 'test-no-cap',
+        defaultParams: {},
+        buildIndex: (d) => d,
+        rank(state, queryDoc, ctx) {
+          for (const doc of state) if (doc.id !== queryDoc.id) ctx.collect(doc.id, 1);
+        }
+      });
+      const handle = retrieval.index('test-no-cap', DOCS);
+      expect(retrieval.search(handle, 'a', 3)).toHaveLength(3);
+    });
+  });
 });
 
 describe('corpus validation', () => {
