@@ -1,0 +1,367 @@
+RUNG v2 — Jaccard on cooking.dev, the first genuine step on the ladder
+roadmap 3.1 · 2026-08-07
+==============================================================================
+
+The headline is a boundary case and it is reported as one: v2 beats v1 by
+0.0025 nDCG@8 with a raw p of 0.049, which does NOT survive the Holm
+correction the family is pre-registered under. The defensible sentence is
+"symmetric scoring made no difference this key can resolve", and the rung's
+real deliverable is that symmetry is now a property of the algorithm rather
+than a convention.
+
+Generated from a clean tree at 41e94a3. Run files are gitignored and
+regenerate in ~2.5 s (EVALUATION.md §8.5); this file is evidence ABOUT the
+numbers, which is the category that gets committed.
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+  version        v2-jaccard
+  description    Jaccard, top-10 keywords, minShared 2, cap 8
+
+    nDCG@8   0.1427
+      P@8    0.0381
+      R@8    0.1921
+    MRR@10   0.1546
+    p95      0.87 ms     per-query search() only — see §7
+    vs prev  +0.0025 nDCG@8, 95% CI [+0.0000, +0.0050], p = 0.0482 raw
+                         NOT Holm-adjusted; family of 7. See §5.
+
+  The full grid, all four k, from the committed sidecar's metrics block:
+
+      metric       @1       @5       @8      @10
+    --------------------------------------------
+        nDCG   0.1008   0.1307   0.1427   0.1425
+           P   0.1063   0.0495   0.0381   0.0305
+           R   0.0739   0.1589   0.1921   0.1921
+      MRR@10   0.1546
+
+  Full precision, as stored:
+    ndcg@8  0.14266812656887737     p@8  0.0380859375
+    r@8     0.19213827319565283     mrr  0.15461877893518505
+
+  Beside v1, from results/baseline-v1.txt:
+
+      metric       @1       @5       @8      @10
+    --------------------------------------------
+      v1 nDCG  0.0971   0.1291   0.1402   0.1400
+      v2 nDCG  0.1008   0.1307   0.1427   0.1425
+      delta   +0.0038  +0.0017  +0.0025  +0.0025
+
+  0.1427 is inside CLAUDE.md's 0.1–0.4 plausibility band, and is exactly the
+  size of movement the mechanism predicts (§6). Absolutes remain LOWER BOUNDS
+  (EVALUATION.md §5.1); the difference is what survives that, because both
+  runs face the identical incomplete key.
+
+
+2. ENVIRONMENT
+------------------------------------------------------------------------------
+  MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB RAM, macOS 26.6 (darwin 25.6.0)
+  Node v25.8.1, npm 11.11.0
+
+  corpus         cooking, N = 27,325
+  split          dev, 2,304 queries
+  inputs         all three SHA-256-verified against their Phase 1 manifests at
+                 run time, not read from a manifest
+  git commit     41e94a335c6d98016fe37d0958297bde6a1737c6, clean tree
+  scorer         backend/eval/metrics.js — validated against pytrec_eval at
+                 2.4, max |delta| 1.11e-16
+
+  run            results/runs/v2-jaccard.dev.run   17,892 lines
+                 sha256 0b2531b72fdfb3bc58a60c922109238b8180d7a7b27f5e020370f4a26e4dd111
+  digest         fb0bc25ae7241f19797701560e7a56b1c1c071edd4ce46599e1f7b0ba1a7fe06
+  params         {"idfCorpus":"leave-one-out","topN":10,"lengthBonus":true,
+                  "scorePrecision":4,"cap":8,"threshold":0,"minShared":2}
+
+  npm test — 111 tests across 6 suites, up from 89 across 5. The Node eval path
+  stays dependency-free. results/parity/ still hashes to 83f9e35e…, so the
+  frozen v1 baseline is byte-intact after the interface change in §8.
+
+
+3. THE THRESHOLD IS NOT INHERITED — the methodological content of the rung
+------------------------------------------------------------------------------
+  Jaccard silently redefines what a threshold means. For two ten-keyword notes
+  sharing s words the union is 20 - s, so (all values through toFixed(4),
+  which is what decides membership at the boundary, §7.7):
+
+      s        v1 = s/10        v2 = s/(20-s)
+      1          0.1000           0.0526
+      2          0.2000  admitted 0.1111  REJECTED
+      3          0.3000           0.1765  admitted
+
+  The SAME 0.15 demands THREE shared words under Jaccard where it demanded
+  TWO under v1. Keeping the numeral is therefore not a one-variable change: it
+  moves the similarity function AND tightens the rule, and §13.5 already
+  priced that tightening on v1's own axis at 12.2% of nDCG@8 and 42x the
+  zero-result queries. §9 measures what it costs in Jaccard's own coordinates.
+
+  DECISION: hold the BEHAVIOUR constant, not the numeral. The numeral was
+  never a setting — §13.3 measured that 0.15 = 3/20 is not an achievable v1
+  score at all, so "> 0.15" keeps byte-for-byte what "> 0.1429" keeps. It is a
+  LABEL for the rule "share at least 2 of 10", and the rule is what v2 carries
+  across, as the length-independent integer minShared = 2.
+
+  WHY minShared AND NOT A SCALAR THRESHOLD IN THE EQUIVALENT RANGE. The scalar
+  thresholds reproducing "s >= 2" at the modal pair are [1/19, 2/18) =
+  [0.0526, 0.1111). But a Jaccard threshold leaks the TARGET's length into the
+  admission rule, which v1's never did. Enumerated over all 385 (a, b, s) with
+  a, b <= 10 (asserted in tests/retrieval.v2-symmetry.test.js):
+
+      v1(0.15) vs minShared 2, a >= 7:  210 agree,  0 differ
+      v1(0.15) vs scalar 0.1,  a >= 7:               6 differ
+        a=7,b<=3,s=1 · a=8,b<=2,s=1 · a=9,b=1,s=1
+
+  WHAT IS NOT CLAIMED. Exact equivalence is impossible: v1's rule does not read
+  |B| at all and Jaccard's necessarily does. The residual is the d <= 6
+  stratum — 25 of 2,304 dev queries, 1.09% (§13.8) — where v1 links on a single
+  shared word and v2 does not. v2 is strictly STRICTER there, so its candidate
+  set is a subset of v1's on those 25. One-directional, bounded, and reported
+  stratified in §6 rather than left as a confound.
+
+  THE SCORE LATTICE MOVES WITH IT. v1's achievable scores are s/d for
+  1 <= s <= d <= 10 — the Farey fractions of order 10, 32 values, which is what
+  made 2.7's threshold sweep exhaustive. v2's are s/(a+b-s) for
+  1 <= s <= min(a,b) <= 10, which is { s/u : 1 <= s <= u <= 20 - s }: 64
+  distinct values, denominators to 19, floor at 1/19 = 0.0526 instead of 1/10.
+  Derived from the algebra and then checked against what the retriever emits,
+  as §13.2 did for v1. An exhaustive v2 threshold sweep is therefore a
+  DIFFERENT and larger grid, and 3.1 does not run one: a swept v2 measured
+  against an unswept v1 is not the registered experiment.
+
+
+4. SYMMETRY, PROVED RATHER THAN ASSERTED
+------------------------------------------------------------------------------
+  The point of the rung. PRIMER.md §3.5 records two compounding quirks: the
+  score is asymmetric, and linker.service.js:41 writes the source's strength
+  into the target's record, so the STORED graph depends on save order. Phase
+  4.2 fixes the storage half; this rung removes the algorithm half, so there is
+  no longer a "which direction" for storage to get wrong.
+
+  tests/retrieval.v2-symmetry.test.js, on the 34-document fixture:
+
+    - score(A->B) === score(B->A) at EXACT float equality (toBe, not
+      toBeCloseTo) on every pair, both halves checked: B must be REACHABLE
+      from A exactly when A is reachable from B, and then the scores agree.
+    - v1 is put through the identical check and FAILS it, so the asymmetry
+      being removed is measured rather than assumed.
+    - and a three-document case with deliberately unequal keyword lists, so
+      the property is the formula's and not the fixture's.
+
+  The shared TERMS are equal as a set, not as a sequence: sharedKeywords is
+  built in target order, which is v1's convention (§7.6) and is kept so a
+  v1-vs-v2 diff of explain fields stays comparable. The test asserts set
+  equality and not sequence equality, because sequence equality is a claim
+  this does not make.
+
+
+5. THE REGISTERED COMPARISON, AND WHY THE p IS NOT THE ANSWER
+------------------------------------------------------------------------------
+  results/comparisons/v2-jaccard-vs-v1-overlap.dev.txt, registered at 2.5 as
+  ladder-v1-v2 (a = v2-jaccard, b = v1-overlap, split dev, primary nDCG@8).
+
+    metric        mean A     mean B        A - B    95% CI              differ
+    ---------------------------------------------------------------------------
+     nDCG@1      0.1008    0.0971     +0.0038   [-0.0003, +0.0080]     25
+     nDCG@5      0.1307    0.1291     +0.0017   [-0.0011, +0.0045]     94
+    *nDCG@8      0.1427    0.1402     +0.0025   [+0.0000, +0.0050]    141   p=0.0482
+     nDCG@10     0.1425    0.1400     +0.0025   [+0.0000, +0.0050]    141
+     P@8         0.0381    0.0375     +0.0005   [-0.0002, +0.0012]     45
+     R@8         0.1921    0.1887     +0.0035   [-0.0003, +0.0074]     45
+     MRR@10      0.1546    0.1520     +0.0027   [-0.0003, +0.0057]    124
+
+  THE SENTENCE: v2-jaccard beats v1-overlap by 0.0025 nDCG@8,
+                95% CI [0.0000, 0.0050], p = 0.0482.
+
+  THREE REASONS NOT TO READ THAT AS "v2 WINS", in ascending order of weight.
+
+  (a) The CI lower bound is +0.000028. The interval clears zero by three parts
+      in a hundred thousand. Every other metric's interval straddles zero.
+
+  (b) B = 10,000 CANNOT RESOLVE THIS p, and §11.3 said so in advance — it is
+      the case that section built --resamples for. Six seeds at the registered
+      B, and three of them land on the wrong side of 0.05:
+
+        20260804  0.0482      20260807  0.0478
+        20260805  0.0514      20260808  0.0504
+        20260806  0.0504      20260809  0.0504
+
+      Driven to B = 1,000,000, Monte Carlo error +/- 0.0002:
+
+        20260804  0.0492      20260805  0.0494      20260807  0.0491
+
+      So the true ASL is ~0.0492 and it clears 0.05 by 0.0008. The REGISTERED
+      value stays 0.0482 (seed 20260804, B = 10,000) — the higher-B runs are a
+      Monte Carlo PRECISION measurement, explicitly authorised by §11.3, not a
+      re-test, and not a search for a smaller number.
+
+  (c) HOLM IS THE ONE THAT SETTLES IT. The family is seven (§11.5) and Holm
+      requires the smallest raw p to clear alpha/7 = 0.00714. A raw p of 0.049
+      is nowhere near that. When the family completes at the end of Phase 3
+      this comparison will NOT be declared significant, and that is knowable
+      now rather than at 3.6.
+
+  THE SHAPE OF THE DIFFERENCE IS THE FRAGILE ONE. 141 of 2,304 queries move —
+  and v1 is ahead on 91 of them against v2's 50. v2 wins less often and wins
+  bigger: mean gain +0.298951 on its 50, mean loss -0.100932 on v1's 91. That
+  is the opposite shape from the cap ablation, which was 61 of 61 in one
+  direction (§11.6) and whose significance came from perfect consistency. Here
+  the effect is a minority of large wins, which is exactly the kind that does
+  not replicate.
+
+  THE HONEST SENTENCE: on this key, at this depth, symmetric scoring made no
+  difference that survives the pre-registered protocol. That is a real result.
+
+
+6. THE MECHANISM — measured, not inferred
+------------------------------------------------------------------------------
+  v1's score is s/a with a fixed per query, so v1 ranks by s ALONE, ties broken
+  lexicographically on the id. v2's is s/(a+b-s), which is increasing in s and
+  DECREASING in the target's keyword count b. So Jaccard promotes short
+  targets — and genuinely reorders across s levels, not just within them: at
+  a = 10, a target with s=2,b=2 scores 0.2000 and outranks one with s=3,b=10 at
+  0.1765.
+
+  §13.8 measured that 26,258 of 27,325 corpus documents (96.1%) carry exactly
+  ten keywords, so for most candidate pairs b = 10, the union is constant, and
+  v2 is a monotone transform of v1 — identical ranking. Only the other 3.9% can
+  move. That is the whole effect, and here it is:
+
+    keyword length of RETRIEVED documents, top 8, whole dev run
+      d      v1        v2      delta
+      3       3        24       +21
+      4       1        15       +14
+      5      14       134      +120
+      6      48       226      +178
+      7      97       606      +509
+      8     219       982      +763
+      9     289      1203      +914
+     10   17248     14702     -2546
+      -----------------------------
+     d<=9   671      3190     4.75x
+
+  v2 retrieves 4.75 times as many short documents. The rung does exactly what
+  the formula says it does, and the metric barely notices.
+
+  STRATIFIED BY QUERY KEYWORD COUNT, the split §3 predicts:
+
+    stratum   n      v1 nDCG@8     v2 nDCG@8     moved   contribution to mean
+    d <= 6    25     0.19307917    0.23585211      2         +0.00046412
+    d >= 7  2279     0.13958650    0.14164592    139         +0.00203707
+                                                            -------------
+                                                             +0.00250119
+
+  The two v1 figures reproduce §13.8's stratum means exactly, which is the
+  cross-check that the stratification is the same one.
+
+  The d <= 6 stratum is where the admission rules differ, and it moved on only
+  2 of its 25 queries — so its +0.043 is two queries, and NOTHING should be
+  concluded from it. Note also that it moved UP despite v2 being strictly
+  stricter there: the gain is reordering, not admission. 81% of the overall
+  difference comes from d >= 7, where the admitted sets are identical to v1 by
+  construction and only the scoring function differs. That is the number the
+  rung actually earned.
+
+  THE EXTRA ZERO-RESULT QUERY, all the way down. v1 has 11 (§8.3), v2 has 12,
+  and the difference is one query: 52326, which extracts exactly ONE keyword.
+  v1 scores any document sharing that word at s/1 = 1.0000 — the maximum
+  possible strength — and returns 8 of them. v2 needs two shared words and a
+  one-keyword note can never have two. §7.7's "d <= 6 links on a single shared
+  word" understates this corner: at d = 1 the shipped algorithm links on one
+  word AT FULL CONFIDENCE.
+
+
+7. LATENCY, AND A REPORTING CONVENTION THAT DID NOT TRANSFER
+------------------------------------------------------------------------------
+  Seven runs, all emitting run file 0b2531b7…:
+
+    p95   0.825  0.829  0.861  0.865  0.876  0.880  0.884
+          min 0.825   median 0.865   max 0.884   spread 7.2%
+
+  Comparable to §12.4's 5.8% for v1, so the statistic is as stable here as
+  there. But §12.4's PRESENTATION does not carry over: it reported one
+  significant figure because v1's whole range [1.009, 1.073] rounds to 1.0.
+  This range does not — 0.825 rounds to 0.8 and 0.884 to 0.9 — so one figure
+  would assert a stability the measurement does not have, in the opposite
+  direction from the usual mistake. Reported as the median, 0.87 ms, with the
+  range beside it.
+
+  v1's seven-run range was [1.009, 1.073] and v2's is [0.825, 0.884], so they
+  do not overlap. NO PERFORMANCE CLAIM IS MADE FROM THAT. Both are uncontrolled
+  laptop measurements with a browser open, a controlled figure against a
+  published budget is 6.5's job, and the plausible mechanism — minShared
+  rejects a candidate before the division, and v2 writes 27 fewer lines — is an
+  explanation, not evidence.
+
+  index() is 1.30-1.39 s and is reported separately, never amortised into the
+  per-query number. It is v1's index(): the same buildIndex is called.
+
+
+8. THE cap DEFECT, FIXED
+------------------------------------------------------------------------------
+  Opened by 2.7 (§13.10) and in scope here because 3.1 touches the interface.
+  index.js read the cap as `Number.isFinite(handle.params.cap) ? ... : Infinity`
+  and Number.isFinite does not coerce, so a cap arriving as the STRING "8" fell
+  through to Infinity: the run was silently UNCAPPED while describe(handle)
+  faithfully recorded cap:"8". A run that lies about itself — the exact failure
+  the --param JSON parsing exists to prevent, surviving one layer further down.
+
+  cap is now validated at index() — null or a positive integer, anything else
+  throws — so the failure is at handle construction rather than after 2,304
+  queries of a wrong run. A non-integer is rejected for the same reason in a
+  quieter form: slice truncates, so cap 8.5 behaves as 8 while the digest says
+  8.5.
+
+  Nothing moves. Both spellings every committed run uses — 8 and null — resolve
+  exactly as before, results/parity/ still hashes to 83f9e35e…, and a retriever
+  declaring no cap at all (v3 and v4 will not) is still uncapped by absence.
+  Five tests cover it, including the regression stated as behaviour: cap 1
+  returns one result and cap "1" now throws instead of returning three.
+
+
+9. THE NAIVE PORT — what keeping 0.15 would have cost
+------------------------------------------------------------------------------
+  Run because §3's argument deserved a measurement rather than an assertion.
+  v2-jaccard-naive is the literal one-line port: minShared 1, threshold 0.15,
+  everything else identical.
+
+    label              nDCG@8     nDCG@10   R@8      MRR@10   zero-result  lines
+    v1-overlap         0.140167   0.140025  0.1887   0.1520     11 (0.5%)  17,919
+    v2-jaccard         0.142668   0.142514  0.1921   0.1546     12 (0.5%)  17,892
+    v2-jaccard-naive   0.124981   0.124864  0.1581   0.1420    452 (19.6%)  9,104
+
+  Keeping the numeral would have cost 10.8% of nDCG@8 against v1 and
+  multiplied zero-result queries by 41 — and every bit of that is the
+  admission rule, not Jaccard. §13.5 predicted it from v1's own axis: raising
+  v1 to "3 shared words" costs 12.2% and gives 461 zero-result queries. Measured
+  here in Jaccard's coordinates: 10.8% and 452. The small gap between the two is
+  itself the target-length dependence Jaccard adds, which v1's axis cannot show.
+
+  So a v2 that had "just changed the denominator" would have reported a 10.8%
+  regression and attributed it to symmetric scoring. That is the failure this
+  rung's threshold decision avoids, and it is now a number rather than an
+  argument.
+
+  EXPLORATORY. The pair is not registered, compare-runs.js suppresses its
+  p-value, and registry.json was not touched this session.
+
+
+10. WHAT THIS FILE DOES NOT ESTABLISH
+==============================================================================
+  - NOT a test-set result. dev only, until 3.6.
+  - NOT significant under the pre-registered protocol. Raw p 0.049 against a
+    Holm bound of 0.00714 at family size 7. §5.
+  - NOT a one-variable change in the param diff, and compare-runs.js says so
+    in its own output: version, threshold and minShared all move. Three
+    coordinates express one behavioural change plus the bounded 1.09%
+    residual of §3. The tool counts params; the experiment counts behaviours;
+    they disagree here for a stated reason and the disagreement is printed
+    rather than suppressed.
+  - NOT a claim that Jaccard is a better similarity function in general. It is
+    a claim about 2,304 cooking questions whose keyword lists are ten words
+    long 96% of the time — the regime where Jaccard and the overlap
+    coefficient are nearly the same function. A corpus with variable document
+    lengths would exercise this far harder, and a note-taking app's notes are
+    exactly that (§7.7).
+  - NOT a latency comparison. §7.
+  - Absolutes remain LOWER BOUNDS (§5.1). Validation (§10) and incompleteness
+    (§5.1) are two separate qualifiers and neither retires the other.
