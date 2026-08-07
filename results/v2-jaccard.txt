@@ -214,6 +214,14 @@ numbers, which is the category that gets committed.
 
 6. THE MECHANISM — measured, not inferred
 ------------------------------------------------------------------------------
+  Every number in this section regenerates with
+
+    cd backend && npm run analyse:rungs -- --a v2-jaccard --b v1-overlap --split dev
+
+  which is read-only, re-derives from the written run files through the same
+  metrics.js validated at 2.4, and asserts its own aggregate against both
+  committed sidecars at exact float equality before printing anything.
+
   v1's score is s/a with a fixed per query, so v1 ranks by s ALONE, ties broken
   lexicographically on the id. v2's is s/(a+b-s), which is increasing in s and
   DECREASING in the target's keyword count b. So Jaccard promotes short
