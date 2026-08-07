@@ -119,6 +119,41 @@ function resolveParams(version, defaults, overrides = {}) {
 }
 
 /**
+ * `cap` is the one per-retriever param the INTERFACE itself reads — index.js
+ * truncates with slice(0, min(k, cap)) — so it is the one whose type the
+ * interface has to enforce.
+ *
+ * WHY THIS EXISTS (opened by 2.7, EVALUATION.md §13.10). index.js used to
+ * write `Number.isFinite(handle.params.cap) ? … : Infinity`, and
+ * Number.isFinite does not coerce. A cap arriving as the STRING "8" is not
+ * finite, so it fell through to Infinity and the run was silently UNCAPPED
+ * while describe(handle).digest faithfully recorded cap:"8". That is exactly
+ * the "run that lies about itself" the --param JSON parsing exists to prevent,
+ * surviving one layer further down. A non-integer number is the same defect in
+ * a quieter form: slice truncates, so cap 8.5 behaves as 8 while the digest
+ * says 8.5.
+ *
+ * `null` is the spelling for "no cap" (`--param cap=null`), so it is the only
+ * non-integer accepted. `Infinity` is rejected rather than aliased: JSON
+ * cannot express it, so it could only arrive as the string "Infinity", which
+ * is the bug this catches.
+ *
+ * Absent is left alone — `cap` is optional, and a retriever that declares no
+ * cap (v3 and v4 will not) is uncapped by not having the param at all.
+ */
+function assertCapParam(version, params) {
+  if (!('cap' in params) || params.cap === null) return params;
+  if (!Number.isInteger(params.cap) || params.cap < 1) {
+    throw new TypeError(
+      `${version}: cap must be null or a positive integer, got ${typeof params.cap} ` +
+        `${JSON.stringify(params.cap)}. A cap the interface cannot read silently ` +
+        `produces an UNCAPPED run whose digest records the cap it ignored.`
+    );
+  }
+  return params;
+}
+
+/**
  * Validate a corpus before indexing. Duplicate ids are checked because a
  * duplicate silently makes one document unreachable and inflates document
  * frequency — a slow, quiet corruption of every IDF on the ladder.
@@ -177,6 +212,7 @@ module.exports = {
   canonicalJson,
   paramsDigest,
   resolveParams,
+  assertCapParam,
   assertCorpusDocs,
   assertHits
 };
