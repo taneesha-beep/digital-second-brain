@@ -71,6 +71,7 @@ const { execFileSync } = require('child_process');
 
 const { index, search, describe, versions } = require('../retrieval');
 const { scoreQuery, aggregate } = require('../eval/metrics');
+const { retrieverSource } = require('../eval/source-digest');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_KS = [1, 5, 8, 10];
@@ -436,6 +437,7 @@ function main() {
   const runId = `${label}.${split}.${provenance.digest.slice(0, 8)}`;
   console.log(`\n  ${JSON.stringify(provenance.params)}`);
   console.log(`  digest ${provenance.digest}`);
+  console.log(`  source ${retrieverSource(retriever).digest}  (${retrieverSource(retriever).files.length} files under backend/retrieval/)`);
   console.log(`  runid  ${runId}`);
   console.log(`  index() ${indexMs.toFixed(0)} ms\n`);
 
@@ -503,6 +505,13 @@ function main() {
     site,
     split,
     retriever: provenance,
+    // The param digest covers {version, params} and nothing else, so two rungs
+    // sharing code can drift with no change to either digest — v2 imports v1's
+    // buildIndex, v3 imports its tokeniser. This is the source side of the same
+    // question, added at 3.2 to close the first item on 3.1's noticed-list.
+    // eval/source-digest.js documents what is hashed and what is deliberately
+    // not traversed.
+    retrieverSource: retrieverSource(retriever),
     k: kMax,
     ksReported: ks,
     command: `npm run eval -- --retriever ${retriever} --split ${split}` +
