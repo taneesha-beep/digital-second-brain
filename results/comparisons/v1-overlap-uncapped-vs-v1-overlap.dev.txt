@@ -1,5 +1,5 @@
 PAIRED BOOTSTRAP — v1-overlap-uncapped  vs  v1-overlap
-roadmap 2.5 · 2026-08-04T13:34:24Z
+roadmap 2.5 · 2026-08-07T18:28:34Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
@@ -9,6 +9,7 @@ roadmap 2.5 · 2026-08-04T13:34:24Z
   A  v1-overlap-uncapped
      runid    v1-overlap-uncapped.dev.1154b598
      digest   1154b598df16ef3cfb7326d7b43c29954896763428b3dcd8c0da8adf1edd726d
+     source   9578a38f6058ce92bcfcf3cff273d601db13b2b58015386d4d3fc7e58d04e5f4
      run      results/runs/v1-overlap-uncapped.dev.run
               sha256 e8aeaede93c64dca2effaf0619ecfeb8e0f4cd80641af87f32a4a2e566b24c73  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v1-overlap-uncapped.dev.run.json  (committed)
@@ -17,6 +18,7 @@ roadmap 2.5 · 2026-08-04T13:34:24Z
   B  v1-overlap
      runid    v1-overlap.dev.93bc8d65
      digest   93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
+     source   9578a38f6058ce92bcfcf3cff273d601db13b2b58015386d4d3fc7e58d04e5f4
      run      results/runs/v1-overlap.dev.run
               sha256 9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v1-overlap.dev.run.json  (committed)
@@ -31,6 +33,10 @@ roadmap 2.5 · 2026-08-04T13:34:24Z
      topN             A 10               B 10              
 
   ONE variable changed (cap). The difference below is attributable to it.
+
+  the SOURCE each run was produced from, re-hashed now and compared:
+     A  9578a38f6058ce92…  MATCHES the working tree (3 files)
+     B  9578a38f6058ce92…  MATCHES the working tree (3 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
@@ -170,7 +176,7 @@ roadmap 2.5 · 2026-08-04T13:34:24Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           203aeb81b99aa73a09050c45f02c0f0178c5cdf4
+  git commit           57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07  (tracked files dirty)
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js

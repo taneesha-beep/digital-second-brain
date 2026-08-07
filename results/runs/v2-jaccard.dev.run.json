@@ -29,11 +29,11 @@
     "files": [
       {
         "path": "backend/retrieval/index.js",
-        "sha256": "2b0a74aeb2db8bed821aea4b5b3f71702a5a0316eed0d1114d7789e9fe408419"
+        "sha256": "8bf85864705b7ffd52828fcc7bc72ac767b1dcaba23425d92e9fc57b64357f43"
       },
       {
         "path": "backend/retrieval/types.js",
-        "sha256": "7fc3b7381c844b5d533feaa7d076bc52ad06cdba9ff70c96fb48c06ce67a6c2a"
+        "sha256": "3310c681049b2f9cb2239c93975d438a33eb9e43cc2c6db66f3c936eeefeae9b"
       },
       {
         "path": "backend/retrieval/v1-overlap.js",
@@ -44,7 +44,7 @@
         "sha256": "c12eb4325b8696caf5af5357eb2f8ea4048e08649dd7cd265da2b466acbdc057"
       }
     ],
-    "digest": "585e4f2fa13c322226682dcf78310e8b20cddbd51c367ea562edac43f3ba2cda"
+    "digest": "e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf"
   },
   "k": 10,
   "ksReported": [
@@ -119,16 +119,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.4285434140625004,
-    "p50": 0.395584,
-    "p95": 0.828875,
-    "max": 1.659292
+    "mean": 0.49592184505208287,
+    "p50": 0.440292,
+    "p95": 0.984042,
+    "max": 5.167959
   },
   "timingsMs": {
-    "load": 82.947834,
-    "index": 1310.324166,
-    "search": 1000.720084,
-    "total": 2393.9920840000004
+    "load": 82.086375,
+    "index": 1315.973333,
+    "search": 1157.845917,
+    "total": 2555.9056250000003
   },
   "environment": {
     "node": "v25.8.1",
@@ -137,12 +137,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 383
+    "peakRssMiB": 384
   },
   "git": {
-    "commit": "22bc9730f226a12d923c818b3a2b2ce16349cf6f",
+    "commit": "57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07",
     "dirty": true,
     "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
   },
-  "generatedAt": "2026-08-07T18:04:33.956Z"
+  "generatedAt": "2026-08-07T18:26:05.225Z"
 }

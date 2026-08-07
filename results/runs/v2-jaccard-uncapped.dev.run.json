@@ -7,22 +7,23 @@
     "evidence": "results/metric-validation.txt",
     "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
   },
-  "runId": "v1-overlap.dev.93bc8d65",
-  "label": "v1-overlap",
+  "runId": "v2-jaccard-uncapped.dev.e2bf99aa",
+  "label": "v2-jaccard-uncapped",
   "site": "cooking",
   "split": "dev",
   "retriever": {
-    "version": "v1-overlap",
+    "version": "v2-jaccard",
     "params": {
       "idfCorpus": "leave-one-out",
       "topN": 10,
-      "threshold": 0.15,
-      "cap": 8,
+      "lengthBonus": true,
       "scorePrecision": 4,
-      "lengthBonus": true
+      "cap": null,
+      "threshold": 0,
+      "minShared": 2
     },
     "docCount": 27325,
-    "digest": "93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30"
+    "digest": "e2bf99aa105360fe8b0e4153bb3325d3671184a8ab4632c18e4677563139b219"
   },
   "retrieverSource": {
     "files": [
@@ -37,9 +38,13 @@
       {
         "path": "backend/retrieval/v1-overlap.js",
         "sha256": "cc86cb4b63a598f3534b1f821dd23ced67af3b86ad9f0cbb7304f5b3418a12e4"
+      },
+      {
+        "path": "backend/retrieval/v2-jaccard.js",
+        "sha256": "c12eb4325b8696caf5af5357eb2f8ea4048e08649dd7cd265da2b466acbdc057"
       }
     ],
-    "digest": "9578a38f6058ce92bcfcf3cff273d601db13b2b58015386d4d3fc7e58d04e5f4"
+    "digest": "e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf"
   },
   "k": 10,
   "ksReported": [
@@ -48,7 +53,7 @@
     8,
     10
   ],
-  "command": "npm run eval -- --retriever v1-overlap --split dev",
+  "command": "npm run eval -- --retriever v2-jaccard --split dev --param cap=null --label v2-jaccard-uncapped",
   "inputs": [
     {
       "name": "corpus",
@@ -70,39 +75,39 @@
     }
   ],
   "output": {
-    "run": "results/runs/v1-overlap.dev.run",
-    "lines": 17919,
-    "bytes": 904379,
-    "sha256": "9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e"
+    "run": "results/runs/v2-jaccard-uncapped.dev.run",
+    "lines": 22174,
+    "bytes": 1318161,
+    "sha256": "de30944d8405bc2c08c60829e0d942be94d9e95f814824fff92c21e0b710bb58"
   },
   "queries": {
     "total": 2304,
     "scored": 2304,
     "unjudgeable": 0,
     "unjudgeableIds": [],
-    "zeroResult": 11,
-    "zeroResultFile": "results/runs/v1-overlap.dev.zero.txt"
+    "zeroResult": 12,
+    "zeroResultFile": "results/runs/v2-jaccard-uncapped.dev.zero.txt"
   },
   "metrics": {
     "ndcg": {
-      "1": 0.09707754629629631,
-      "5": 0.1290594680121593,
-      "8": 0.14016693655110876,
-      "10": 0.14002513715403433
+      "1": 0.10083912037037038,
+      "5": 0.13071775876109384,
+      "8": 0.14266812656887737,
+      "10": 0.14712234887432685
     },
     "p": {
-      "1": 0.10199652777777778,
-      "5": 0.04930555555555596,
-      "8": 0.037543402777777776,
-      "10": 0.030034722222222372
+      "1": 0.10633680555555555,
+      "5": 0.04947916666666708,
+      "8": 0.0380859375,
+      "10": 0.03302951388888892
     },
     "r": {
-      "1": 0.07114701928224995,
-      "5": 0.15816944168682884,
-      "8": 0.18865224099868316,
-      "10": 0.18865224099868316
+      "1": 0.07390550693657094,
+      "5": 0.15894552468947434,
+      "8": 0.19213827319565283,
+      "10": 0.20626835349481798
     },
-    "mrr": 0.15196345899470887
+    "mrr": 0.1565092110339505
   },
   "conventions": {
     "gain": "2^grade - 1",
@@ -114,16 +119,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.6258057677951391,
-    "p50": 0.55375,
-    "p95": 1.183542,
-    "max": 23.316833
+    "mean": 0.4529716150173609,
+    "p50": 0.41575,
+    "p95": 0.886083,
+    "max": 1.98525
   },
   "timingsMs": {
-    "load": 104.987041,
-    "index": 1343.835458,
-    "search": 1457.077958,
-    "total": 2905.900457
+    "load": 83.896958,
+    "index": 1326.319,
+    "search": 1058.797833,
+    "total": 2469.0137910000003
   },
   "environment": {
     "node": "v25.8.1",
@@ -132,12 +137,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 364
+    "peakRssMiB": 385
   },
   "git": {
     "commit": "57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07",
     "dirty": true,
     "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
   },
-  "generatedAt": "2026-08-07T18:25:55.520Z"
+  "generatedAt": "2026-08-07T18:26:10.996Z"
 }
