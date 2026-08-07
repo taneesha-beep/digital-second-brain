@@ -146,10 +146,44 @@ function main() {
     }
   }
 
-  // --- keyword lengths, from the retriever rather than re-tokenised here.
-  // Both rungs must share the keyword stage for this to be one number; asserted.
-  const handle = retrieval.index(A.sidecar.retriever.version, docs);
-  const kwLen = new Map(docs.map((d) => [d.id, handle._state.keywordsById.get(d.id).length]));
+  // --- term counts, from the retriever rather than re-tokenised here.
+  //
+  // This read `handle._state.keywordsById` directly until 3.2, and it CRASHED
+  // on v3 — the first rung that does not represent a document as a keyword
+  // list. Reaching into another module's private state was the defect; the fix
+  // is the optional `termCount` accessor on the Retriever contract, with the
+  // old path kept as a named fallback for the rungs written before it existed.
+  //
+  // The old comment claimed "both rungs must share the keyword stage for this
+  // to be one number; asserted". It was not asserted, and for v3-vs-v2 it is
+  // FALSE: v1/v2 report a top-10 selection length (capped at 10, and 96.1% of
+  // the corpus sits exactly there) while v3 reports distinct terms (mean 36.5,
+  // max 1,021). So the two are computed separately, compared, and the source is
+  // printed — a `d <= 6` stratum does not mean the same thing either side.
+  const termCounts = (version) => {
+    const retriever = retrieval.versions().includes(version) ? require(`../retrieval/${version}`) : null;
+    const handle = retrieval.index(version, docs);
+    if (retriever && typeof retriever.termCount === 'function') {
+      return { by: new Map(docs.map((d) => [d.id, retriever.termCount(handle._state, d.id)])), how: 'termCount()' };
+    }
+    if (handle._state.keywordsById) {
+      return {
+        by: new Map(docs.map((d) => [d.id, handle._state.keywordsById.get(d.id).length])),
+        how: 'keyword-list length (pre-3.2 fallback)'
+      };
+    }
+    fail(`${version} exposes neither termCount() nor keywordsById, so queries cannot be stratified.`);
+  };
+  const countsA = termCounts(A.sidecar.retriever.version);
+  const countsB = termCounts(B.sidecar.retriever.version);
+  const kwLen = countsA.by;
+  const countsAgree = docs.every((d) => countsA.by.get(d.id) === countsB.by.get(d.id));
+  // The counts can disagree while the 6/7 BUCKETING still agrees, and on this
+  // corpus they do: a top-10 selection length is min(10, distinct terms), so
+  // below 10 the truncation does not bind and the two notions coincide exactly.
+  // They diverge only above 10, which is on one side of the boundary. So the
+  // stratified table stays like-for-like even when the histogram does not.
+  const bucketsAgree = docs.every((d) => (countsA.by.get(d.id) <= 6) === (countsB.by.get(d.id) <= 6));
 
   const out = [];
   const w = (s = '') => out.push(s);
@@ -165,11 +199,27 @@ function main() {
   w(`  re-derived aggregates match both committed sidecars at exact float equality`);
   w();
 
-  // --- 1. stratified by query keyword count
-  w('1. STRATIFIED BY QUERY KEYWORD COUNT');
+  // --- 1. stratified by query term count
+  w('1. STRATIFIED BY QUERY TERM COUNT');
   w('-'.repeat(78));
   w('  The d <= 6 stratum is where a length-dependent threshold behaves');
   w('  differently from a length-independent minShared. EVALUATION.md §7.7, §13.8.');
+  w();
+  w(`  counts for A (${A.label}) via ${countsA.how}`);
+  w(`  counts for B (${B.label}) via ${countsB.how}`);
+  if (countsAgree) {
+    w('  The two rungs assign every document the same count, so the strata below');
+    w('  mean one thing and the comparison within them is like-for-like.');
+  } else if (bucketsAgree) {
+    w('  The two rungs disagree on the COUNT but agree on the 6/7 BUCKETING, on every');
+    w('  document. That is forced rather than lucky: a top-10 selection length is');
+    w('  min(10, distinct terms), so below 10 the truncation does not bind and the two');
+    w('  notions coincide; they diverge only above 10, which is on one side of the');
+    w('  boundary. The strata below are therefore still like-for-like.');
+  } else {
+    w('  !! THE TWO RUNGS DISAGREE ON THE BUCKETING, not only the count, so B\'s scores');
+    w('     are being read inside A\'s buckets. Read the total; the split is descriptive.');
+  }
   w();
   w('  stratum     n        B nDCG@8        A nDCG@8      moved   contribution');
   for (const [label, pred] of [['d <= 6', (r) => kwLen.get(r.qid) <= 6], ['d >= 7', (r) => kwLen.get(r.qid) >= 7]]) {
@@ -213,20 +263,33 @@ function main() {
   }
   const la = retrievedLengths(A);
   const lb = retrievedLengths(B);
-  w('3. MECHANISM — KEYWORD LENGTH OF RETRIEVED DOCUMENTS');
+  w('3. MECHANISM — TERM LENGTH OF RETRIEVED DOCUMENTS');
   w('-'.repeat(78));
   w(`  Top ${PRIMARY_K}, whole run. A similarity function whose denominator reads the`);
   w('  TARGET\'s length will show up here and nowhere else in the metrics. §14.6.');
   w();
+  // ONE yardstick for both sides — A's, named — so the two columns are
+  // comparable. The BUCKETING adapts to it: a top-10 selection never exceeds
+  // 10 and the per-value rows are the whole story, but a full-vocabulary count
+  // runs to 1,021 and rows 1..10 would show a corner of the distribution while
+  // looking complete. The v1/v2 output is unchanged, because there the
+  // condition below is false.
+  w(`  both columns measured with A's yardstick: ${countsA.how}`);
+  const widest = Math.max(...[...la.keys()], ...[...lb.keys()]);
+  const buckets = widest <= 10
+    ? Array.from({ length: 10 }, (_, i) => [i + 1, i + 1, String(i + 1)])
+    : [...Array.from({ length: 9 }, (_, i) => [i + 1, i + 1, String(i + 1)]),
+       [10, 19, '10-19'], [20, 49, '20-49'], [50, Infinity, '50+']];
   w('   d        B count      A count        delta');
-  for (let d = 1; d <= 10; d += 1) {
-    const b = lb.get(d) || 0;
-    const a = la.get(d) || 0;
+  for (const [lo, hi, label] of buckets) {
+    const inRange = (m) => [...m].filter(([d]) => d >= lo && d <= hi).reduce((t, [, c]) => t + c, 0);
+    const b = inRange(lb);
+    const a = inRange(la);
     if (a === 0 && b === 0) continue;
-    w(`  ${String(d).padStart(2)}   ${String(b).padStart(10)}   ${String(a).padStart(10)}   ${String(a - b).padStart(10)}`);
+    w(`  ${label.padStart(5)}   ${String(b).padStart(10)}   ${String(a).padStart(10)}   ${String(a - b).padStart(10)}`);
   }
   const shortOf = (m) => [...m].filter(([d]) => d <= 9).reduce((t, [, c]) => t + c, 0);
-  w(`  d<=9 ${String(shortOf(lb)).padStart(10)}   ${String(shortOf(la)).padStart(10)}   ` +
+  w(`  d<=9 ${String(shortOf(lb)).padStart(11)}   ${String(shortOf(la)).padStart(10)}   ` +
     `${shortOf(lb) ? `${(shortOf(la) / shortOf(lb)).toFixed(2)}x` : '—'}`);
   w();
 

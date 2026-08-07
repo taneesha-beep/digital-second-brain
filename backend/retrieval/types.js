@@ -64,11 +64,25 @@ const crypto = require('crypto');
  * self-retrieval exclusion, ordering, and the postconditions. A retriever
  * cannot opt out of them by exporting its own.
  *
+ * `termCount` is OPTIONAL and is not part of retrieval. It exists because
+ * scripts/analyse-rungs.js stratifies by how many terms a query carries, and at
+ * 3.1 it read that straight out of v1's private `_state.keywordsById` — which
+ * crashed on the first rung that does not represent documents as keyword lists.
+ * An accessor is the fix; reaching into another module's state was the defect.
+ *
+ * The quantity is NOT the same across rungs and the caller must say which it is
+ * reporting: for v1 and v2 it is the length of the top-10 selection, so it is
+ * capped at 10 and 96% of the corpus sits exactly there; for v3 at full
+ * vocabulary it is the number of distinct terms, mean 36.5 and unbounded. A
+ * `d <= 6` stratum means different things either side of that, which is why
+ * analyse-rungs prints the source rather than assuming the two agree.
+ *
  * @typedef  {Object} Retriever
  * @property {string}   version
  * @property {Object}   defaultParams
  * @property {function(CorpusDoc[], Object): Object} buildIndex
  * @property {function(Object, CorpusDoc, RankContext): void} rank
+ * @property {function(Object, string): number} [termCount]
  */
 
 /**

@@ -416,4 +416,19 @@ function rank(state, queryDoc, ctx) {
   }
 }
 
-module.exports = { version: 'v3-tfidf', defaultParams, buildIndex, rank };
+/**
+ * How many terms this document's vector carries. Not part of retrieval —
+ * scripts/analyse-rungs.js stratifies by it, and at 3.1 it read the equivalent
+ * straight out of v1's private `_state.keywordsById`, which crashed on the
+ * first rung that does not store keyword lists.
+ *
+ * The quantity is NOT comparable to v1's and v2's. Theirs is the length of a
+ * top-10 selection — capped at 10, and 96.1% of the corpus sits exactly there.
+ * This one is the count of distinct terms: mean 36.5, p50 30, max 1,021 on
+ * cooking. analyse-rungs prints which it used rather than assuming they agree.
+ */
+function termCount(state, docId) {
+  return state.terms[state.indexById.get(docId)].length;
+}
+
+module.exports = { version: 'v3-tfidf', defaultParams, buildIndex, rank, termCount };
