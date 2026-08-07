@@ -1,0 +1,342 @@
+SWEEP — v1-overlap threshold x cap on cooking.dev
+roadmap 2.7 · 2026-08-06
+==============================================================================
+
+The two remaining shipped constants — `> 0.15` and `slice(0, 8)` — measured
+for the first time. Every figure below traces to results/sweeps/v1-threshold.csv
+and results/sweeps/v1-sweep.manifest.json, both committed, or to the two
+committed sidecars in results/runs/.
+
+Generated at 180663e. The 342 per-point run files and sidecars are gitignored
+(§8.5, extended — see §7 below); this file and the CSV are evidence ABOUT the
+numbers, which is the category that gets committed.
+
+THE HEADLINE, STATED FIRST BECAUSE IT IS THE UNGLAMOROUS ANSWER:
+the shipped guesses were fine. The best configuration on the entire grid beats
+them by 0.000226 nDCG@8, a 0.16% relative gain whose 95% interval straddles
+zero and which comes from 2 of 2,304 queries.
+
+
+1. THE GRID
+------------------------------------------------------------------------------
+  points         342 = 34 thresholds x 10 caps, + 2 cap:null probes
+  wall           986 s (16.4 min) of grid, 2.89 s/point, sequential
+  runner         every point through backend/scripts/run-eval.js — the same
+                 code path, the same ten pre-search assertions and the same
+                 written-bytes post-conditions that produced §12's baseline
+  disk           70 MB across 1,026 files in results/sweeps/runs/ (gitignored)
+
+  THRESHOLD — the achievable score lattice, not a decimal ruler.
+  strength = Number((shared/d).toFixed(4)) with d = |query keywords| <= 10, and
+  the filter is strictly greater, so the retriever's behaviour is a STEP
+  FUNCTION whose steps sit exactly at the achievable values — the Farey
+  fractions s/d for 1 <= s <= d <= 10. Any threshold inside a gap produces the
+  same run. So {0} union those 32 values is EXHAUSTIVE over the parameter's
+  achievable behaviours rather than a sample of them:
+
+    0 .1 .1111 .125 .1429 [.15] .1667 .2 .2222 .25 .2857 .3 .3333 .375 .4
+    .4286 .4444 .5 .5556 .5714 .6 .625 .6667 .7 .7143 .75 .7778 .8 .8333
+    .8571 .875 .8889 .9 1
+
+  Checked, not just derived: at the shipped configuration the retriever emits
+  18 distinct scores across the whole dev run and every one is in the lattice.
+  (18 is the same count §10.2 arrived at from the other direction, when it
+  explained why trec_eval's tie-break direction matters here.)
+
+  CAP — 1..10, and 10 is the ceiling that matters.
+  run-eval.js searches at k=10 and index.js:166 is slice(0, min(k, cap)), so
+  EVERY cap >= 10 is identical to cap:null. Verified on the written retrieval
+  columns at both probe thresholds, not argued:
+
+    t=0     sw-t0.0000-c10 == sw-t0.0000-cnull   f092209c…
+    t=0.15  sw-t0.1500-c10 == sw-t0.1500-cnull   60601768…
+
+  So §8.4's measurement that the above-threshold pool is a median of 63 deep
+  does NOT widen the observable sweep range. It says the opposite: almost all
+  of that pool is invisible to the metrics at any cap, because the reporting
+  depth truncates first. What the cap discards beyond rank 10 is unmeasurable
+  here by construction.
+
+  topN IS NOT SWEPT. It is the third unvalidated constant and it belongs to
+  3.2, which already registers "full vocabulary versus top-10 truncation" as a
+  one-variable ablation. Mechanically it is also not a third orthogonal axis:
+  topN is the DENOMINATOR of strength, so moving it redefines what every
+  threshold on this grid means.
+
+
+2. THE SHIPPED 0.15 IS NOT AN ACHIEVABLE SCORE
+------------------------------------------------------------------------------
+  0.15 = 3/20, and no s/d with d <= 10 equals it. The nearest achievable values
+  either side are 1/7 = 0.1429 and 1/6 = 0.1667. So `> 0.15` keeps exactly what
+  `> 0.1429` keeps, and the deployed constant is not a distinguishable setting
+  at all — it is one arbitrary point inside a plateau.
+
+  Checked on the written bytes rather than left as arithmetic: the retrieval
+  columns (qid Q0 docid rank score) of threshold 0.15 and threshold 0.1429 are
+  byte-identical at 10 of 10 caps. The DIGESTS differ, because the params
+  differ and provenance has to record that; the RESULTS do not.
+
+  The plateau is wider than those two. At cap 8, all SIX lattice thresholds in
+  [0.1, 0.1667] give one value of nDCG@8 and one value of nDCG@10 — at full
+  float precision, not to four decimals — across FOUR distinct run files
+  (17,916 / 17,919 / 17,921 / 17,925 lines). Nine retrieved documents move and
+  no metric moves at all, because every one of them is unjudged. That is §5.1's
+  incompleteness, visible as a measurement rather than as an argument.
+
+
+3. BOTH AXES ARE MONOTONE, SO THIS WAS A VERIFICATION AND NOT A SEARCH
+------------------------------------------------------------------------------
+  CAP. The list at cap c is a PREFIX of the list at any larger cap. DCG@k, R@k,
+  P@k (which divides by k, §9.1, not by the number returned) and MRR@10 are all
+  sums or first-hits over a prefix, so each is monotone non-decreasing in the
+  cap, PER QUERY.
+
+  THRESHOLD. Candidates surviving t1 score > t1; the extras admitted by
+  lowering to t0 < t1 score <= t1. Ordering is by descending score, so the
+  extras sort strictly below every survivor: lowering the threshold APPENDS TO
+  THE TAIL and never reorders. Same four metrics, monotone non-increasing in
+  the threshold, per query.
+
+  ASSERTED ON THE GRID, over 7 metric columns and every adjacent pair on both
+  axes: 4,452 comparisons, 0 violations. A violation would have meant the
+  prefix argument is false — a defect in retrieval/index.js's sort or
+  truncation — not a tuning discovery.
+
+  This is what makes §5's selection-bias question answerable rather than
+  hand-waved. The argmax is forced by an argument that holds on every sample.
+
+
+4. THE CURVES
+------------------------------------------------------------------------------
+  THRESHOLD at the shipped cap 8 — flat, then a cliff. The right-hand column is
+  how many of a 10-keyword note's words must be shared, which is what the
+  threshold actually controls for the 96% of dev queries that have exactly 10.
+
+    threshold        nDCG@8    nDCG@10   zero-result   words needed (d=10)
+    0                0.140393  0.140251        0         1
+    0.1 .. 0.1667    0.140167  0.140025       11         2   <- shipped 0.15
+    0.2 .. 0.2857    0.123025  0.122905      461         3
+    0.3 .. 0.375     0.055064  0.055003    1,577         4
+    0.4 .. 0.4444    0.016887  0.016872    2,121         5
+    0.5 .. 0.5714    0.003864  0.003864    2,272         6
+    0.6 .. 0.6667    0.001142  0.001142    2,296         7
+    0.7 .. 0.7143    0.000434  0.000434    2,302         8
+    0.75 .. 0.9      0.000000  0.000000    2,303         9-10
+    1.0              0.000000  0.000000    2,304         —
+
+  The shipped value sits on the second-best step, 0.000226 below the best, and
+  one step above a 12% collapse. Moving it UP one lattice step, to 0.2, costs
+  12.2% of nDCG@8 and multiplies zero-result queries by 42.
+
+  CAP at the shipped threshold 0.15 — steep, then flat exactly where the
+  reporting depth says it must be:
+
+    cap      1       2       3       4       5       6       7       8    9   10
+    nDCG@8  .0777   .1026   .1124   .1213   .1283   .1331   .1369   .1402  =    =
+    nDCG@10 .0777   .1026   .1124   .1212   .1282   .1330   .1368   .1400 .1426 .1451
+
+  nDCG@8 is flat from cap 8 upward BY CONSTRUCTION — min(k, cap) = k for k <= 8
+  — so the cap can only be seen at @10, which is why the 2.5 registry overrode
+  the cap ablation's primary metric to k=10 in advance. The @10 gain from cap 8
+  to cap 10 is 0.005086, reproducing §11.6's registered +0.0051 exactly.
+
+  ZERO-RESULT QUERIES ARE A THRESHOLD ARTEFACT, NOT A COVERAGE FAILURE. §8.3
+  measured 11 (0.48%) at the shipped configuration and roadmap 7.1 names
+  "retrieval returns zero candidates above threshold" as a failure mode wanting
+  a measured frequency. It now has a mechanism too: all 11 disappear at
+  threshold 0 and are present at every threshold from 0.1 up, so they are
+  queries whose best candidate scores exactly 0.1000 — one shared word out of
+  ten. They are not queries with no candidates.
+
+
+5. THE SELECTION, AND WHAT ITS MARGIN IS WORTH
+------------------------------------------------------------------------------
+  The rule was declared in backend/scripts/sweep-v1.js BEFORE the grid ran, in
+  the same commit: argmax nDCG@8; among exact ties argmax nDCG@10; among still
+  exact ties prefer the shipped value.
+
+    shipped    threshold 0.15  cap 8     nDCG@8 0.140167   nDCG@10 0.140025
+    selected   threshold 0     cap 10    nDCG@8 0.140393   nDCG@10 0.145337
+    margin                               +0.000226         +0.005312
+
+  The primary plateau is 4 of 342 points, ALL at threshold 0 (caps 8, 9, 10 and
+  null); the @10 tie-break narrows it to 2 (cap 10 and cap null, which are the
+  same run); "prefer the shipped value" then takes cap 10 as the smaller change
+  from 8. Selection is deterministic, and no step of it looked at a number the
+  rule had not named in advance.
+
+  WHAT THE MARGIN IS WORTH — the exploratory comparison, in full at
+  results/comparisons/v1-overlap-tuned-vs-v1-overlap.dev.txt:
+
+    nDCG@8   +0.000226   95% CI [+0.000000, +0.000588]   2 of 2,304 differ
+    nDCG@10  +0.005312   95% CI [+0.0039,   +0.0068]    63 of 2,304 differ
+
+  The interval on the primary metric STRADDLES ZERO. The data is consistent
+  with no difference at all. Two queries moved.
+
+  p-VALUES ARE SUPPRESSED, and by the tool rather than by restraint. The pair
+  is not in results/comparisons/registry.json on dev, and it is not there
+  deliberately: the registered `sweep-tuned-vs-shipped` entry names split
+  `test`, written at 2.5 when neither run existed. Sweeps select; they do not
+  test. Nothing was added to the registry this session.
+
+  THE COMPARISON MOVES TWO VARIABLES AT ONCE, and compare-runs.js says so in
+  its own output. That is correct and is not a defect: the selected point
+  differs from the shipped one on both axes, so this comparison prices the
+  PACKAGE. The attribution lives in the grid, where each axis moves alone —
+  §4 above shows the threshold contributes +0.000226 at cap 8 and the cap
+  contributes +0.005086 at threshold 0.15.
+
+  SELECTION BIAS — QUANTIFIED, NOT ONLY NAMED.
+  Reporting the best of N configurations reports a maximum of N noisy
+  estimates, biased upward by an amount growing with N. At N = 342 that is not
+  a footnote. Two things are done about it:
+
+    1. STRUCTURAL. Because both axes are monotone PER QUERY (§3), the argmax is
+       forced by an argument that holds on every subset of dev, on test, and on
+       any other corpus. Nothing is being picked out of noise, so the usual
+       max-of-N optimism is structurally absent.
+    2. MEASURED, so that claim is not taken on trust. Split dev in half 200
+       times (mulberry32, seed 20260806 — 1.4 used 20260803 and 2.5 uses
+       20260804; different purpose, different stream), redo the FULL 342-point
+       selection on half A, and compare the margin it earns on A against the
+       margin the same configuration earns on the held-out half B:
+
+         mean margin(A) - margin(B)   +0.0000135
+         5th / 95th percentile        -0.000451 / +0.000451
+         threshold chosen on half A   0, in 200 of 200 repeats
+
+  So the optimism is +1.4e-5 against a margin of +2.3e-4 — but the honest
+  reading is the one that follows from putting those two beside each other:
+  THE MARGIN IS SMALLER THAN THE SPLIT-HALF NOISE ON IT. Both statements are
+  in the same direction and neither rescues the other.
+
+  This is a bound on SELECTION optimism only. It says nothing about the
+  difference between two samples of this corpus, and it is not a substitute for
+  test. The unbiased estimate is produced once, at 3.6.
+
+
+6. THE THRESHOLD-AND-KEYWORD-LENGTH INTERACTION, MEASURED
+------------------------------------------------------------------------------
+  §7.7 recorded that `> 0.15` is not one rule: Number((1/d).toFixed(4)) > 0.15
+  holds for d <= 6, so a note with six or fewer keywords links on a SINGLE
+  shared word while a ten-keyword note needs two. A scalar sweep averages those
+  regimes. How much averaging is happening is now measured rather than
+  described.
+
+    d       corpus     dev      %       words needed at 0.15
+    1            4       1    0.04%      1
+    2            1       0    0.00%      1
+    3            7       0    0.00%      1
+    4           22       2    0.09%      1
+    5           70       6    0.26%      1
+    6          109      16    0.69%      1
+    7          186      23    1.00%      2
+    8          295      19    0.82%      2
+    9          373      25    1.09%      2
+   10       26,258   2,212   96.01%      2
+
+  25 dev queries (1.09%) are in the d <= 6 regime. The 2.1 fixture had 4 of 34
+  because it was HAND-WRITTEN to reach that branch; Stack Exchange questions
+  carry a title and a body and almost always yield a full ten. So the concern
+  is real in principle and near-negligible on this corpus.
+
+  STRATIFIED, which is the length-conditioned view of a scalar sweep as an
+  analysis rather than as a reparameterization:
+
+    stratum                      n      shipped nDCG@8   selected nDCG@8
+    d <= 6                      25        0.19307917       0.19307917
+    d >= 7                   2,279        0.13958650       0.13981461
+
+  THE SHORT STRATUM IS BIT-IDENTICAL, and that is forced rather than lucky. For
+  d <= 6, `> 0.15` already demands only one shared word — which is all
+  threshold 0 demands. The shipped threshold is ALREADY MAXIMALLY PERMISSIVE
+  for exactly the notes the asymmetry is about, so the entire margin comes from
+  the d >= 7 stratum. The two behaviours the scalar averages are not two
+  competing optima; one of them has no free parameter left.
+
+  A length-independent `minShared` param would remove the asymmetry at its
+  source, and it is NOT implemented here: adding a key to v1-overlap's
+  defaultParams edits the frozen baseline five rungs are about to be measured
+  against. Recorded in the roadmap's noticed-list for Phase 3.
+
+
+7. WHAT IS COMMITTED — §8.5 EXTENDED, NOT JUST APPLIED
+------------------------------------------------------------------------------
+  §8.5's rule: evidence ABOUT the harness is committed, output FROM it is not —
+  with run sidecars committed because "the provenance does not regenerate".
+
+  A sweep breaks that second premise in one direction. The grid is committed
+  code, and all 342 points share one set of SHA-256-pinned inputs, one
+  environment and one git commit, so per-point provenance DOES regenerate.
+  What does not regenerate is sweep-level. So the committed unit moves up a
+  level, and the boundary becomes:
+
+    A NAMED CONFIGURATION GETS A SIDECAR.  A GRID POINT GETS A CSV ROW.
+
+    committed    results/sweeps/v1-threshold.csv          342 rows, 57 KB
+                 results/sweeps/v1-sweep.manifest.json    96 KB — grid
+                   definition, input hashes, environment, commit, selection
+                   rule, and the per-point digest + run SHA-256 table
+                 results/sweeps/v1-sweep.txt              this file
+                 results/runs/v1-overlap-tuned.dev.run.json
+                 results/comparisons/v1-overlap-tuned-vs-v1-overlap.dev.txt
+    gitignored   results/sweeps/runs/                     1,026 files, 70 MB
+
+  The 342 sidecars would have been 1.16 MB of near-identical JSON in one PR.
+  The manifest is 96 KB and carries the part that genuinely does not
+  regenerate: the run SHA-256 of every point, which is what lets a regenerated
+  grid be checked against this one.
+
+  The rule is unchanged in spirit — commit the part that does not regenerate,
+  at the granularity at which it does not regenerate.
+
+
+8. WHAT THE SWEEP EXPOSED
+------------------------------------------------------------------------------
+  RUNNER. run-eval.js gained one flag, `--outdir`, so grid points do not land
+  beside the named runs later phases cite. Nothing about scoring, indexing or
+  the run file's contents depends on it, and that is verified rather than
+  asserted: v1-overlap.dev.run regenerated to 9618f1bf… after the change,
+  identical to the sidecar committed at 43fb101.
+
+  RUNNER, NOT FIXED. Every point rebuilds an identical index. threshold is
+  applied in rank() and cap in search(), so neither touches index() — roughly
+  1.65 s of each point's 2.89 s is rebuilt work, about 9 of the 16 minutes.
+  Paid deliberately: indexing once and re-implementing the filter here would be
+  a SECOND implementation of the thing being measured, outside the runner's ten
+  assertions and its post-conditions on the written bytes.
+
+  RETRIEVER. `cap` is not validated. index.js:165 is
+  `Number.isFinite(handle.params.cap) ? handle.params.cap : Infinity`, and
+  Number.isFinite does not coerce — so a cap that arrives as the STRING "8"
+  silently becomes UNCAPPED while the digest faithfully records cap:"8". That
+  is precisely the "run that lies about itself" run-eval.js's --param JSON
+  parsing exists to prevent, surviving one layer further down. Not exploitable
+  through the sweep, which passes numbers; recorded as noticed-not-fixed
+  because the fix edits the frozen baseline.
+
+  METRICS. Nothing. 342 of 342 re-derived aggregates matched their sidecars at
+  exact float equality, and the monotonicity assertion — 4,452 comparisons that
+  the metric definitions themselves force — passed without exception. That is a
+  stronger statement than it looks: it is 4,452 independent opportunities for
+  the scorer, the sort or the truncation to be wrong, and none of them fired.
+
+
+9. ENVIRONMENT
+------------------------------------------------------------------------------
+  MacBook Pro (Mac14,7) · Apple M2 · arm64 · 8 GB · macOS 26.6 (darwin 25.6.0)
+  Node v25.8.1 · npm 11.11.0
+  corpus cooking N=27,325 · dev split 2,304 queries · all three inputs
+  SHA-256-verified against their Phase 1 manifests at every one of the 342 runs
+
+  git 180663e. npm test — 89 tests across 5 suites, all passing. The Node eval
+  path remains dependency-free.
+
+  The 16.4 min grid figure is a COST, not a claim about the system. Per-point
+  p95 search latency is in the CSV and is not quoted anywhere: it is an
+  uncontrolled laptop measurement (§12.4), and at threshold 0 it measures a
+  different amount of work, so the column is diagnostic rather than comparable.
+
+  ABSOLUTES REMAIN LOWER BOUNDS (§5.1). §2's nine-documents-moved-no-metric-
+  moved observation is that same incompleteness caught in the act.
