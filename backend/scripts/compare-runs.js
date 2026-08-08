@@ -72,6 +72,7 @@ const { execFileSync } = require('child_process');
 
 const metrics = require('../eval/metrics');
 const { pairedBootstrap } = require('../eval/bootstrap');
+const { retrieverSource } = require('../eval/source-digest');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_KS = [1, 5, 8, 10];
@@ -451,6 +452,7 @@ function buildReport(ctx) {
     w(`  ${tag}  ${side.label}`);
     w(`     runid    ${side.sidecar.runId}`);
     w(`     digest   ${side.sidecar.retriever?.digest}`);
+    w(`     source   ${side.sidecar.retrieverSource?.digest || '(not recorded — run predates 3.2)'}`);
     w(`     run      ${path.relative(REPO_ROOT, side.runFile)}`);
     w(`              sha256 ${side.runSha256}  (gitignored; regenerates in ~3 s)`);
     w(`     sidecar  ${path.relative(REPO_ROOT, side.sidecarFile)}  (committed)`);
@@ -478,6 +480,48 @@ function buildReport(ctx) {
     w('     worthless. Printed rather than refused, because a rung comparison changes');
     w('     `version` legitimately; but if `version` is not the only entry above, the');
     w('     difference below cannot be assigned to any one cause.');
+  }
+  w();
+
+  // --- 1b. the source the runs were produced from ---------------------------
+  // The param digest covers {version, params}. It does NOT cover code, and from
+  // 3.1 onward rungs share code — v2 imports v1's buildIndex, v3 imports its
+  // tokeniser — so an edit to v1-overlap.js moves v2's and v3's numbers with no
+  // change to either param digest. Opened on 3.1's noticed-list, closed here.
+  w('  the SOURCE each run was produced from, re-hashed now and compared:');
+  for (const side of [a, b]) {
+    const tag = side === a ? 'A' : 'B';
+    const recorded = side.sidecar.retrieverSource;
+    if (!recorded) {
+      w(`     ${tag}  not recorded — this run predates 3.2 and cannot be checked.`);
+      continue;
+    }
+    let current = null;
+    try {
+      current = retrieverSource(side.sidecar.retriever.version);
+    } catch (err) {
+      w(`     ${tag}  cannot re-hash: ${err.message}`);
+      continue;
+    }
+    if (current.digest === recorded.digest) {
+      w(`     ${tag}  ${recorded.digest.slice(0, 16)}…  MATCHES the working tree (${recorded.files.length} files)`);
+    } else {
+      const byPath = new Map(current.files.map((f) => [f.path, f.sha256]));
+      const moved = recorded.files.filter((f) => byPath.get(f.path) !== f.sha256).map((f) => f.path);
+      const added = current.files.filter((f) => !recorded.files.some((r) => r.path === f.path)).map((f) => f.path);
+      w(`     ${tag}  ${recorded.digest.slice(0, 16)}…  DIFFERS from the working tree`);
+      // Named rather than left as a digest mismatch. Adding a rung edits
+      // index.js and legitimately moves every earlier run's source digest, and
+      // "index.js differs" is a self-explaining line where a bare mismatch is
+      // an alarm with no content.
+      for (const p of [...moved, ...added.map((p) => `${p} (new)`)]) w(`         ${p}`);
+    }
+  }
+  const srcA = a.sidecar.retrieverSource?.digest;
+  const srcB = b.sidecar.retrieverSource?.digest;
+  if (srcA && srcB && srcA === srcB && a.sidecar.retriever?.version !== b.sidecar.retriever?.version) {
+    w('     Both sides hash identically while naming different versions, which cannot');
+    w('     happen if each retriever lives in a file named after its version. Check the labels.');
   }
   w();
 

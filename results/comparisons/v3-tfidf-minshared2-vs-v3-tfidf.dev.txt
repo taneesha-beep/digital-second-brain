@@ -1,48 +1,40 @@
-PAIRED BOOTSTRAP — v2-jaccard  vs  v1-overlap
-roadmap 2.5 · 2026-08-07T18:28:36Z
+PAIRED BOOTSTRAP — v3-tfidf-minshared2  vs  v3-tfidf
+roadmap 2.5 · 2026-08-07T18:28:25Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
 
 1. THE TWO RUNS
 ------------------------------------------------------------------------------
-  A  v2-jaccard
-     runid    v2-jaccard.dev.fb0bc25a
-     digest   fb0bc25ae7241f19797701560e7a56b1c1c071edd4ce46599e1f7b0ba1a7fe06
-     source   e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf
-     run      results/runs/v2-jaccard.dev.run
-              sha256 0b2531b72fdfb3bc58a60c922109238b8180d7a7b27f5e020370f4a26e4dd111  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v2-jaccard.dev.run.json  (committed)
-     command  npm run eval -- --retriever v2-jaccard --split dev
+  A  v3-tfidf-minshared2
+     runid    v3-tfidf-minshared2.dev.5d23fb69
+     digest   5d23fb694d81f3c73b95125ddb6d5affa85e2dda9ff3487ce1267ea388eec7ed
+     source   56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786
+     run      results/runs/v3-tfidf-minshared2.dev.run
+              sha256 95390e3555633771c3ad1df9d9057c8f492f995d78e6e878935eb88c6c6c2f0d  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v3-tfidf-minshared2.dev.run.json  (committed)
+     command  npm run eval -- --retriever v3-tfidf --split dev --param minShared=2 --label v3-tfidf-minshared2
 
-  B  v1-overlap
-     runid    v1-overlap.dev.93bc8d65
-     digest   93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
-     source   9578a38f6058ce92bcfcf3cff273d601db13b2b58015386d4d3fc7e58d04e5f4
-     run      results/runs/v1-overlap.dev.run
-              sha256 9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v1-overlap.dev.run.json  (committed)
-     command  npm run eval -- --retriever v1-overlap --split dev
+  B  v3-tfidf
+     runid    v3-tfidf.dev.3625fedf
+     digest   3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4
+     source   56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786
+     run      results/runs/v3-tfidf.dev.run
+              sha256 07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v3-tfidf.dev.run.json  (committed)
+     command  npm run eval -- --retriever v3-tfidf --split dev
 
   parameters, and how many of them moved:
-     version          A "v2-jaccard"     B "v1-overlap"      <-- differs
-     cap              A 8                B 8               
      idfCorpus        A "leave-one-out"  B "leave-one-out" 
      lengthBonus      A true             B true            
-     minShared        A 2                B undefined         <-- differs
-     scorePrecision   A 4                B 4               
-     threshold        A 0                B 0.15              <-- differs
-     topN             A 10               B 10              
+     minShared        A 2                B 1                 <-- differs
+     topN             A null             B null            
 
-  !! 3 variables changed at once: version, minShared, threshold.
-     CLAUDE.md: never change two variables at once — an unattributable result is
-     worthless. Printed rather than refused, because a rung comparison changes
-     `version` legitimately; but if `version` is not the only entry above, the
-     difference below cannot be assigned to any one cause.
+  ONE variable changed (minShared). The difference below is attributable to it.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  e1c1bd5760719629…  MATCHES the working tree (4 files)
-     B  9578a38f6058ce92…  MATCHES the working tree (3 files)
+     A  56152634a1582a5c…  MATCHES the working tree (4 files)
+     B  56152634a1582a5c…  MATCHES the working tree (4 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
@@ -52,7 +44,7 @@ roadmap 2.5 · 2026-08-07T18:28:36Z
                        This is the only thing pairing requires, and it is a hard
                        failure if it does not hold.
 
-  zero-result queries  A 12   B 11   both 11
+  zero-result queries  A 1   B 0   both 0
                        only A: 1 (52326)
                        only B: 0
                        Reported, never gated. A retriever that returns results
@@ -67,32 +59,34 @@ roadmap 2.5 · 2026-08-07T18:28:36Z
 
 3. PRE-REGISTRATION
 ------------------------------------------------------------------------------
-  status               PRE-REGISTERED — "ladder-v1-v2"
+  status               EXPLORATORY — this pair is not in the registry.
   registry             results/comparisons/registry.json
-  primary metric       NDCG@8
-  family               7 registered comparisons
-  correction           holm-bonferroni, family-wise alpha 0.05
-                       NOT applied here. Holm needs every p in the family at once,
-                       and the family fills up one rung per session across Phase 3.
-                       The p below is RAW. Adjust when the family is complete.
+  family               7 registered comparisons, none matching
+                       (v3-tfidf-minshared2 vs v3-tfidf on dev)
+
+  Differences and intervals below are printed in full. p-values are SUPPRESSED.
+  Six rungs is 15 pairwise comparisons; times 13 metrics is 195 p-values, about
+  10 of which come up significant at 0.05 on pure noise. To make this comparison
+  testable, add it to the registry and commit — which puts the decision in git
+  history, dated, which is the only thing that makes a pre-registration credible.
 
 4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
 ------------------------------------------------------------------------------
   metric        mean A     mean B        A − B    95% CI              differ   p
   ----------------------------------------------------------------------------
-   nDCG@1      0.1008    0.0971     +0.0038   [-0.0003, +0.0080]     25      .
-   nDCG@5      0.1307    0.1291     +0.0017   [-0.0011, +0.0045]     94      .
-  *nDCG@8      0.1427    0.1402     +0.0025   [+0.0000, +0.0050]    141   0.0482
-   nDCG@10     0.1425    0.1400     +0.0025   [+0.0000, +0.0050]    141      .
-   P@1         0.1063    0.1020     +0.0043   [+0.0004, +0.0087]     24      .
-   P@5         0.0495    0.0493     +0.0002   [-0.0010, +0.0013]     42      .
-   P@8         0.0381    0.0375     +0.0005   [-0.0002, +0.0012]     45      .
-   P@10        0.0305    0.0300     +0.0004   [-0.0001, +0.0010]     45      .
-   R@1         0.0739    0.0711     +0.0028   [-0.0004, +0.0060]     24      .
-   R@5         0.1589    0.1582     +0.0008   [-0.0035, +0.0049]     42      .
-   R@8         0.1921    0.1887     +0.0035   [-0.0003, +0.0074]     45      .
-   R@10        0.1921    0.1887     +0.0035   [-0.0003, +0.0074]     45      .
-   MRR@10      0.1546    0.1520     +0.0027   [-0.0003, +0.0057]    124      .
+   nDCG@1      0.1492    0.1474     +0.0017   [-0.0014, +0.0051]     16      -
+   nDCG@5      0.1977    0.1941     +0.0036   [+0.0007, +0.0064]     85      -
+  *nDCG@8      0.2130    0.2107     +0.0023   [-0.0004, +0.0049]    115      -
+   nDCG@10     0.2223    0.2182     +0.0042   [+0.0013, +0.0069]    158      -
+   P@1         0.1549    0.1532     +0.0017   [-0.0017, +0.0052]     16      -
+   P@5         0.0757    0.0742     +0.0015   [+0.0003, +0.0027]     49      -
+   P@8         0.0569    0.0563     +0.0007   [-0.0001, +0.0015]     48      -
+   P@10        0.0506    0.0491     +0.0014   [+0.0007, +0.0022]     76      -
+   R@1         0.1080    0.1067     +0.0013   [-0.0013, +0.0040]     16      -
+   R@5         0.2448    0.2396     +0.0053   [+0.0007, +0.0100]     49      -
+   R@8         0.2867    0.2846     +0.0021   [-0.0025, +0.0066]     48      -
+   R@10        0.3155    0.3083     +0.0072   [+0.0020, +0.0125]     76      -
+   MRR@10      0.2299    0.2266     +0.0033   [+0.0005, +0.0061]    135      -
 
   * = the pre-registered primary metric. p is reported for that metric only.
   . = computed but not reported: one pre-registered metric per comparison is what
@@ -101,24 +95,26 @@ roadmap 2.5 · 2026-08-07T18:28:36Z
 
 5. PRIMARY RESULT — nDCG@8
 ------------------------------------------------------------------------------
-  mean difference      +0.002501
-  95% CI               [+0.000028, +0.005003]
-  p (two-sided ASL)    0.0482  +/- 0.0021 Monte Carlo
-                       floor 0.00010 at B = 10000; the bootstrap has no
-                       standing to resolve below that and does not print 0
+  mean difference      +0.002347
+  95% CI               [-0.000382, +0.004946]
+  p                    suppressed (exploratory — see §3)
 
-  queries differing    141 of 2304 (6.1%)
-                       v2-jaccard ahead on 50, v1-overlap ahead on 91
-  effective n          141 — the CLT here runs on the queries that moved,
+  queries differing    115 of 2304 (5.0%)
+                       v3-tfidf-minshared2 ahead on 96, v3-tfidf ahead on 19
+  effective n          115 — the CLT here runs on the queries that moved,
                        not on all 2304. This is why the test is a bootstrap and
                        not a paired t-test: a point mass at zero with a thin slab
                        is where the normal approximation to the mean is worst.
-  mean over those      +0.040871 — the overall mean is this number
-                       diluted by the 2163 queries at exactly zero
+  mean over those      +0.047029 — the overall mean is this number
+                       diluted by the 2189 queries at exactly zero
 
   THE SENTENCE:
-    v2-jaccard beats v1-overlap by 0.0025 nDCG@8,
-    95% CI [0.0000, 0.0050], p = 0.0482.
+    v3-tfidf-minshared2 beats v3-tfidf by 0.0023 nDCG@8,
+    95% CI [0.0004, 0.0049] (p not reported).
+
+    The interval STRADDLES ZERO. Whatever the p-value says, the data is
+    consistent with no difference at all, and the sentence above should not
+    be written anywhere without this line beside it.
 
 6. HOW THE RANDOMNESS IS PINNED
 ------------------------------------------------------------------------------
@@ -146,7 +142,7 @@ roadmap 2.5 · 2026-08-07T18:28:36Z
                        the (1+r)/(B+1) convention. Smucker, Allan & Carterette
                        (2007). NOT the interval inversion PRIMER §5.5 describes;
                        that reading is the raw count below.
-  resamples favouring  A 9770   B 230   tied 0
+  resamples favouring  A 9572   B 428   tied 0
                        PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
                        its own name. Deliberately not labelled a second p-value:
                        two p-values in one report is an invitation to quote the

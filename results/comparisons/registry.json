@@ -71,17 +71,36 @@
     },
     {
       "id": "ladder-v2-v3",
-      "a": "v3-idf",
+      "a": "v3-tfidf",
       "b": "v2-jaccard",
       "split": "dev",
-      "phase": "3"
+      "phase": "3",
+      "renamed": [
+        "LABEL ONLY, 2026-08-07, in the same commit that ships the rung, per",
+        "_labelsAreForward below. `a` was written `v3-idf` at 2.5. The rung ships",
+        "as `v3-tfidf`, which is what the roadmap's results table and PRIMER.md §6",
+        "both already called it — and `v3-idf` is wrong on the substance as well as",
+        "inconsistent: it re-asserts the premise the 4 Aug 2026 correction killed.",
+        "The IDF was never inert; every production caller passes loadUserCorpus(...).",
+        "The rung is the cosine over tf-idf weights and the full vocabulary.",
+        "",
+        "Nothing else in this entry moves: b, split and the primary metric are as",
+        "written at 2.5, when neither run existed. Renaming is not adding, and the",
+        "diff shows which."
+      ]
     },
     {
       "id": "ladder-v3-v4",
       "a": "v4-bm25",
-      "b": "v3-idf",
+      "b": "v3-tfidf",
       "split": "dev",
-      "phase": "3"
+      "phase": "3",
+      "renamed": [
+        "LABEL ONLY, 2026-08-07 — `b` was `v3-idf`. Same rename as ladder-v2-v3.",
+        "Both entries had to move together: leaving this one would register the",
+        "v3->v4 comparison against a label no run will ever carry, and",
+        "compare-runs.js would silently suppress its p-value at 3.3."
+      ]
     },
     {
       "id": "ladder-v4-v5",

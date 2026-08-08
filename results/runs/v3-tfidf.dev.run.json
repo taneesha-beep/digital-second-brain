@@ -7,22 +7,20 @@
     "evidence": "results/metric-validation.txt",
     "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
   },
-  "runId": "v1-overlap.dev.93bc8d65",
-  "label": "v1-overlap",
+  "runId": "v3-tfidf.dev.3625fedf",
+  "label": "v3-tfidf",
   "site": "cooking",
   "split": "dev",
   "retriever": {
-    "version": "v1-overlap",
+    "version": "v3-tfidf",
     "params": {
       "idfCorpus": "leave-one-out",
-      "topN": 10,
-      "threshold": 0.15,
-      "cap": 8,
-      "scorePrecision": 4,
-      "lengthBonus": true
+      "topN": null,
+      "lengthBonus": true,
+      "minShared": 1
     },
     "docCount": 27325,
-    "digest": "93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30"
+    "digest": "3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4"
   },
   "retrieverSource": {
     "files": [
@@ -37,9 +35,13 @@
       {
         "path": "backend/retrieval/v1-overlap.js",
         "sha256": "cc86cb4b63a598f3534b1f821dd23ced67af3b86ad9f0cbb7304f5b3418a12e4"
+      },
+      {
+        "path": "backend/retrieval/v3-tfidf.js",
+        "sha256": "36989e9916c3af44871ecde3ac67832f101f956454ffbff07aab001d26c2e593"
       }
     ],
-    "digest": "9578a38f6058ce92bcfcf3cff273d601db13b2b58015386d4d3fc7e58d04e5f4"
+    "digest": "56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786"
   },
   "k": 10,
   "ksReported": [
@@ -48,7 +50,7 @@
     8,
     10
   ],
-  "command": "npm run eval -- --retriever v1-overlap --split dev",
+  "command": "npm run eval -- --retriever v3-tfidf --split dev",
   "inputs": [
     {
       "name": "corpus",
@@ -70,39 +72,39 @@
     }
   ],
   "output": {
-    "run": "results/runs/v1-overlap.dev.run",
-    "lines": 17919,
-    "bytes": 904379,
-    "sha256": "9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e"
+    "run": "results/runs/v3-tfidf.dev.run",
+    "lines": 23040,
+    "bytes": 1110316,
+    "sha256": "07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0"
   },
   "queries": {
     "total": 2304,
     "scored": 2304,
     "unjudgeable": 0,
     "unjudgeableIds": [],
-    "zeroResult": 11,
-    "zeroResultFile": "results/runs/v1-overlap.dev.zero.txt"
+    "zeroResult": 0,
+    "zeroResultFile": "results/runs/v3-tfidf.dev.zero.txt"
   },
   "metrics": {
     "ndcg": {
-      "1": 0.09707754629629631,
-      "5": 0.1290594680121593,
-      "8": 0.14016693655110876,
-      "10": 0.14002513715403433
+      "1": 0.1474247685185185,
+      "5": 0.19406996350938943,
+      "8": 0.2106600078244242,
+      "10": 0.21818909802323846
     },
     "p": {
-      "1": 0.10199652777777778,
-      "5": 0.04930555555555596,
-      "8": 0.037543402777777776,
-      "10": 0.030034722222222372
+      "1": 0.15321180555555555,
+      "5": 0.07421874999999974,
+      "8": 0.05626085069444445,
+      "10": 0.04913194444444382
     },
     "r": {
-      "1": 0.07114701928224995,
-      "5": 0.15816944168682884,
-      "8": 0.18865224099868316,
-      "10": 0.18865224099868316
+      "1": 0.10672325057359915,
+      "5": 0.2395589486729198,
+      "8": 0.28462980271321914,
+      "10": 0.3082814638639014
     },
-    "mrr": 0.15196345899470887
+    "mrr": 0.2266091752094355
   },
   "conventions": {
     "gain": "2^grade - 1",
@@ -114,16 +116,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.6258057677951391,
-    "p50": 0.55375,
-    "p95": 1.183542,
-    "max": 23.316833
+    "mean": 4.957749798611115,
+    "p50": 4.822667,
+    "p95": 8.05075,
+    "max": 45.998333
   },
   "timingsMs": {
-    "load": 104.987041,
-    "index": 1343.835458,
-    "search": 1457.077958,
-    "total": 2905.900457
+    "load": 84.590459,
+    "index": 1457.202208,
+    "search": 11442.988583,
+    "total": 12984.78125
   },
   "environment": {
     "node": "v25.8.1",
@@ -132,12 +134,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 364
+    "peakRssMiB": 608
   },
   "git": {
     "commit": "57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07",
     "dirty": true,
     "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
   },
-  "generatedAt": "2026-08-07T18:25:55.520Z"
+  "generatedAt": "2026-08-07T18:30:34.715Z"
 }

@@ -1,0 +1,510 @@
+RUNG v3 — TF-IDF COSINE OVER THE FULL VOCABULARY (roadmap 3.2)
+generated from a clean tree at 57f1bbb
+==============================================================================
+
+The first rung whose difference this key can resolve. v3 beats v2 by 0.0680
+nDCG@8, 95% CI [0.0566, 0.0797], p < 0.0001 — and it is the first comparison
+in this project to clear Holm's alpha/7 = 0.00714, by more than two orders of
+magnitude.
+
+What the rung is: PRIMER.md §3.4's observation, acted on. The shipped algorithm
+computes a real rarity signal, uses it to pick ten words, and then throws every
+number away. v3 stops throwing them away, and stops picking ten.
+
+It is NOT "the IDF finally gets a corpus" — that premise was corrected on
+4 Aug 2026 and the label v3-tfidf, not v3-idf, is part of the correction.
+
+  npm run eval -- --retriever v3-tfidf --split dev
+  npm run eval:compare v3-tfidf v2-jaccard
+  npm run analyse:rungs -- --a v3-tfidf --b v2-jaccard --split dev
+  npm run analyse:vocab
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+
+                                     nDCG@8    P@8     R@8   MRR@10   p95
+  v1-overlap  overlap, top-10, cap 8  0.1402  0.0375  0.1887  0.1520  1.0 ms
+  v2-jaccard  Jaccard, top-10, cap 8  0.1427  0.0381  0.1921  0.1546  0.87 ms
+  v3-tfidf    cosine, full vocab      0.2107  0.0563  0.2846  0.2266  8.1 ms
+
+  All four k, v3-tfidf:
+
+    metric       @1       @5       @8      @10
+  --------------------------------------------
+      nDCG   0.1474   0.1941   0.2107   0.2182
+         P   0.1532   0.0742   0.0563   0.0491
+         R   0.1067   0.2396   0.2846   0.3083
+    MRR@10   0.2266
+
+  {"idfCorpus":"leave-one-out","topN":null,"lengthBonus":true,"minShared":1}
+  digest 3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4
+  source dce2a5e60da0234d3b0f056a185e6177e10f076f18f9e09815ae95237b3ab374
+  runid  v3-tfidf.dev.3625fedf
+  run    results/runs/v3-tfidf.dev.run  sha256 07fa22ce07520a9f... (23,040 lines)
+
+  ZERO-RESULT QUERIES: 0, against v1's 11 and v2's 12. Not an improvement that
+  needed engineering — with no admission rule, a query returns nothing only if
+  it has no terms at all. 23,040 lines is exactly 2,304 x 10.
+
+  nDCG@8 0.2107 sits inside CLAUDE.md's 0.1-0.4 plausibility band. Every
+  absolute here remains a LOWER BOUND (§5.1); the judgments are positive-only.
+
+
+2. ENVIRONMENT
+------------------------------------------------------------------------------
+  MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB, macOS 26.6 (darwin 25.6.0),
+  Node v25.8.1. Corpus cooking N=27,325; dev 2,304 queries; all three inputs
+  SHA-256-verified against their Phase 1 manifests at run time.
+
+  Full dev run ~13.0 s — 90 ms load, ~1.47 s index(), ~11.5 s for 2,304
+  searches. That is 4.2x v2's wall time and the reason is section 6.
+
+  p95 per-query search(), eight consecutive runs, all emitting run file
+  07fa22ce:
+
+    7.736  7.957  8.051  8.063  8.181  8.225  8.394  8.626
+
+  median 8.1 ms, range [7.74, 8.63], spread 11.5%. Reported as a median with
+  its range for the same reason v2 was (§14.9): one significant figure would
+  round 7.74 to 8 and 8.63 to 9, so it would assert a stability the
+  measurement lacks. v1's spread was 5.8%, v3's is 11.5% — a longer search
+  has more room to vary.
+
+  UNCONTROLLED laptop measurements. NO PERFORMANCE CLAIM IS MADE from the fact
+  that v3's p95 is ~8x v1's. A controlled figure against a published budget is
+  6.5's job. The number is here as a COST, and section 6 says what buys it.
+
+  npm test — 142 tests across 8 suites, up from 111 across 6. The Node eval
+  path stays dependency-free.
+
+
+3. WHAT v3 IS, AND THE THREE PARAMS IT DID NOT INHERIT
+------------------------------------------------------------------------------
+
+  w(t) = tf(t) . idf(t), every term, cosine. Four params where v2 had seven —
+  the rung REMOVES machinery.
+
+  LEAVE-ONE-OUT IDF IS A GLOBAL PER-TERM CONSTANT, which is what makes this a
+  real cosine rather than two vectors in differently-scaled spaces. A document
+  only holds terms it CONTAINS, and for those df_loo = df - 1 always:
+
+      idf_loo(t, D) = ln((N-1+1) / ((df-1)+1)) + 1 = ln(N / df) + 1
+
+  with no dependence on D. Checked against v1's own arithmetic over 500 corpus
+  documents: max |delta| = 0. Measured idf range on cooking: [2.6688, 11.2156]
+  — even "recipe" at df 5,150 carries 2.67, so no term is suppressed to
+  nothing.
+
+  THE ADMISSION RULE COULD NOT BE INHERITED, and that decision is this rung's
+  methodological content, as the threshold decision was v2's.
+
+  v1 admitted on threshold, v2 on minShared, both with cap. A cosine is
+  CONTINUOUS, so §13.2's argument — that the threshold grid IS the achievable
+  score lattice, which is what made 2.7's sweep exhaustive rather than a sample
+  of 342 points — DOES NOT TRANSFER. v1 has 32 achievable scores and v2 has 64.
+  v3 has no such set, so no threshold value is defensible and none is inherited.
+
+  DECISION: admit every candidate sharing a term, rank by cosine, return top k.
+
+    threshold       DROPPED, not carried inert as v2 carried it at 0. v2's
+                    reason was that a future sweep should be a param flip; that
+                    presumes a lattice to sweep. A v3 threshold study needs a
+                    NEW argument first, and a file edit is the right friction.
+
+    scorePrecision  DROPPED. In v1, toFixed(4) decided MEMBERSHIP (§7.7); in
+                    v2, tie structure over 64 achievable values. Here it would
+                    MANUFACTURE ties in a continuous score across ~15,000
+                    candidates and hand their order to index.js's lexicographic
+                    docid tie-break. Inheriting an artifact, not a rule.
+
+    cap             ABSENT, AND PRE-REGISTERED ABSENT. §14.3 and types.js both
+                    recorded "v3 and v4 will carry no cap" at 3.1, before this
+                    rung existed. Adding one after seeing 3.1's boundary p is
+                    the metric-shopping §11.5 forbids.
+
+    minShared       PRESENT AT 1, WHICH IS INERT — candidates come from the
+                    query's postings, so all of them share a term already. It
+                    is the ablation handle (section 5c), because the missing
+                    rule is a real variable rather than a vacuous one.
+
+  CONSEQUENCE, STATED RATHER THAN SMOOTHED. The registered comparison prices a
+  PACKAGE, and compare-runs.js says so in its own output:
+
+    !! 6 variables changed at once: version, cap, minShared, scorePrecision,
+       threshold, topN.
+
+  The tool counts PARAM KEYS and three of those six are keys v3 does not
+  declare at all. The experiment counts BEHAVIOURS, and there are three:
+  similarity function, vocabulary, admission rule. They disagree for a stated
+  reason, and the disagreement is printed rather than suppressed — the same
+  situation §14.3 recorded at 3.1, one rung larger.
+
+  Section 5 is where the package is taken apart.
+
+
+4. THE REGISTERED COMPARISON
+------------------------------------------------------------------------------
+  Registered at 2.5 as ladder-v2-v3 (split dev, primary nDCG@8) when neither
+  run existed. The entry named `a: v3-idf`; it is RENAMED to `v3-tfidf` in the
+  same commit that ships the rung, per registry.json's own _labelsAreForward
+  note — and ladder-v3-v4's `b` with it, or 3.3 would be registered against a
+  label no run will ever carry and its p-value would be silently suppressed.
+
+  results/comparisons/v3-tfidf-vs-v2-jaccard.dev.txt
+
+  metric        mean A     mean B        A - B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.1474    0.1008     +0.0466   [+0.0324, +0.0609]    306      .
+   nDCG@5      0.1941    0.1307     +0.0634   [+0.0515, +0.0754]    750      .
+  *nDCG@8      0.2107    0.1427     +0.0680   [+0.0566, +0.0797]    885   <0.0001
+   nDCG@10     0.2182    0.1425     +0.0757   [+0.0643, +0.0874]    937      .
+   P@8         0.0563    0.0381     +0.0182   [+0.0154, +0.0211]    623      .
+   R@8         0.2846    0.1921     +0.0925   [+0.0772, +0.1085]    623      .
+   MRR@10      0.2266    0.1546     +0.0720   [+0.0588, +0.0856]    888      .
+
+  THE SENTENCE: v3-tfidf beats v2-jaccard by 0.0680 nDCG@8, 95% CI
+  [0.0566, 0.0797], p < 0.0001.
+
+  ALL THIRTEEN METRICS MOVE UP AND NO INTERVAL STRADDLES ZERO. That is the
+  first time on this ladder.
+
+  HOLM. The family is seven and the correction is applied when it is complete,
+  at 3.6. But the bound is knowable now: Holm needs the smallest raw p below
+  alpha/7 = 0.00714, and this p is at the bootstrap FLOOR of 1/(B+1) = 0.0001.
+  It clears the bound by a factor of 71. Unlike 3.1, this rung will still be
+  significant when the family closes.
+
+  NO HIGH-B RE-RUN, DELIBERATELY. §11.3 authorises driving B up as a PRECISION
+  check when a p lands near 0.05 — 3.1's case. This p is not near a boundary;
+  it is pinned at the floor, and B = 1,000,000 would only move the floor to
+  1e-6. That is not a decision anything depends on, and §14.4 already recorded
+  that a higher-B run must not become "a search for a smaller number".
+
+  THE SHAPE OF THE DIFFERENCE, which is the fragility check 3.1 failed:
+
+    moved         885 of 2,304 (38.4%)
+    A ahead on    605   mean gain +0.419007
+    B ahead on    280   mean loss -0.345878
+
+  v3 wins more often AND bigger. Compare 3.1, where v2 won on 50 and lost on
+  91 — a minority of large wins, which §14.4 called "the kind that does not
+  replicate". This is 2.2:1 in v3's favour on a third of the split. It is not
+  the cap ablation's 61-of-61 perfect consistency either, and the 280 queries
+  v2 still wins are real; but nothing here has the shape that made 3.1 fragile.
+
+
+5. THE ABLATIONS
+------------------------------------------------------------------------------
+
+  Roadmap 3.2's Done criterion names two, as SEPARATE one-variable changes.
+  Both are below, plus three more. Every one reports "ONE variable changed"
+  in its own comparison report, and all five are EXPLORATORY — unregistered,
+  p suppressed by the tool.
+
+  (a) VOCABULARY TRUNCATION — top-10 vs full. REQUIRED BY THE DONE CRITERION.
+      v3-tfidf vs v3-tfidf-top10, one variable: topN.
+
+        nDCG@8   0.210660 vs 0.181728   +0.028932  CI [+0.0229, +0.0350]
+        nDCG@10  0.218189 vs 0.188033   +0.030156
+        R@8      0.2846   vs 0.2487     +0.0359
+        600 of 2,304 moved; full ahead on 405, top-10 on 195
+
+      Truncating to ten words costs 13.7% of nDCG@8. The truncation was never
+      tested before this — PRIMER.md calls it "itself an untested hypothesis" —
+      and it is a real cost, but NOT the largest component of the rung (5f).
+
+  (b) THE LENGTH BONUS — on vs off. REQUIRED BY THE DONE CRITERION.
+
+      IT HAD TO BE MEASURED AT topN 10, AND THAT IS A RE-SCOPING WITH A REASON,
+      not a dodge. The bonus lives in extractKeywords' ranking, whose only job
+      is to decide what survives slice(0, topN). AT FULL VOCABULARY NOTHING IS
+      SLICED, so at v3's own configuration the bonus cannot do anything.
+
+      PRIMER.md §3.3 predicted exactly this: "v3 and v4 drop the select-top-10
+      stage entirely, so if either wins the bonus is gone regardless."
+
+      Proved rather than argued. v3-tfidf-nolen vs v3-tfidf, one variable:
+
+        nDCG@8 delta EXACTLY 0.000000, and the two run files' retrieval
+        columns (qid Q0 docid rank score) are BYTE-IDENTICAL over all 23,040
+        lines, sha256 e6ba3dec86dcb0273a9220236925bd1354205a74ffcf74a78531520c94fdb96b
+
+      The full files differ only in the runid column, because the params — and
+      therefore the digest — legitimately differ. §13.3 used the same
+      distinction for v1's threshold plateau.
+
+      Measured where it bites, v3-tfidf-top10-nolen vs v3-tfidf-top10:
+
+        nDCG@8   0.184404 vs 0.181728   +0.002676  CI [+0.0001, +0.0053]
+        nDCG@10  0.190267 vs 0.188033   +0.002234  CI [-0.0004, +0.0049]
+        216 of 2,304 moved; OFF ahead on 109, ON ahead on 107
+
+      REMOVING THE LENGTH BONUS HELPS, AND THE EVIDENCE IS WEAK. The direction
+      is the one PRIMER.md §3.3 argued for on first principles — word length is
+      not evidence of importance — but 109 vs 107 is very nearly a coin flip on
+      which queries move which way, the @8 interval clears zero by 0.0001, and
+      the @10 interval straddles it. The defensible sentence is: the bonus is
+      not helping, it is worth about a quarter of one percent, and this key
+      cannot resolve its sign with confidence. It is dead either way at full
+      vocabulary, which is where the rung lives.
+
+  (c) THE ADMISSION RULE — the variable v3 chose not to have.
+      v3-tfidf-minshared2 vs v3-tfidf, one variable: minShared.
+
+        nDCG@8   0.213007 vs 0.210660   +0.002347  CI [-0.0004, +0.0049]
+        nDCG@10  0.222345 vs 0.218189   +0.004156  CI [+0.0013, +0.0069]
+        115 of 2,304 moved; minShared 2 ahead on 96, v3 on 19
+
+      Run because the rule is NOT vacuous at full vocabulary — measured before
+      the rung was written, 10.72% of v3's top-10 hits (2,471 of 23,040) share
+      exactly one term. So requiring two would delete one returned document in
+      nine.
+
+      It would have bought +0.0023 at the primary metric, with an interval
+      straddling zero. Direction is consistent (96 vs 19) and @10 clears zero.
+      So: a small, probably real gain that v3 declines, and declining it is
+      what keeps the rung a retriever rather than a tuned configuration.
+      Recorded so a later phase can take it deliberately, and note it costs one
+      zero-result query — 52326, see section 7.
+
+  (d) THE RARITY SIGNAL — §12.2's RE-SCOPED ABLATION.
+      v3-tfidf vs v3-tfidf-noidf, one variable: idfCorpus.
+
+        nDCG@8   0.210660 vs 0.201777   +0.008883  CI [+0.0014, +0.0166]
+        nDCG@10  0.218189 vs 0.209177   +0.009012
+        R@8      0.2846   vs 0.2650     +0.0196
+        711 of 2,304 moved; loo ahead on 371, none ahead on 340
+
+      ROADMAP 3.2 ASKS FOR SOMETHING UNRUNNABLE, AND THIS IS THE RE-SCOPING,
+      STATED RATHER THAN DONE QUIETLY. Its text is "IDF over all 27,325
+      documents versus over a <=500-note user slice". This corpus has no users
+      and no <=500-note slices; §12.2 already said so, and spent the first arm
+      on the baseline. The axis the param actually spans is leave-one-out vs
+      none: DOES the rarity signal help, not WHICH SCOPE of it.
+
+      At idfCorpus none every idf is the constant ln2+1, so the weighting
+      collapses to a pure TF cosine and the ablation answers §3.4's question
+      directly. The answer: the rarity signal is worth +0.0089, about an eighth
+      of the rung.
+
+      AND IT IS THE LEAST CONSISTENT OF THE FIVE — 371 up against 340 down, on
+      31% of the split, with an interval four times wider than its neighbours'.
+      A pure TF cosine over the full vocabulary is already most of the way
+      there. That is worth saying plainly, because "we added IDF" is the
+      headline this rung was expected to have, and it is not where the gain is.
+
+  (e) THE CAP — closing a 3.1 noticed-list item.
+      v2-jaccard-uncapped vs v2-jaccard, one variable: cap.
+
+        nDCG@8   0.142668 vs 0.142668   +0.000000  0 of 2,304 queries differ
+        nDCG@10  0.147122 vs 0.142514   +0.004609  CI [+0.0033, +0.0060]
+
+      3.1 recorded that no v2-jaccard-uncapped run existed and that "v3 and v4
+      carry no cap, so the first cross-rung @10 quote will be uneven". This is
+      that session, so the run is produced.
+
+      @8 is EXACTLY zero on all 2,304 queries individually, which is the
+      construction — slice(0, min(k, cap)) makes min = k for k <= 8. Verified
+      on the written bytes as well: the first eight ranks of both run files
+      hash to de0edbfd815722ce1eeae52071bfbff4191eabc6f1a0c5bb1106346d18334c2f.
+
+      ONE CORRECTION TO A FORWARD-LOOKING CLAIM. §14.3 said an uncapped rung
+      differs from v1 AND v2 at @10 "by exactly this already-measured amount",
+      quoting v1's 0.005086. v2's own figure is 0.004609. The mechanism
+      transferred; the number did not, and it should not have been asserted for
+      a rung it had not been measured on.
+
+  (f) THE FOUR-STEP CHAIN, WHICH CLOSES EXACTLY.
+      Added beyond the seven runs approved for this session, because without
+      the middle step "similarity function" and "admission rule" are not
+      separable and the registered comparison stays a package. One extra run,
+      v3-tfidf-top10-minshared2, and two extra comparisons.
+
+        step                          nDCG@8      delta
+        v2-jaccard                   0.142668
+        + cap 8 -> none              0.142668   +0.000000
+        + Jaccard -> cosine          0.188458   +0.045790
+        + minShared 2 -> 1           0.181728   -0.006731
+        + top-10 -> full vocabulary  0.210660   +0.028932
+                                                ----------
+        sum of steps                            +0.067992
+        registered v3 - v2                      +0.067992   IDENTICAL
+
+      Every step moves one variable, and the four telescope to the registered
+      total at exact float equality. Three things it says that the single
+      number does not:
+
+        THE SIMILARITY FUNCTION IS THE BIGGEST COMPONENT, +0.0458 — two-thirds
+        of the rung, and 1.6x the vocabulary change. The expected story was
+        that dropping top-10 was the point; it is not.
+
+        THE ADMISSION RULE CHANGE HURT, -0.0067. It is the only negative step,
+        and v3 takes it deliberately (5c). Note it costs more at top-10
+        (-0.0067) than minShared 2 would buy at full vocabulary (+0.0023):
+        sharing 1 of 10 selected words is much weaker evidence than sharing 1
+        of ~36 terms, so the same integer means less as the vocabulary grows.
+
+        THE CAP CONTRIBUTES NOTHING at the primary metric, by construction.
+
+      The cosine step's report prints "4 variables changed at once: version,
+      cap, scorePrecision, threshold". cap is null on one side and absent on
+      the other — the same behaviour spelled two ways — and threshold is inert
+      at 0. The one real residue is scorePrecision: v2 rounds to 4 dp and v3
+      does not, which is part of what "cosine" means here (section 3) and is
+      not separable from it.
+
+
+6. COST — AND THE TWO NUMBERS THAT MUST NOT BE CONFLATED
+------------------------------------------------------------------------------
+  npm run analyse:vocab. Committed script, read-only, builds the same index
+  through the same retrieval/ entry point the runner uses.
+
+                                 full vocabulary        top-10        ratio
+    |V| (terms with postings)              34,928        29,129   1.20x
+    postings  Sigma_t df_t                997,749       270,718   3.69x
+    Sigma_t df_t^2                      8.1202e+8     3.7279e+7   21.78x
+    max df                                  5,150         1,090   4.72x
+
+    full vocabulary   terms/doc mean 36.5  p50 30  p95 86  max 1,021
+                      candidate pool mean 15,067 (55.1% of corpus)  p95 22,898
+                      postings visited mean 30,997  p95 71,918
+    topN 10           terms/doc mean 9.9   candidate pool mean 1,333 (4.9%)
+                      postings visited mean 1,444
+
+    total postings visited over dev:  71,416,175  vs  3,326,019
+
+  CLAUDE.md requires the graph-builder bound stated as O(Sigma_t df_t^2) rather
+  than O(N.K), because edge emission from a bucket of size m costs m^2. Dropping
+  the truncation multiplies that sum by 21.78x. THE EVAL NEVER PAYS IT: it runs
+  2,304 queries, not 27,325^2. What the eval pays is Sigma_{t in q} df_t, and
+  that is the 71.4M above — seconds, and the reason section 2's p95 is 8.1 ms
+  against v1's 1.0.
+
+  Phase 4 is where 8.12e8 becomes real, and it is recorded here rather than
+  discovered there.
+
+  THERE IS NO DOCUMENT-FREQUENCY CUTOFF. If one becomes necessary it will be a
+  retriever PARAM that lands in describe(handle).digest, never a silent
+  constant — a silent cutoff is the "run that lies about itself" of §13.10. It
+  would also be a fifth variable in an already-three-variable comparison.
+
+  rank() COLLECTS EVERY CANDIDATE rather than pre-truncating with ctx.k —
+  ~15,000 collect() calls per query where v1 made ~63. The optimisation was
+  declined: collecting everything is the version whose equivalence to the
+  interface contract needs no argument, because it IS the contract. If it ever
+  has to change, the replacement ships with a byte-identity proof against this
+  one.
+
+
+7. QUERY 52326 — a thread from §7.7 and §14.6, closed
+------------------------------------------------------------------------------
+  "What are marshmallows?" / "What are marshmallows and how are they made?"
+  After stopwords, ONE distinct token: marshmallows.
+
+    v1  returns 8 documents, every one at strength 1/1 = 1.0000 — the maximum
+        the algorithm can emit, ranked above every genuine multi-word match
+    v2  returns 0 — minShared 2 is unreachable for a one-term document
+    v3  returns 10, top score 0.799187
+
+  §14.6 called this "d = 1" and read it as an artifact of the top-10 selection.
+  IT IS NOT: the document has one usable token at FULL vocabulary too, so the
+  corner is the document's, not the truncation's. v3 handles it because the
+  cosine normalises by the norm — the score becomes "how much of the target is
+  about marshmallows", which is bounded below 1 unless the target is about
+  nothing else.
+
+  It is also why v3-tfidf-minshared2 (5c) has exactly one zero-result query,
+  and it is this one.
+
+
+8. WHAT THE RUNG EXPOSED
+------------------------------------------------------------------------------
+
+  THE RETRIEVER SOURCE WAS NOT RECORDED ANYWHERE — fixed first, before v3 ran.
+  3.1's noticed-list item. The param digest covers {version, params} and
+  nothing else, so an edit to v1-overlap.js moves v2's and v3's numbers with no
+  digest change. eval/source-digest.js hashes the require closure into every
+  sidecar; compare-runs.js re-hashes at report time and names the differing
+  FILES. It earned its place on first use: v2's run predated v3's registration
+  line and the report said so, naming backend/retrieval/index.js.
+
+  analyse-rungs.js WAS NOT GENERALISED, despite 3.1 saying it was. It read
+  handle._state.keywordsById — v1's private representation — and crashed with a
+  TypeError on the first rung that does not store keyword lists. Fixed via an
+  optional termCount() on the Retriever contract. Two things it was hiding:
+    - the quantity is not comparable across rungs (a top-10 length is capped at
+      10; a full-vocabulary count runs to 1,021), yet the 6/7 BUCKETING agrees
+      on every document — forced, because below 10 the truncation does not bind
+    - its histogram printed rows 1..10 only, which under a full-vocabulary
+      yardstick is a corner of the distribution that looks complete
+  §14.6's published v2-vs-v1 output is unchanged, verified line by line.
+
+  SYMMETRY WAS NOT FREE, and it was a test failure before it was a decision.
+  A cosine is symmetric mathematically, but the two directions accumulate the
+  same products in different orders and floating-point addition is not
+  associative: score(A->B) came out 0.14845859879756534 against ...32. Rather
+  than weaken v2's exact-equality claim to a tolerance, term ids are assigned
+  in SORTED VOCABULARY order and every vector is stored ascending, so both
+  directions visit shared terms identically. Sorted rather than first-seen, or
+  corpus order would permute the ids and move the last bits back. Both
+  properties are asserted by tests.
+
+  THE RUNNER AND THE METRICS: nothing. Both sides re-scored from the written
+  run files through metrics.js and asserted against their committed sidecars at
+  exact float equality; passed. No new flag was needed.
+
+  slice(0, null) RETURNS [] — a topN of null reaching a truncation path would
+  empty every vector and make every score 0/0, a run of zeroes that looks like
+  a finding. Rejected at index() with a test.
+
+  THE `dirty` FLAG IS STRUCTURALLY ALWAYS TRUE. gitProvenance() excludes
+  untracked files so that "every run after the first" is not marked dirty by
+  its own output — but SIDECARS ARE TRACKED, so writing one dirties the tree
+  and the next run records dirty=true anyway. The committed sidecars at 3.1
+  already say dirty=true for this reason. Not fixed; noticed.
+
+
+9. REPRODUCTION
+------------------------------------------------------------------------------
+  All 13 dev runs regenerated from a clean tree at 57f1bbb. Every run-file
+  SHA-256 identical to the one its sidecar recorded, including the five that
+  predate this session:
+
+    9618f1bf v1-overlap          e8aeaede v1-overlap-uncapped
+    33f388d8 v1-overlap-tuned    0b2531b7 v2-jaccard
+    0ce69364 v2-jaccard-naive    de30944d v2-jaccard-uncapped
+    07fa22ce v3-tfidf            a398e10d v3-tfidf-nolen
+    bb0b6306 v3-tfidf-top10      2df51749 v3-tfidf-top10-nolen
+    92f7dbd9 v3-tfidf-top10-minshared2
+    95390e35 v3-tfidf-minshared2 762fc57b v3-tfidf-noidf
+
+  The three comparison reports predating this session were regenerated so they
+  carry the source block. Every number in them is unchanged — 3.1's registered
+  +0.0025 / p 0.0482 reproduces exactly, because the seed is pinned.
+
+  results/parity/ still hashes to 83f9e35e..., so the frozen v1 baseline is
+  byte-intact and no line of v1-overlap.js was edited this session.
+
+
+10. WHAT THIS FILE DOES NOT ESTABLISH
+==============================================================================
+  NOT A TEST-SET RESULT. Dev only, until 3.6.
+
+  NOT HOLM-ADJUSTED. The p is raw. The family is seven and three of them now
+  exist. The bound is clear enough to state the outcome in advance this time,
+  which was not true at 3.1.
+
+  NOT A CLAIM THAT COSINE BEATS SET SIMILARITY IN GENERAL. It is a claim about
+  2,304 cooking questions, where the thing being replaced discarded ~26 of 36
+  distinct terms per document. The comparison is against a rung that was
+  deliberately handicapped by a decade-old product constant, not against a
+  tuned lexical baseline. v4-bm25 is the honest opponent, and it lands at 3.3.
+
+  THE ABSOLUTES REMAIN LOWER BOUNDS (§5.1). Validation (§10) removed a
+  different qualifier and neither retires the other. R@8 0.2846 means the
+  system found 28% of the JUDGED relevant documents; what fraction of the
+  genuinely relevant ones it found is not measurable from this key.
+
+  NO PERFORMANCE CLAIM. Section 2's p95 figures are uncontrolled laptop
+  measurements and section 6's costs are counts, not timings on a budget.
