@@ -45,6 +45,7 @@
  */
 
 const {
+  compareHits,
   resolveParams,
   paramsDigest,
   assertCapParam,
@@ -207,11 +208,15 @@ function search(handle, query, k) {
 
   handle._retriever.rank(handle._state, queryDoc, ctx);
 
-  // Descending score; ties broken lexicographically on the id string. Any
-  // total order would do — what matters is that it is fixed, so a rerun cannot
-  // reshuffle a tie group and move a document across the k boundary. See
+  // Descending score; ties broken lexicographically on the id string. See
   // v1-overlap.js for what this replaces in the shipped algorithm.
-  collected.sort((a, b) => (b.score - a.score) || (a.docId < b.docId ? -1 : a.docId > b.docId ? 1 : 0));
+  //
+  // THE COMPARATOR MOVED TO types.js AT 3.5 AND THE ORDERING IS STILL OWNED
+  // HERE. v6-hybrid scores by a document's POSITION in each component's list,
+  // so it has to order those lists internally — and ordering them by anything
+  // else would fuse ranks that no standalone run produces. One definition, two
+  // callers, rather than a private copy in each. types.js:compareHits.
+  collected.sort(compareHits);
 
   // assertCapParam has already established that cap is absent, null, or a
   // positive integer, so `== null` is the whole test. This deliberately no
@@ -229,5 +234,6 @@ register(require('./v2-jaccard'));
 register(require('./v3-tfidf'));
 register(require('./v4-bm25'));
 register(require('./v5-embeddings'));
+register(require('./v6-hybrid'));
 
 module.exports = { index, search, describe, register, versions, resolvedParamsFor };

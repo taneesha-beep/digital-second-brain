@@ -123,19 +123,49 @@ describe('every registered rung declares `symmetric`, and the declaration is mea
     }
   });
 
-  test('the ladder is v1 no, v2 yes, v3 yes, v4 no, v5 yes — the sequence, in one place', () => {
+  test('the ladder is v1 no, v2 yes, v3 yes, v4 no, v5 yes, v6 no — the sequence, in one place', () => {
     expect(retrieval.versions().map((v) => [v, require(`../retrieval/${v}`).symmetric])).toEqual([
       ['v1-overlap', false],
       ['v2-jaccard', true],
       ['v3-tfidf', true],
       ['v4-bm25', false],
-      ['v5-embeddings', true]
+      ['v5-embeddings', true],
+      ['v6-hybrid', false]
     ]);
   });
 
   test('v4 is asymmetric in the shape §14.5 measured — and every exception has equal length', () => {
     const { disagreed } = measureSymmetry(scoreTable('v4-bm25'));
     expect(disagreed).toBeGreaterThan(0);
+  });
+
+  test('v6 is asymmetric, as declared', () => {
+    const { disagreed } = measureSymmetry(scoreTable('v6-hybrid'));
+    expect(disagreed).toBeGreaterThan(0);
+  });
+
+  test('RANK IS ASYMMETRIC EVEN WHERE SCORE IS NOT — why a rank fusion cannot inherit v5s symmetry', () => {
+    // 3.5's sharpening of §17.10, which attributed v6's asymmetry to BM25. That
+    // is true and it understates it: score_v6(A→B) reads B's position in the
+    // lists ranked against A, while score_v6(B→A) reads A's position in
+    // DIFFERENT lists. So a rank fusion of two PERFECTLY score-symmetric
+    // retrievers would still be asymmetric.
+    //
+    // Measured on v5 alone, which this file has just proved symmetric at exact
+    // float equality: B can be A's nearest neighbour while A is not B's.
+    const table = scoreTable('v5-embeddings');
+    const rankOf = new Map();
+    for (const [a, row] of table) {
+      const ordered = [...row.entries()].sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1));
+      rankOf.set(a, new Map(ordered.map(([id], i) => [id, i + 1])));
+    }
+    let rankDisagreements = 0;
+    for (const [a, row] of rankOf) {
+      for (const [b, rank] of row) {
+        if (rankOf.get(b).get(a) !== rank) rankDisagreements += 1;
+      }
+    }
+    expect(rankDisagreements).toBeGreaterThan(0);
   });
 
   test('v5 is symmetric under BOTH settings of `normalise`, since a dot product is too', () => {
