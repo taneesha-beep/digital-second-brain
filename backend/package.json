@@ -15,6 +15,7 @@
     "eval": "node scripts/run-eval.js",
     "eval:compare": "node scripts/compare-runs.js",
     "sweep:v1": "node scripts/sweep-v1.js",
+    "analyse:bm25": "node scripts/analyse-bm25.js",
     "analyse:rungs": "node scripts/analyse-rungs.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
     "analyse:vocab": "node scripts/analyse-vocabulary.js"
