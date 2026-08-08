@@ -41,3 +41,14 @@ docs/LEARNING.md
 docs/INTERVIEW-NOTES.md
 docs/PRIMER.md
 docs/EVALUATION.md
+# 3.4's vectors and the model weights behind them. Same rule as data/corpus/ and
+# data/qrels/: the artifact is 42 MB (vectors) and 86 MB (weights), and what
+# makes it citable is its SHA-256 in a manifest and in docs/EVALUATION.md §17,
+# not its presence in git. NOTE THE DIFFERENCE FROM EVERY OTHER data/ ENTRY:
+# the corpus, qrels and splits are IGNORED BUT REGENERABLE byte-identically
+# (§6.3, proved across three environments). The vectors are ignored and are NOT
+# byte-regenerable off this architecture — ONNX Runtime dispatches to
+# architecture-specific kernels — so they are a PINNED INPUT in the class of
+# Posts.xml, not a derived output. §17 says so in full.
+data/vectors/
+data/models/

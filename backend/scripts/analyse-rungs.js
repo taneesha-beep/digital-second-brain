@@ -32,6 +32,37 @@
  * lexicographic on the id), and v1's scores take only 18 distinct values across
  * dev, so 88% of adjacent pairs are score ties whose order is not recoverable
  * from the score column at all. §10.2.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * THE STRATIFICATION AXIS MOVED TO THE CORPUS AT 3.4. 3.2 deferred the decision
+ * to 3.4; 3.3 recorded that it had survived only by luck.
+ *
+ * The axis used to be the RETRIEVER's `termCount()`. That worked while every
+ * rung represented a document as terms, and 3.3 noted it held for v4 only
+ * because v4's distinct-term count happens to equal v3's. V5 HAS NO TERMS AT
+ * ALL — it is 384 floats — so there was nothing left to defer.
+ *
+ *   default   --axis corpus-terms     distinct tokens under the ladder's shared
+ *                                     tokenise(), over title + ' ' + body,
+ *                                     computed HERE from the corpus
+ *   opt-in    --axis retriever-terms  the pre-3.4 behaviour
+ *
+ * Three reasons the corpus is the right owner, in increasing order of weight:
+ *   1. it exists for every rung, including ones with no term space;
+ *   2. it is identical across the two rungs BY CONSTRUCTION, so the strata are
+ *      like-for-like rather than accidentally so — which is all §16.10 had;
+ *   3. the script no longer calls index() merely to obtain a histogram. That
+ *      call was about to become circular: indexing v5 requires vectors, so an
+ *      analysis tool would have needed the corpus-preparation pipeline to
+ *      produce a table about document lengths.
+ *
+ * WHAT IT COSTS, AND IT IS NOT NOTHING. v1's and v2's termCount is a top-10
+ * SELECTION length capped at 10, so their `d <= 6` stratum is a real regime of
+ * their own admission rule (§7.7, §13.8) that a corpus axis cannot express.
+ * `--axis retriever-terms` reproduces §14.6 exactly and §14.6 carries a ↳ to
+ * say so. For v3, v4 and v5 the two axes are the SAME QUANTITY — v3's and v4's
+ * termCount already returned distinct tokens — so §16.10's table is unchanged,
+ * which is verified by re-running it rather than assumed.
  */
 
 const fs = require('fs');
@@ -50,16 +81,20 @@ function fail(message) {
 }
 
 function parseArgs(argv) {
-  const args = { site: 'cooking', split: 'dev' };
+  const args = { site: 'cooking', split: 'dev', axis: 'corpus-terms' };
   for (let i = 0; i < argv.length; i += 1) {
     const [flag, value] = [argv[i], argv[i + 1]];
     if (flag === '--a' && value) { args.a = value; i += 1; }
     else if (flag === '--b' && value) { args.b = value; i += 1; }
     else if (flag === '--split' && value) { args.split = value; i += 1; }
     else if (flag === '--site' && value) { args.site = value; i += 1; }
+    else if (flag === '--axis' && value) { args.axis = value; i += 1; }
     else if (flag.startsWith('--')) fail(`unknown flag ${flag}`);
   }
   if (!args.a || !args.b) fail('need --a <label> and --b <label>');
+  if (!['corpus-terms', 'retriever-terms'].includes(args.axis)) {
+    fail(`--axis must be corpus-terms (default, 3.4 onward) or retriever-terms (pre-3.4), got ${args.axis}`);
+  }
   return args;
 }
 
@@ -160,22 +195,42 @@ function main() {
   // the corpus sits exactly there) while v3 reports distinct terms (mean 36.5,
   // max 1,021). So the two are computed separately, compared, and the source is
   // printed — a `d <= 6` stratum does not mean the same thing either side.
-  const termCounts = (version) => {
+  // THE CORPUS AXIS (default from 3.4). Distinct tokens under the ladder's
+  // shared tokenise() — the same quantity v3's and v4's termCount() return, so
+  // §16.10 is unchanged, and one that exists for a rung with no term space at
+  // all. Computed once and shared by both sides, which is what makes the strata
+  // like-for-like by construction rather than by luck.
+  const corpusTerms = () => {
+    const { tokenise } = require('../retrieval/v1-overlap');
+    return {
+      by: new Map(docs.map((d) => [d.id, new Set(tokenise(`${d.title || ''} ${d.body || ''}`)).size])),
+      how: 'distinct corpus tokens (tokenise over title + body)'
+    };
+  };
+
+  const retrieverTerms = (version) => {
     const retriever = retrieval.versions().includes(version) ? require(`../retrieval/${version}`) : null;
-    const handle = retrieval.index(version, docs);
     if (retriever && typeof retriever.termCount === 'function') {
+      const handle = retrieval.index(version, docs);
       return { by: new Map(docs.map((d) => [d.id, retriever.termCount(handle._state, d.id)])), how: 'termCount()' };
     }
+    const handle = retrieval.index(version, docs);
     if (handle._state.keywordsById) {
       return {
         by: new Map(docs.map((d) => [d.id, handle._state.keywordsById.get(d.id).length])),
         how: 'keyword-list length (pre-3.2 fallback)'
       };
     }
-    fail(`${version} exposes neither termCount() nor keywordsById, so queries cannot be stratified.`);
+    fail(
+      `--axis retriever-terms: ${version} exposes neither termCount() nor keywordsById.\n` +
+      '  v5 has no term space, which is why the default axis moved to the corpus at 3.4.\n' +
+      '  Drop the flag to use --axis corpus-terms.'
+    );
   };
-  const countsA = termCounts(A.sidecar.retriever.version);
-  const countsB = termCounts(B.sidecar.retriever.version);
+
+  const shared = args.axis === 'corpus-terms' ? corpusTerms() : null;
+  const countsA = shared || retrieverTerms(A.sidecar.retriever.version);
+  const countsB = shared || retrieverTerms(B.sidecar.retriever.version);
   const kwLen = countsA.by;
   const countsAgree = docs.every((d) => countsA.by.get(d.id) === countsB.by.get(d.id));
   // The counts can disagree while the 6/7 BUCKETING still agrees, and on this
@@ -205,6 +260,7 @@ function main() {
   w('  The d <= 6 stratum is where a length-dependent threshold behaves');
   w('  differently from a length-independent minShared. EVALUATION.md §7.7, §13.8.');
   w();
+  w(`  axis  --axis ${args.axis}${args.axis === 'corpus-terms' ? '  (default from 3.4; one axis, computed from the corpus, shared by both sides)' : '  (pre-3.4 behaviour, reproduces §14.6)'}`);
   w(`  counts for A (${A.label}) via ${countsA.how}`);
   w(`  counts for B (${B.label}) via ${countsB.how}`);
   if (countsAgree) {

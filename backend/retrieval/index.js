@@ -69,6 +69,20 @@ function register(retriever) {
     // retriever able to skip the exclusion and the postconditions.
     throw new TypeError(`register: ${retriever.version} must not export search(); ranking is reported through ctx.collect`);
   }
+  // REQUIRED from 3.4, and required rather than defaulted. The ladder went
+  // v1 asymmetric -> v2 symmetric -> v3 symmetric -> v4 asymmetric -> v5
+  // symmetric, and until now that sequence lived only in prose across four
+  // sections of EVALUATION.md. A default would let the next rung inherit an
+  // answer silently, which is the failure this declaration exists to remove.
+  // tests/retrieval.symmetry.test.js MEASURES every declaration against the
+  // fixture, so this is a claim the suite checks rather than one it records.
+  if (typeof retriever.symmetric !== 'boolean') {
+    throw new TypeError(
+      `register: ${retriever.version} must declare symmetric: true|false — whether ` +
+        'score(A→B) === score(B→A). Phase 4.2 has to build a bidirectional link ' +
+        'graph from the winner and cannot read that out of prose.'
+    );
+  }
   if (registry.has(retriever.version)) {
     throw new Error(`register: ${retriever.version} already registered`);
   }
@@ -78,6 +92,24 @@ function register(retriever) {
 
 function versions() {
   return [...registry.keys()].sort();
+}
+
+/**
+ * The params a version would resolve to under given overrides, WITHOUT building
+ * an index.
+ *
+ * Added at 3.4 for one caller and one reason: run-eval.js has to know which
+ * vectors file to load before it can construct the documents it would index, so
+ * it needs the resolved `vectors` slug before index() exists. Guessing the
+ * module path from the version string is the alternative, and it would put the
+ * registry's naming convention in a second place.
+ */
+function resolvedParamsFor(version, params = {}) {
+  const retriever = registry.get(version);
+  if (!retriever) {
+    throw new Error(`resolvedParamsFor: unknown retriever ${version}. Known: ${versions().join(', ') || '(none)'}`);
+  }
+  return resolveParams(version, retriever.defaultParams, params);
 }
 
 /**
@@ -107,19 +139,29 @@ function index(version, docs, params = {}) {
     params: resolved,
     docCount: docs.length,
     digest: paramsDigest(version, resolved),
+    symmetric: retriever.symmetric,
     _retriever: retriever,
     _byId: byId,
     _state: retriever.buildIndex(docs, resolved)
   };
 }
 
-/** Provenance for a run file or a manifest. */
+/**
+ * Provenance for a run file or a manifest.
+ *
+ * `symmetric` is here and deliberately NOT in the digest. paramsDigest covers
+ * {version, params}; symmetry is a property of the algorithm rather than a
+ * setting, so folding it in would move every digest on the ladder and
+ * invalidate 21 committed sidecars to record something that describes rather
+ * than configures. It rides alongside instead.
+ */
 function describe(handle) {
   return {
     version: handle.version,
     params: handle.params,
     docCount: handle.docCount,
-    digest: handle.digest
+    digest: handle.digest,
+    symmetric: handle.symmetric
   };
 }
 
@@ -186,5 +228,6 @@ register(require('./v1-overlap'));
 register(require('./v2-jaccard'));
 register(require('./v3-tfidf'));
 register(require('./v4-bm25'));
+register(require('./v5-embeddings'));
 
-module.exports = { index, search, describe, register, versions };
+module.exports = { index, search, describe, register, versions, resolvedParamsFor };

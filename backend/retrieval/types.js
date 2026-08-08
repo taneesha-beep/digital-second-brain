@@ -32,6 +32,16 @@ const crypto = require('crypto');
  *                            a qrels join can never fail on 1 !== "1"
  * @property {string} [title]
  * @property {string} [body]
+ * @property {Float32Array} [vector]  present from 3.4, and the comment above
+ *                            turned out to be exactly right: v5 reads a
+ *                            precomputed vector the same way v1 reads text.
+ *                            Attached by run-eval.js from data/vectors/, which
+ *                            re-hashes the file against its manifest and checks
+ *                            the manifest's corpusSha256 and idsSha256 against
+ *                            the corpus actually loaded. THE RETRIEVER CANNOT
+ *                            VERIFY THAT BINDING — hashing a file needs I/O —
+ *                            so it is the one link in the chain that lives on
+ *                            the runner's side of the §7.1 boundary
  */
 
 /**
@@ -56,6 +66,7 @@ const crypto = require('crypto');
  * @property {Readonly<Object>} params
  * @property {number}   docCount
  * @property {string}   digest    SHA-256 over {version, params}
+ * @property {boolean}  symmetric whether score(A→B) === score(B→A)
  */
 
 /**
@@ -77,9 +88,37 @@ const crypto = require('crypto');
  * `d <= 6` stratum means different things either side of that, which is why
  * analyse-rungs prints the source rather than assuming the two agree.
  *
+ * ↳ DEMOTED AT 3.4, and this paragraph is why it had to be. 3.2 deferred the
+ * decision to 3.4; 3.3 recorded that the stratification survived only because
+ * v4's termCount happened to equal v3's. v5 HAS NO TERMS, so there was nothing
+ * left to defer. analyse-rungs.js now stratifies on a CORPUS axis by default —
+ * distinct tokens under the shared tokenise() — which exists for every rung,
+ * is identical across rungs by construction rather than by luck, and lets the
+ * script stop calling index() merely to obtain a histogram. termCount stays
+ * OPTIONAL and reachable through `--axis retriever-terms`, because v1's and
+ * v2's `d <= 6` stratum is a real regime of THEIR admission rule that a corpus
+ * axis cannot express. v3's and v4's termCount already returned exactly the
+ * corpus quantity, so §16.10's table is unchanged — verified by re-running it,
+ * not assumed.
+ *
+ * `symmetric` is REQUIRED from 3.4 and register() rejects a retriever without
+ * it. Whether score(A→B) === score(B→A) had been decided four times — v1 no,
+ * v2 yes and that was the rung, v3 yes at real cost, v4 no and it won anyway —
+ * and recorded four times in prose. Phase 4.2 has to build a BIDIRECTIONAL link
+ * graph out of the winner, so "which direction do we store" is a question the
+ * interface should answer, not a document. It is deliberately not a param: it
+ * describes the algorithm rather than configuring it, so it must stay out of
+ * the digest, and it rides in describe(handle) instead.
+ *
+ * A declaration nobody checks is worse than none, so
+ * tests/retrieval.symmetry.test.js measures every REGISTERED rung against the
+ * 34-document fixture and fails if a declaration disagrees with the measurement
+ * IN EITHER DIRECTION — a stale `false` is caught as loudly as a false `true`.
+ *
  * @typedef  {Object} Retriever
  * @property {string}   version
  * @property {Object}   defaultParams
+ * @property {boolean}  symmetric
  * @property {function(CorpusDoc[], Object): Object} buildIndex
  * @property {function(Object, CorpusDoc, RankContext): void} rank
  * @property {function(Object, string): number} [termCount]

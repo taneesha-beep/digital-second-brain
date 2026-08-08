@@ -61,6 +61,23 @@
  * matching corpus ids as a diagnosis for a sub-0.05 nDCG, and the failure mode
  * of a broken join is not a crash — it is a plausible-looking low number. Every
  * check below turns one of those into an exit 1.
+ *
+ * VECTORS ARE A FOURTH INPUT, ADDED AT 3.4, AND THEY GET THE SAME TREATMENT AS
+ * THE OTHER THREE. If the resolved params carry a `vectors` slug, this script
+ * loads data/vectors/<site>.<slug>.f32, re-hashes it against its manifest, and
+ * attaches row i to corpus document i as `doc.vector`. Embedding is corpus
+ * preparation (§7.1) and a model cannot live behind a pure-function contract,
+ * so v5 receives vectors as data exactly as v1 receives text.
+ *
+ * THE ALIGNMENT CHECK IS THE POINT, and it is the dense rung's equivalent of
+ * self-retrieval. If the vectors were built from a different corpus, or the
+ * rows are off by one, every score is nonsense and NOTHING ELSE IN THE PIPELINE
+ * WOULD NOTICE — the run file is well-formed, the assertions pass, the metrics
+ * land in a plausible band. So the manifest carries the corpus SHA-256 it was
+ * built from and an idsSha256 over the doc ids in row order, and both are
+ * recomputed here from the corpus actually loaded. That makes misalignment
+ * impossible rather than unlikely, which is the standard §7.3 set for
+ * self-retrieval and the same reason it is worth the code.
  */
 
 const fs = require('fs');
@@ -69,7 +86,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
-const { index, search, describe, versions } = require('../retrieval');
+const { index, search, describe, versions, resolvedParamsFor } = require('../retrieval');
 const { scoreQuery, aggregate } = require('../eval/metrics');
 const { retrieverSource } = require('../eval/source-digest');
 
@@ -147,6 +164,97 @@ function loadCorpus(file) {
     docs.push(doc);
   }
   return docs;
+}
+
+/**
+ * Attach precomputed embeddings to the corpus documents, and prove they belong
+ * to this corpus before doing so.
+ *
+ * Returns the input record for the sidecar, so vectors are pinned in the run's
+ * provenance exactly as the corpus, qrels and split are. Called only when the
+ * resolved params carry a `vectors` slug, so every rung below v5 is untouched
+ * and their run files cannot move.
+ */
+function attachVectors({ site, slug, docs }) {
+  const dir = path.join(REPO_ROOT, 'data', 'vectors');
+  const file = path.join(dir, `${site}.${slug}.f32`);
+  const manifestFile = path.join(dir, `${site}.${slug}.manifest.json`);
+  if (!fs.existsSync(file)) {
+    fail(
+      `${path.relative(REPO_ROOT, file)} does not exist.\n` +
+      '  Vectors are corpus preparation (EVALUATION.md §7.1). Build them with:\n' +
+      '    node scripts/embed-corpus.js --fetch      # once, downloads the pinned weights\n' +
+      `    node scripts/embed-corpus.js --site ${site}`
+    );
+  }
+  if (!fs.existsSync(manifestFile)) {
+    fail(`${path.relative(REPO_ROOT, manifestFile)} does not exist. A vectors file with no manifest pins nothing.`);
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+
+  const actual = sha256File(file);
+  if (manifest.output && manifest.output.sha256 && actual !== manifest.output.sha256) {
+    fail(
+      `${path.relative(REPO_ROOT, file)} does not match its manifest.\n` +
+      `    actual   ${actual}\n    manifest ${manifest.output.sha256}`
+    );
+  }
+
+  // 1. Built from THIS corpus. Without it, vectors from an earlier corpus build
+  //    would attach cleanly by row count and score plausible nonsense.
+  const corpusFile = path.join(REPO_ROOT, 'data', 'corpus', `${site}.jsonl`);
+  const corpusSha = sha256File(corpusFile);
+  if (manifest.binding && manifest.binding.corpusSha256 !== corpusSha) {
+    fail(
+      'the vectors were built from a different corpus.\n' +
+      `    corpus on disk   ${corpusSha}\n` +
+      `    vectors built on ${manifest.binding.corpusSha256}`
+    );
+  }
+
+  // 2. Row order. The strongest of the three: it fails on an off-by-one, a
+  //    reordering, and a single substituted document alike.
+  const idsSha = crypto.createHash('sha256').update(`${docs.map((d) => d.id).join('\n')}\n`).digest('hex');
+  if (manifest.binding && manifest.binding.idsSha256 !== idsSha) {
+    fail(
+      'the vectors are not aligned with the corpus rows.\n' +
+      `    ids on disk    ${idsSha}\n` +
+      `    ids at embed   ${manifest.binding.idsSha256}`
+    );
+  }
+
+  // 3. Shape. Checked against the file's real length rather than the manifest's
+  //    claim about it, so a truncated file cannot pass by describing itself.
+  const dim = manifest.vectors.dim;
+  const bytes = fs.statSync(file).size;
+  if (bytes !== docs.length * dim * 4) {
+    fail(
+      `${path.relative(REPO_ROOT, file)} is ${bytes} bytes; ${docs.length} docs × ${dim} dims × 4 ` +
+      `= ${docs.length * dim * 4} expected.`
+    );
+  }
+
+  const buffer = fs.readFileSync(file);
+  // One backing buffer, one subarray view per document — no per-document copy,
+  // and buildIndex copies into its own contiguous matrix anyway.
+  const all = new Float32Array(buffer.buffer, buffer.byteOffset, docs.length * dim);
+  for (let i = 0; i < docs.length; i += 1) {
+    docs[i].vector = all.subarray(i * dim, (i + 1) * dim);
+  }
+
+  console.log(
+    `  vectors ${manifest.model.repo} @ ${manifest.model.revision.slice(0, 12)}… · dim ${dim} · ` +
+    `${manifest.text.maxTokens} wordpieces · ${(100 * manifest.text.truncatedShare).toFixed(1)}% truncated`
+  );
+  console.log('  vectors bound to this corpus: file sha, corpus sha and row-order ids all match the manifest');
+
+  return {
+    name: 'vectors',
+    file,
+    actual,
+    expected: manifest.output ? manifest.output.sha256 : undefined,
+    manifest
+  };
 }
 
 /** TREC qrels: `qid 0 docid grade`. Returns Map<qid, Map<docid, grade>>. */
@@ -418,6 +526,19 @@ function main() {
     { name: 'qrels', file: qrelsFile, actual: sha256File(qrelsFile), expected: qrelsManifest?.output?.sha256 },
     { name: 'split', file: splitFile, actual: sha256File(splitFile), expected: splitsManifest?.splits?.[split]?.sha256 }
   ];
+
+  // A fourth input, and only for rungs that declare one. `vectors` is resolved
+  // through the retriever's own defaults so `--param vectors=<slug>` selects a
+  // different file and lands in the params digest — which is what makes the
+  // 256-vs-128 truncation ablation a one-variable change the comparison report
+  // can see, rather than two runs sharing a digest.
+  const resolved = resolvedParamsFor(retriever, args.params);
+  let vectorsManifest = null;
+  if (resolved.vectors !== undefined) {
+    const record = attachVectors({ site, slug: resolved.vectors, docs });
+    vectorsManifest = record.manifest;
+    inputs.push({ name: 'vectors', file: record.file, actual: record.actual, expected: record.expected });
+  }
   assertInputsPinned(inputs);
 
   // --- assert ---------------------------------------------------------------
@@ -530,6 +651,26 @@ function main() {
     // eval/source-digest.js documents what is hashed and what is deliberately
     // not traversed.
     retrieverSource: retrieverSource(retriever),
+    // 3.4. Present only for a rung that carries vectors. The file's SHA-256 is
+    // already in `inputs` above; what is copied here is the part that does NOT
+    // regenerate — which model, at which revision, under which truncation — so
+    // a v5 run file separated from data/ still names the model that produced
+    // it. That is the same argument §8.1 made for putting the param digest on
+    // every TREC line.
+    vectors: vectorsManifest === null ? null : {
+      slug: vectorsManifest.slug,
+      model: vectorsManifest.model.repo,
+      revision: vectorsManifest.model.revision,
+      dim: vectorsManifest.model.dim,
+      dtype: vectorsManifest.model.dtype,
+      pooling: vectorsManifest.model.pooling,
+      text: vectorsManifest.text,
+      batching: vectorsManifest.batching,
+      normalisedAtRest: vectorsManifest.vectors.normalised,
+      binding: vectorsManifest.binding,
+      embedEnvironment: vectorsManifest.environment,
+      notReproducibleByteWise: vectorsManifest._notReproducibleByteWise
+    },
     k: kMax,
     ksReported: ks,
     command: `npm run eval -- --retriever ${retriever} --split ${split}` +

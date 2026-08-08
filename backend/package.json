@@ -19,6 +19,7 @@
     "analyse:bm25": "node scripts/analyse-bm25.js",
     "analyse:rungs": "node scripts/analyse-rungs.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
+    "embed:corpus": "node ../scripts/embed-corpus.js",
     "analyse:vocab": "node scripts/analyse-vocabulary.js"
   },
   "dependencies": {

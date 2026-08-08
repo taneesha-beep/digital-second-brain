@@ -27,6 +27,7 @@ describe('self-retrieval is excluded by construction', () => {
     retrieval.register({
       version: 'test-cheat',
       defaultParams: {},
+      symmetric: false, // required from 3.4; irrelevant to what this fixture tests
       buildIndex: (docs) => docs,
       rank(state, queryDoc, ctx) {
         ctx.collect(queryDoc.id, 999); // the perfect self-match
@@ -61,6 +62,7 @@ describe('self-retrieval is excluded by construction', () => {
       retrieval.register({
         version: 'test-own-search',
         defaultParams: {},
+        symmetric: false,
         buildIndex: (d) => d,
         rank: () => {},
         search: () => []
@@ -87,6 +89,7 @@ describe('postconditions', () => {
     retrieval.register({
       version: 'test-dupe',
       defaultParams: {},
+      symmetric: false,
       buildIndex: (d) => d,
       rank(state, queryDoc, ctx) {
         ctx.collect('b', 1);
@@ -177,6 +180,7 @@ describe('params and provenance', () => {
       retrieval.register({
         version: 'test-no-cap',
         defaultParams: {},
+        symmetric: false,
         buildIndex: (d) => d,
         rank(state, queryDoc, ctx) {
           for (const doc of state) if (doc.id !== queryDoc.id) ctx.collect(doc.id, 1);

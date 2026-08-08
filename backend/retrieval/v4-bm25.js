@@ -558,6 +558,15 @@ module.exports = {
   buildIndex,
   rank,
   termCount,
+  /**
+   * BM25 is a QUERY-document function: the document side is length-normalised
+   * and tf-saturated, the query side is neither. §14.5's amendment measured
+   * 190 of 197 reachable fixture pairs disagreeing between the two directions,
+   * with every symmetric exception at |A| = |B|. The winning rung is the
+   * asymmetric one, which is the tension Phase 4.2 inherits — and from 3.4 it
+   * inherits it as a field in the sidecar rather than as a paragraph.
+   */
+  symmetric: false,
   // Not part of the interface — read by scripts/analyse-bm25.js, which is
   // read-only and reports the corpus statistics 3.3's Done criterion names.
   idfFor,
