@@ -1,0 +1,36 @@
+{
+  "name": "second-brain-eval-tooling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Out-of-band tooling for the evaluation work. NOT part of the app and NOT part of the Node eval path — see the comment block below.",
+  "_why": [
+    "backend/package.json carries the app and nothing else, and the Node eval",
+    "path (backend/retrieval/, backend/eval/, backend/scripts/run-eval.js) is",
+    "dependency-free — it requires only Node builtins, which is what keeps a",
+    "transitive version bump from moving an nDCG.",
+    "",
+    "Phase 3.4 needs an embedding model, which is a heavy native dependency. It",
+    "goes HERE rather than in backend/package.json, mirroring exactly what 2.4",
+    "did with scripts/.venv + scripts/requirements.txt for pytrec_eval: the",
+    "tooling that produces or certifies an artifact lives outside the package",
+    "whose dependency list is a claim.",
+    "",
+    "EVALUATION.md §7.1 draws the line this respects: embedding is corpus",
+    "PREPARATION, not part of the retriever. The vectors are written to a file",
+    "and handed to v5-embeddings as data. backend/tests/retrieval.interface.js",
+    "enforces the other half mechanically — nothing under backend/retrieval/ may",
+    "require anything outside it, `crypto` excepted — so this dependency cannot",
+    "reach the retriever even by accident.",
+    "",
+    "PINNED BY LOCKFILE, NOT BY RANGE. package-lock.json is committed and carries",
+    "a per-package integrity hash; install with `npm ci`, never `npm install`.",
+    "That is the npm analogue of requirements.txt's --require-hashes and of",
+    "1.6's image digest: a range names a name, a hash names bytes."
+  ],
+  "scripts": {
+    "postinstall": "node -e \"console.log('scripts/: install with npm ci, not npm install — the lockfile is the pin')\""
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.2.0"
+  }
+}

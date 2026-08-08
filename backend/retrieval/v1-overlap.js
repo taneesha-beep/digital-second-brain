@@ -272,4 +272,24 @@ function keywordsFor(state, docId) {
   return state.keywordsById.get(docId);
 }
 
-module.exports = { version: 'v1-overlap', defaultParams, buildIndex, rank, keywordsFor, tokenise };
+module.exports = {
+  version: 'v1-overlap',
+  defaultParams,
+  buildIndex,
+  rank,
+  keywordsFor,
+  tokenise,
+  /**
+   * score(A→B) = |A ∩ B| / |A| divides by the SOURCE's keyword count, so the two
+   * directions disagree whenever the two lists differ in length. §14.5 measured
+   * it by putting v1 through v2's symmetry test and watching it fail.
+   *
+   * ADDED AT 3.4, AND IT IS THE ONLY LINE THIS FILE HAS GAINED SINCE 2.1.
+   * It declares behaviour rather than changing any: `symmetric` is not a param,
+   * so no params digest moves, and the freeze on this file is the PARITY hash —
+   * `results/parity/` must still be 83f9e35e…, which is re-run and checked
+   * rather than assumed. See §17 and tests/retrieval.symmetry.test.js, which
+   * measures this declaration instead of trusting it.
+   */
+  symmetric: false
+};

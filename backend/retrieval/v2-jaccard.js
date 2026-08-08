@@ -216,4 +216,16 @@ function rank(state, queryDoc, ctx) {
   }
 }
 
-module.exports = { version: 'v2-jaccard', defaultParams, buildIndex, rank };
+module.exports = {
+  version: 'v2-jaccard',
+  defaultParams,
+  buildIndex,
+  rank,
+  /**
+   * |A ∩ B| / |A ∪ B| — both halves symmetric in A and B. This was the POINT of
+   * the rung (§14.5), and until 3.4 it lived only in prose and in one rung's
+   * test. It is now on the contract, so `describe(handle)` carries it into every
+   * sidecar and Phase 4.2 can read it instead of a document.
+   */
+  symmetric: true
+};

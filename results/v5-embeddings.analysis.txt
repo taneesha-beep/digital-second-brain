@@ -1,0 +1,128 @@
+ANALYSE v5-embeddings — cooking, N=27325
+==============================================================================
+
+1. MODEL, DIMENSION, RUNTIME, HARDWARE, WALL TIME
+------------------------------------------------------------------------------
+  model        Xenova/all-MiniLM-L6-v2
+  revision     751bff37182d3f1213fa05d7196b954e230abad9   (a commit, not a branch)
+  dtype        fp32      pooling: mean over attention mask
+  dimension    384
+  runtime      transformers.js 4.2.0 on onnxruntime-node 1.24.3
+  hardware     Apple M2, arm64, 8 GB, darwin/arm64, Node v25.8.1
+  WALL TIME    620.6 s for all 27325 documents  (44.0 docs/s)
+  weights      config.json 650B, tokenizer.json 711661B, tokenizer_config.json 366B, special_tokens_map.json 125B, onnx/model.onnx 90387606B
+
+  Wall time is READ FROM THE MANIFEST, where embed-corpus.js recorded it at
+  the moment it was measured. Re-timing it here would report a warm page
+  cache and a different thermal state under the same name.
+
+2. TRUNCATION — the confound inside any v4-vs-v5 comparison
+------------------------------------------------------------------------------
+  window            256 wordpieces (the checkpoint's own limit, not a choice)
+  truncated         2566 of 27325 documents (9.4%)
+  longest document  6781 wordpieces
+  mean after trunc  123.5
+  text template     title + "\n" + body
+
+  BM25 reads every token of a 2,185-token document; this model reads the
+  first 256. That asymmetry sits inside the rung comparison and cannot be
+  removed, only measured — which is what the 128-wordpiece run is for.
+
+3. THE VECTORS
+------------------------------------------------------------------------------
+  norms         min 1.5166 · p50 2.8798 · p95 4.3206 · max 7.0002
+  stored        unnormalised, so `normalise` is a param flip rather than a re-embed
+  mean pairwise cosine (sampled at embed time)  0.1272 over 128271 pairs
+  max  pairwise cosine (sampled at embed time)  0.7965
+
+  A mean pairwise cosine near 1 would mean the embedding had collapsed and
+  any nDCG from it was an artifact. embed-corpus.js hard-fails above 0.9.
+  The spread of norms is 4.6x, which is why cosine-vs-dot is a real
+  ablation here and not a formality.
+
+4. INDEX BUILD
+------------------------------------------------------------------------------
+  five builds   49 36 36 39 36 ms
+  median        36 ms      (v4-bm25: 982 ms · v3-tfidf: ~1,470 ms)
+
+  v5 builds no postings, no vocabulary and no df table. It copies 42 MB into
+  a contiguous matrix and normalises each row, which is one linear pass. The
+  work the other rungs do at index time was done once by the embed step.
+
+5. MEMORY — three numbers that must not be conflated
+------------------------------------------------------------------------------
+  typed arrays, computed from the structures    40.24 MiB
+    matrix  27325 x 384 x 4B = 40.03 MiB · norms 27325 x 8B = 0.21 MiB
+  retained for one handle (--expose-gc)         42.2 MiB
+    of which V8 heap      2.0 MiB   the id Map and the idByIndex array
+    of which arrayBuffers 40.2 MiB   the matrix and the norms
+    (handle held live across the measurement: 27325 docs)
+
+    BOTH TERMS ARE REPORTED BECAUSE heapUsed ALONE IS MISLEADING HERE, and
+    it was the first thing this script got wrong. A large typed array's
+    backing store is allocated OUTSIDE the V8 heap, so heapUsed reports
+    ~2 MiB for a structure that is 40 MiB of floats. v4's 34.8 MiB
+    retained-heap figure (§16.12) did not have this problem — its Maps and
+    strings are genuinely on the heap — so the two are NOT comparable
+    quantities and reading them side by side would be a mistake.
+  peak RSS for this process                     325 MiB
+
+  The third is dominated by the parsed corpus, which EVERY rung pays and
+  which is not part of the index — §16.12 made the same separation for v4,
+  where quoting RSS as "BM25's memory" would have been wrong by 19x.
+
+6. SEARCH, AND WHY EXACT RATHER THAN ANN
+------------------------------------------------------------------------------
+  per query     mean 19.53 ms · p50 19.35 · p95 20.43 ms
+  work          2 x 27325 x 384 = 21.0 MFLOP per query, plus a 27324-element sort
+  effective     1.08 GFLOP/s at p50 — plain JS over a Float32Array, no SIMD intrinsics
+
+  Exact search visits every document. An ANN index would buy sublinear
+  search and cost three things:
+    1. a dependency, inside the step this phase is about pinning;
+    2. build-time hyperparameters (HNSW M, efConstruction) needing their own
+       sweep and their own selection-bias accounting — §13.7 put 44% of v4's
+       tuning margin down to optimism, so that is not a formality;
+    3. APPROXIMATE RECALL, a new error source placed INSIDE the thing being
+       measured. A v4-vs-v5 difference would then confound the retriever with
+       the index, and CLAUDE.md's one-variable rule would be broken by the
+       data structure rather than by the experiment.
+  ANN starts paying when N x dim stops fitting the latency budget, around
+  N > 1e6. This corpus is 27325, and a full scan costs 19 ms.
+
+7. HOW DIFFERENT ARE v4 AND v5? — the number 3.5 actually needs
+------------------------------------------------------------------------------
+  mean Jaccard of the two top-8 sets    0.1906
+  queries where the top-8 sets are DISJOINT   221 of 2304 (9.6%)
+
+  RRF pays when two systems fail on different queries. This is the
+  measurement of "different" — recorded at 3.4 so 3.5 designs against a
+  number rather than discovering it in its own results.
+
+8. TRAIN/TEST CONTAMINATION — named, then measured
+------------------------------------------------------------------------------
+  all-MiniLM-L6-v2 was trained on Stack Exchange DUPLICATE QUESTION PAIRS
+  (model card: 304,525 titles / 250,519 bodies / 250,460 titles+bodies),
+  from flax-sentence-embeddings/stackexchange_xml, snapshotted 2021-07-26,
+  which CONTAINS cooking.stackexchange.com.7z. LinkTypeId=3 "Duplicate" is
+  the relation graded 2 in these qrels. The overlap is not hypothetical.
+
+  A query created after 2021-07-26 was not in that dump at all. If
+  memorisation were the mechanism, the margin would collapse there.
+
+  stratum      n        v4 nDCG@8    v5 nDCG@8    v5 - v4
+  seen       2149    0.249198     0.328382    +0.079184
+  unseen      155    0.198092     0.306250    +0.108158
+
+  seen stratum, paired bootstrap (seed 20260804, B=10000 — the §11.3 pins):
+    n 2149 · mean difference +0.079184 · 95% CI [+0.065683, +0.092894]
+    1123 queries moved; v5 ahead on 735, v4 on 388
+
+  unseen stratum, paired bootstrap (seed 20260804, B=10000 — the §11.3 pins):
+    n 155 · mean difference +0.108158 · 95% CI [+0.049801, +0.165641]
+    72 queries moved; v5 ahead on 48, v4 on 24
+
+  EXPLORATORY, and reported as such: this stratification is not in
+  registry.json, the n is small, and no p-value is quoted for it. What the
+  interval supports is a direction, not a second significance claim.
+

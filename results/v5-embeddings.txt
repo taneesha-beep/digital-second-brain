@@ -1,0 +1,656 @@
+RUNG v5 — DENSE EMBEDDINGS (roadmap 3.4)
+runs generated from a clean tree at 8ebc65e · sidecars at 5506c80
+==============================================================================
+
+Cosine over mean-pooled all-MiniLM-L6-v2 vectors, 384 dimensions, exact search.
+The first rung that is not a function of the words in the corpus.
+
+  IT WINS, AND I PREDICTED IT WOULD LOSE. v5-embeddings beats v4-bm25 by
+  0.0811 nDCG@8, 95% CI [0.0678, 0.0945], p < 0.0001. The third rung to clear
+  Holm's alpha/7 = 0.00714, and the largest single step on the ladder.
+
+THE PREDICTION, RECORDED BEFORE THE RUN AND WRONG. I expected v5 to land near
+0.16 — above v2, plausibly below v3 — on four arguments: duplicate detection on
+one technical site is lexical; the queries are whole documents and §16.9(b)
+measured their term frequencies as worth +0.0456, which a single pooled vector
+discards; MiniLM truncates at 256 wordpieces where BM25 reads everything; and
+BM25 is strong on lexical-overlap tasks in the published literature. The
+reasoning was not silly and the conclusion was wrong by 0.17. Two of those four
+arguments are tested below and both fail (§5b, §8).
+
+THE SENTENCE THIS RUN CAN SUPPORT, AND THE ONE IT CANNOT:
+
+  CAN:    a 384-dimension MiniLM running locally beats Okapi BM25 at its
+          textbook defaults, on 2,304 cooking questions, against a
+          positive-only key, on dev.
+  CANNOT: "dense embeddings beat BM25". Not this model, not this task, and
+          §8 is why the qualifier is load-bearing rather than modest.
+
+  npm run eval -- --retriever v5-embeddings --split dev
+  npm run eval:compare v5-embeddings v4-bm25
+  npm run analyse:rungs -- --a v5-embeddings --b v4-bm25 --split dev
+  npm run analyse:v5                          # results/v5-embeddings.analysis.txt
+  node scripts/embed-corpus.js --fetch        # once
+  node scripts/embed-corpus.js --site cooking
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+
+                                          nDCG@8    P@8     R@8   MRR@10   p95
+  v1-overlap   overlap, top-10, cap 8      0.1402  0.0375  0.1887  0.1520  1.0 ms
+  v2-jaccard   Jaccard, top-10, cap 8      0.1427  0.0381  0.1921  0.1546  0.87 ms
+  v3-tfidf     cosine, full vocabulary     0.2107  0.0563  0.2846  0.2266  8.1 ms
+  v4-bm25      BM25, k1 1.2, b 0.75        0.2458  0.0649  0.3261  0.2687  7.9 ms
+  v5-embeddings  MiniLM-L6-v2, cosine      0.3269  0.0854  0.4285  0.3444  20.4 ms
+
+  All four k, v5-embeddings:
+
+    metric       @1       @5       @8      @10
+  --------------------------------------------
+      nDCG   0.2331   0.3042   0.3269   0.3356
+         P   0.2426   0.1132   0.0854   0.0731
+         R   0.1684   0.3660   0.4285   0.4556
+    MRR@10   0.3444
+
+  {"vectors":"minilm-l6-v2-fp32-256","dim":384,"normalise":true}
+  digest c8878adce503e2a8e6b7992390392b3a62713485f70a64850245dcc139d1822e
+  source 2a82bef5ed1e0b7be356c9b675a82e41b4c9997e7b3608b842e244e1022a0870
+  runid  v5-embeddings.dev.c8878adc
+  run    results/runs/v5-embeddings.dev.run  sha256 89227f28f7cd61fa... (23,040 lines)
+  symmetric  true
+
+  ZERO-RESULT QUERIES: 0. There is no admission rule and no candidate pool —
+  every document is scored — so a query can only return nothing if the corpus
+  is empty. 23,040 lines is exactly 2,304 x 10.
+
+  THE SOURCE DIGEST HASHES THREE FILES, NOT FOUR. v3 and v4 both carry
+  v1-overlap.js for tokenise(); v5 carries only itself, types.js and index.js.
+  It is the first rung that does not import the shared tokeniser, because it has
+  no term space for a tokeniser to define. §16.1 argued that inheriting
+  tokenise() keeps rungs comparable, and that argument simply does not reach
+  here. A test asserts the file list rather than a comment claiming it.
+
+  nDCG@8 0.3269 is inside CLAUDE.md's 0.1-0.4 band, near its top. Every absolute
+  remains a LOWER BOUND (§5.1): R@8 0.4285 means 43% of the JUDGED relevant
+  documents were found and says nothing about the genuinely relevant ones — see
+  §5b, where that stops being boilerplate.
+
+
+2. WHAT v5 IS
+------------------------------------------------------------------------------
+
+  model        Xenova/all-MiniLM-L6-v2
+  revision     751bff37182d3f1213fa05d7196b954e230abad9   (a commit, not a branch)
+  export       onnx/model.onnx, fp32, 90,387,606 bytes
+               sha256 759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e
+  tokenizer    tokenizer.json 711,661 bytes
+               sha256 da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0
+  dimension    384
+  pooling      mean over the attention mask
+  text         title + "\n" + body, truncated at 256 wordpieces
+  runtime      transformers.js 4.2.0 on onnxruntime-node 1.24.3, in-process Node
+
+  Three params, where v4 had five:
+
+    vectors     minilm-l6-v2-fp32-256   PROVENANCE. Names the vectors file, so
+                                        the params digest moves when the data
+                                        does. Without it the 256- and 128-token
+                                        runs would share a digest and §11.4's
+                                        parameter diff would report zero
+                                        variables changed — §13.10's "run that
+                                        lies about itself", one layer out.
+    dim         384                     asserted against the vectors handed in
+    normalise   true                    cosine; false is raw dot product (§6a)
+
+  WHAT THE LADDER'S INHERITED PIECES BECOME. tokenise() and the stopword list
+  are gone — BERT has its own WordPiece vocabulary and no stopword list, and
+  "the" is a token attention weighs rather than one a list removes. The title
+  doubling is gone: it is a term-frequency device, it costs truncation budget,
+  and it is not what a sentence-transformers checkpoint was trained on. §6c
+  prices that decision instead of asserting it. idfCorpus, threshold, minShared,
+  cap, scorePrecision, k1, b, qtfMode, titleWeight and idfVariant have no
+  referent at all.
+
+  ONE INVARIANT COMES BACK. v3 had scores in [0,1]; §16.6 recorded that BM25 is
+  an unbounded sum with no analogue and that assertHits would happily accept a
+  negative score as a hit. A cosine has the bound back, so v5 asserts what its
+  formula actually guarantees: |score| <= 1 + 1e-6. The tolerance is calibrated
+  rather than guessed — a float32 384-term dot product of a vector with itself
+  lands about 4e-9 off 1.0, measured in the test suite.
+
+
+3. THE BOUNDARY: EMBEDDING IS CORPUS PREPARATION
+------------------------------------------------------------------------------
+
+§7.1 draws the line at I/O and models. So:
+
+  scripts/embed-corpus.js  ->  data/vectors/cooking.<slug>.f32   (41,971,200 bytes)
+                           ->  data/vectors/cooking.<slug>.manifest.json
+  run-eval.js              ->  attaches row i to corpus document i as doc.vector
+  v5-embeddings.js         ->  requires NOTHING
+
+  The dependency lives in a new scripts/package.json, NOT in
+  backend/package.json — mirroring what 2.4 did with scripts/.venv and
+  scripts/requirements.txt for pytrec_eval. backend's manifest is untouched, so
+  "the Node eval path is dependency-free" survives as a checkable property
+  rather than a slogan, and tests/retrieval.interface.test.js still fails if
+  anything under backend/retrieval/ requires outside itself.
+
+  THE ALIGNMENT GUARD IS THE POINT OF THIS SECTION. A dense rung fails quietly.
+  Hand it vectors from a different corpus build, or rows off by one, and it
+  returns ten well-formed correctly-ordered plausibly-scored documents per query
+  and writes a run file that passes every postcondition the interface has. It is
+  the dense equivalent of self-retrieval, and §7.3's standard is that such a
+  thing be made impossible rather than unlikely. So the manifest carries:
+
+    corpusSha256   the corpus the vectors were built from
+    idsSha256      SHA-256 over the doc ids joined by \n, IN ROW ORDER
+
+  and run-eval.js recomputes both from the corpus actually loaded, plus the
+  file's own hash and its byte length against docs x dim x 4.
+
+  VERIFIED INDEPENDENTLY, NOT ONLY BY ITS OWN GUARD. idsSha256 is written by the
+  same script that writes the vectors, so it is self-consistent by construction.
+  Eight rows spread across the file — 0, 1, 7, 1234, 13662, 20000, 27323, 27324
+  — were re-embedded from scratch and compared: cosine 1.000000000000 against
+  the stored row in every case, max component delta 1.1e-7 to 2.4e-7, and each
+  fresh vector's best match over all 27,325 stored rows is its own row.
+
+  THE ONE LINK THE RETRIEVER CANNOT VERIFY, stated rather than glossed: v5 can
+  check that every document has a vector of the right width, but it cannot check
+  that params.vectors names the bytes it was handed, because hashing a file
+  needs I/O. That check lives on the runner's side of the boundary.
+
+  A COST §7.1 DID NOT FORESEE. §7.1's argument for keeping keyword extraction
+  INSIDE the retriever was that ablations then become param flips landing in the
+  digest. For v5 that inverts: every ablation except `normalise` is a
+  corpus-prep change costing a full re-embed (~10 minutes each). The boundary is
+  still right — a model cannot live behind a pure-function contract — but the
+  reason §7.1 gave for it does not extend to this rung.
+
+
+4. REPRODUCIBILITY — WHAT IS CLAIMED, AND WHAT IS NOT
+------------------------------------------------------------------------------
+
+  NOT CLAIMED: byte-identical regeneration across OS, libc and architecture.
+
+Phase 1.6 proved cooking.jsonl reproduces byte-for-byte on macOS/arm64,
+Alpine/musl/arm64 and emulated Alpine/musl/x86_64, because the corpus scripts
+have zero runtime dependencies. THAT PROPERTY DOES NOT EXTEND TO THE VECTORS AND
+IS NOT ASSERTED FOR THEM. ONNX Runtime dispatches to architecture-specific SIMD
+kernels whose reduction orders differ; a 384-dim mean-pool over a transformer
+stack will differ in the last ULPs between arm64 and x86_64.
+
+  WHAT REPLACES IT: THE VECTORS CHANGE CLASS, from a regenerable output to a
+  PINNED INPUT. That class already exists here. Nothing regenerates Posts.xml
+  either, and §1 pins it by SHA-256 while saying plainly that the URL does not
+  pin the bytes. The vectors join Posts.xml, not cooking.jsonl. Everything
+  downstream of the vectors is exactly as reproducible as it was.
+
+  MEASURED: same-machine byte determinism. Two full embed runs, same pins, same
+  batchSize:
+
+    run 1   cca439790d3ce14900b5fb50360e0ed0e883fd5fe1d51812af8b2059a0e82a33
+    run 2   cca439790d3ce14900b5fb50360e0ed0e883fd5fe1d51812af8b2059a0e82a33
+    cmp     byte-identical, all 41,971,200 bytes
+
+  PROPOSED AND NOT DONE, recorded so the gap is visible rather than implied. The plan for
+  this rung included a cross-architecture PROBE — embedding a ~100-document slice under
+  the emulated Alpine/x86_64 image §6.3 already uses, to measure how far the vectors
+  actually drift and, more usefully, whether the TOP-8 RANKING SURVIVES a drift in the
+  last ULPs. That is the question with content in it: "the bytes differ" is predictable,
+  "the ranking moves" would be a finding. Skipped because the full pass is ~10 minutes
+  natively and emulation is roughly an order of magnitude slower, which put even a slice
+  beyond this session. So the cross-architecture statement above is AN ARGUMENT FROM HOW
+  ONNX RUNTIME DISPATCHES, NOT A MEASUREMENT — the same distinction §5.1 draws between its
+  measured counts and its argument from the schema. Worth one probe at 3.6.
+
+  THE PINS
+
+    model        HF revision COMMIT SHA + a SHA-256 per downloaded file
+    weights      fetched by an explicit `--fetch` step into gitignored
+                 data/models/; the embed run sets allowRemoteModels=false, so it
+                 is OFFLINE BY CONSTRUCTION. Roadmap 1.6 warned that fetching at
+                 run time makes "reproducible" depend on a network call — this
+                 is that note satisfied without needing a container to satisfy it
+    libraries    scripts/package-lock.json, committed, installed with `npm ci`.
+                 npm's per-package integrity hash is the analogue of
+                 requirements.txt's --require-hashes and of 6.1's image digest
+    batchSize    IN THE MANIFEST, because it is load-bearing and almost nobody
+                 notices: padding to the batch maximum changes matmul shapes and
+                 therefore kernel tiling. Batches are taken in CORPUS ORDER at a
+                 fixed 32 — not sorted by length, which would be faster and
+                 would make the output a function of the length distribution.
+                 The §3 probe measures the effect directly: the same document
+                 embedded alone rather than in a batch of 32 differs by ~2e-7
+                 per component, at cosine 1.000000000000.
+
+  data/vectors/cooking.minilm-l6-v2-fp32-256.f32
+    sha256 cca439790d3ce14900b5fb50360e0ed0e883fd5fe1d51812af8b2059a0e82a33
+
+
+5. THE REGISTERED COMPARISON
+------------------------------------------------------------------------------
+
+results/comparisons/v5-embeddings-vs-v4-bm25.dev.txt
+
+  metric        mean A     mean B        A - B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.2331    0.1842     +0.0489   [+0.0307, +0.0671]    487      .
+   nDCG@5      0.3042    0.2272     +0.0771   [+0.0630, +0.0910]   1048      .
+  *nDCG@8      0.3269    0.2458     +0.0811   [+0.0678, +0.0945]   1195   <0.0001
+   nDCG@10     0.3356    0.2548     +0.0808   [+0.0679, +0.0939]   1259      .
+   P@8         0.0854    0.0649     +0.0205   [+0.0173, +0.0237]    724      .
+   R@8         0.4285    0.3261     +0.1024   [+0.0853, +0.1196]    724      .
+   MRR@10      0.3444    0.2687     +0.0757   [+0.0603, +0.0912]   1158      .
+
+  THE SENTENCE: v5-embeddings beats v4-bm25 by 0.0811 nDCG@8, 95% CI
+  [0.0678, 0.0945], p < 0.0001. All thirteen metrics move up; no interval
+  straddles zero; 10,000 of 10,000 resamples favour v5.
+
+  AGAINST DEFAULT v4, per §16.3's rule settled at 3.3 — ladder rungs ship
+  untuned and tuning is measured beside them. v4-bm25-tuned (k1 1.6) exists at
+  0.249946 and is NOT the opponent. Registered as "ladder-v4-v5"; registry.json
+  untouched, family still seven.
+
+  HOLM. p is at the bootstrap floor of 1/(B+1) and Holm needs the smallest raw p
+  below alpha/7 = 0.00714, so this rung will still be significant when the
+  family closes at 3.6. No high-B re-run: §11.3 authorises driving B up as a
+  precision check when p lands near 0.05, and this one is pinned at the floor.
+
+  THE SHAPE. 1,195 of 2,304 queries move (51.9%) — the most of any rung — with
+  v5 ahead on 783 and v4 on 412, mean gain +0.415048 against mean loss
+  -0.335077. Wins more often and bigger. Mean over the queries that moved is
+  +0.156428; the headline is that diluted by the 1,109 queries at exactly zero.
+
+  The tool prints "3 variables changed at once" — v4 has five params v5 does not
+  and v5 has three v4 does not. The tool counts params; the experiment counts
+  behaviours. §16.5's convention, and §7 below is why no chain follows it here.
+
+
+5b. WHY THE LOWER-BOUND QUALIFIER STOPS BEING BOILERPLATE ON THIS RUNG
+------------------------------------------------------------------------------
+
+PRIMER §5.4 does not force the five-check protocol below 0.4, and 0.3269 is
+below it. The protocol was run anyway, because a surprisingly good number is the
+one nobody feels like auditing, and this one contradicted a written prediction.
+
+  1. self-retrieval    0 lines in the run file where qid == docid. 2,304
+                       distinct qids, one runid on all 23,040 lines.
+  2. assertions        all fired; four input SHA-256s matched their manifests
+                       (corpus, qrels, split, vectors).
+  3. df leakage        no analogue — v5 has no idf. The dense equivalent is row
+                       misalignment, checked independently in §3.
+  4. TOP-5 BY HAND     ten dev queries, spread deterministically across the split.
+  5. split identity    dev, 2,304 queries, sha 38ff8bae..., disjoint from
+                       train and test.
+
+CHECK 4 IS THE INTERESTING ONE AND IT DID NOT COME OUT AS EXPECTED. Every top-5
+was topically correct — and only 2 of the 10 queries had a judged document
+anywhere in their top 5. Example, query 25316, "How to clean scrambled eggs from
+a pan?", whose single judgment is 7405:
+
+   1. 0.6459  ·  50489   After breakfast, egg plate clean up
+   2. 0.6406  ·  28753   Prevent scrambled eggs from sticking to stainless steel
+   3. 0.6314  ·  109016  How do I keep eggs from sticking to a pan while cooking?
+   4. 0.6303  ·  94101   How to clean up the smell of egg from a pot?
+   5. 0.6046  ·  56038   How do I clean a pot after boiling eggs?
+
+Five plainly relevant documents, five misses. THIS IS §5.1'S ARGUMENT OBSERVED
+DIRECTLY, and it is the second time — §5.1 already carries 2.7's finding that
+nine retrieved documents moved without moving any metric. It still gives no
+RATE, so it does not license "v5 is really much better than 0.3269". What it
+does say is that the lower-bound qualifier is not a formality on this rung, and
+that a model retrieving by meaning is penalised by a key built from links a
+human happened to file.
+
+
+6. THE ABLATIONS — each ONE variable, all EXPLORATORY
+------------------------------------------------------------------------------
+
+(a) NORMALISATION — `normalise`, cosine against raw dot product. Free: a param
+    flip, because embed-corpus.js stores vectors unnormalised on purpose.
+
+    nDCG@8   0.326893 vs 0.126166   +0.200727  CI [+0.1876, +0.2141]
+    1,217 of 2,304 moved; cosine ahead on 1,065, dot on 152
+
+    THE LARGEST SINGLE ABLATION ANYWHERE ON THE LADDER — 1.6x the whole
+    v3->v4 rung, and 2.5x v5's own margin over v4. Dropping cosine takes v5
+    from best on the ladder to below v2.
+
+    It is the dense analogue of BM25's `b`, and the mechanism is different in an
+    interesting way. For BM25, ||D|| is document length. For a mean-pooled
+    encoder it is not: pooling already divides by token count, so the norm
+    (measured range 1.5166 to 7.0002, a 4.6x spread) reflects how consistently
+    the token cloud points one way, not how long the document is. Leaving it in
+    ranks confidently-worded documents above relevant ones. §16.9(a) measured
+    b=0.75-vs-0 at +0.0687; the dense equivalent is worth three times that.
+
+(b) TRUNCATION — `maxTokens`, 256 against 128. One re-embed. This one exists to
+    price the confound sitting inside §5's headline.
+
+    nDCG@8   0.328834 vs 0.326893   +0.001940  CI [-0.0040, +0.0078]
+    637 of 2,304 moved; 128 ahead on 332, 256 on 305
+
+    A NULL, with the interval straddling zero and a near-even split — the
+    coin-flip shape §16.9(d) found for idfVariant. And it is the ablation that
+    matters most for what §5 can claim, because the obvious objection to
+    v4-vs-v5 is that BM25 reads all 2,185 tokens of a long document while
+    MiniLM reads 256.
+
+    Halving the window takes the truncated share from 9.4% to 38.6% of the
+    corpus — four times as many documents losing text — AND THE METRIC DOES NOT
+    MOVE. If anything 128 is marginally ahead. So the truncation objection is
+    measured at approximately zero: essentially all of this model's usable
+    signal is in the first 128 wordpieces, which for a Stack Exchange question
+    is the title and the opening of the body.
+
+(c) THE TITLE — one copy against two. One re-embed. The dense analogue of
+    §16.9(c), which is the first thing a reader will ask.
+
+    nDCG@8   0.327459 vs 0.326893   +0.000566  CI [-0.0037, +0.0048]
+    627 of 2,304 moved; doubled ahead on 324, single on 303
+
+    ANOTHER NULL. keywords.js:59's doubling, inherited unexamined by v1, v2 and
+    v3 and worth +0.0119 to BM25, is worth nothing here. That is the expected
+    direction and it is worth having measured: the doubling is a term-FREQUENCY
+    device, and a transformer does not score a repeated title as twice the
+    evidence — it sees a slightly odd sequence and spends 10.6% of its documents'
+    truncation budget on it instead of 9.4%.
+
+WHY THERE IS NO CHAIN, AND IT IS A DECISION RATHER THAN AN OMISSION.
+§15.5 and §16.7 built telescoping one-variable chains closing at exact float
+equality, and §16.7 says a comparison moving more than one behaviour should get
+one. This comparison moves many and gets none, because the intermediate
+retrievers DO NOT EXIST. v3 and v4 are both sparse term-weighting schemes over
+the same postings and the same tokeniser, so "BM25's scoring form with no length
+normalisation" is a real, runnable scorer — that is what made §16.7 possible and
+what made it overturn the headline. v4 and v5 share no term space at all. There
+is no such object as "BM25 with a dense representation" or "a cosine over
+embeddings with tf saturation"; the steps do not merely fail to commute, they
+have no definition. Manufacturing one would produce a scorer that is neither,
+which is precisely the reasoning §16.7 used to declare its own first step
+irreducible. What stands in for the chain is (a)-(c) above and §9's mechanism.
+
+
+7. SYMMETRY, NOW DECLARED ON THE CONTRACT
+------------------------------------------------------------------------------
+
+v2 made score(A->B) === score(B->A) a property of the algorithm, v3 kept it at
+real cost, v4 broke it and won anyway. A dot product is symmetric in its two
+arguments and ||a|| ||b|| is too, so v5 gives it back under BOTH settings of
+`normalise`. That is now on the Retriever contract rather than in four
+paragraphs across four sections:
+
+  v1-overlap     false      v2-jaccard  true       v3-tfidf  true
+  v4-bm25        false      v5-embeddings  true
+
+  register() REQUIRES it — no default, because a default would let the next rung
+  inherit an answer silently. It is NOT a param, so no digest moves and none of
+  the 21 committed sidecars is invalidated; it rides in describe(handle) and so
+  lands in every new sidecar for Phase 4.2 to read.
+
+  MEASURED, NOT DECLARED. tests/retrieval.symmetry.test.js scores every
+  REGISTERED rung over the 34-document fixture at full depth and fails if a
+  declaration disagrees with the measurement IN EITHER DIRECTION — a stale
+  `false` is caught as loudly as a false `true`. Symmetry here means SCORE
+  symmetry at full depth: §14.5 also checked reachability, which is well-defined
+  for v2 because v2 has an admission rule, but v3, v4 and v5 admit everything and
+  are truncated to k by the interface, so reachability at k=8 is asymmetric for
+  all three even when the score is not.
+
+  v1-overlap.js gained exactly one non-behavioural line. The freeze on that file
+  is the PARITY HASH, and it was re-run: results/parity/ still reads
+  83f9e35e834b7e1f5422a1ffbbf61de90feb25aa7895632ee75c1daab35ecc5e.
+
+  PHASE 4.2 INHERITS A CHANGED SITUATION. At 3.3 the winning rung was asymmetric
+  and a bidirectional link graph had to pick a direction. The winning rung is now
+  symmetric again, so that specific tension is gone — but 3.5's RRF fuses an
+  asymmetric BM25 with a symmetric dense score, so the fused ranking is
+  asymmetric unless RRF is applied symmetrically, and 3.5 now has a field to read
+  rather than a paragraph to remember.
+
+
+8. TRAIN/TEST CONTAMINATION — NAMED, THEN MEASURED
+------------------------------------------------------------------------------
+
+THIS IS THE MOST IMPORTANT SECTION IN THIS FILE and it was not in the plan for
+this rung. It was found by reading the model card rather than assuming it.
+
+all-MiniLM-L6-v2's card lists, among its training pairs:
+
+  Stack Exchange Duplicate questions (titles)           304,525
+  Stack Exchange Duplicate questions (bodies)           250,519
+  Stack Exchange Duplicate questions (titles+bodies)    250,460
+  Stack Exchange (Title, Body) pairs                 25,316,456
+
+sourced from flax-sentence-embeddings/stackexchange_xml, last modified
+2021-07-26. THAT DATASET CONTAINS cooking.stackexchange.com.7z — checked, not
+assumed. And LinkTypeId=3 "Duplicate" is exactly the relation these qrels grade
+2 (§3.1). So the model being evaluated was trained on this site's
+duplicate-question pairs, on the same relation the answer key encodes.
+
+That confound cannot be removed. It CAN be priced: a query document created
+after the 2021-07-26 snapshot was not in that dump at all — not its text, not
+its links. If memorisation were the mechanism, the margin would collapse there.
+
+  stratum      n        v4 nDCG@8    v5 nDCG@8    v5 - v4      95% CI
+  seen       2149      0.249198     0.328382    +0.079184   [+0.0657, +0.0929]
+  unseen      155      0.198092     0.306250    +0.108158   [+0.0498, +0.1656]
+
+  THE MARGIN DOES NOT COLLAPSE. It is larger on the unseen stratum, and the
+  interval excludes zero there on 155 queries. n=155 is small and the two
+  intervals overlap heavily, so the honest reading is NOT "contamination helps
+  v4" — it is that memorisation is not what produces the +0.0811.
+
+  The comparison is of the DIFFERENCE within each stratum, never of the absolute
+  levels across them: §5.3 measured that per-query scores are not comparable
+  across corpus age, because degree tracks how much corpus came after a document.
+  Both absolute columns are lower on the unseen stratum and that is §5.3's
+  effect, not a finding.
+
+  EXPLORATORY. This stratification is not in registry.json, no p-value is quoted
+  for it, and what the intervals support is a direction rather than a second
+  significance claim.
+
+  WHAT IT STILL DOES NOT SETTLE. 6.7% of dev postdates the snapshot, so the
+  unseen estimate is noisy. And a cleaner cut exists — the LINK creation date
+  rather than the document creation date, which would classify pairs instead of
+  queries and would use more of the split. It needs a re-parse of PostLinks.xml,
+  which §5.3 has already done once. Left for 3.6, where the test split opens and
+  the same question has to be asked there anyway.
+
+
+9. THE MECHANISM — MEASURED
+------------------------------------------------------------------------------
+
+  npm run analyse:rungs -- --a v5-embeddings --b v4-bm25 --split dev
+
+  stratum      n     v4 nDCG@8     v5 nDCG@8    moved   contribution
+  d <= 6      25    0.31809603    0.35005687      14    +0.00034680
+  d >= 7    2279    0.24496661    0.32663921    1181    +0.08078640
+                                                        +0.08113320
+
+  THE STRATIFICATION AXIS CHANGED AT THIS RUNG, and §14.6's ↳ records it. It is
+  now distinct tokens under the shared tokenise(), computed from the CORPUS. v5
+  has no terms, so the retriever could no longer own the axis; and v3's and v4's
+  termCount() already returned exactly this quantity, so §16.10's table
+  reproduces bit-for-bit — verified by re-running it, not assumed.
+
+  Term length of retrieved documents, top 8 over the whole dev run:
+
+    d        1    3    5    7    9   10-19   20-49    50+
+    v4       2    2   17   75  171    3325    9873   4783
+    v5       1   10   40  110  245    3943    9019   4795
+
+  v5 retrieves 1.50x as many documents with fewer than ten distinct terms, and
+  854 fewer in the 20-49 band. THE DIRECTION IS OPPOSITE TO v4's OWN. §16.10
+  measured v4 promoting LONG documents against v3, and named pivoted length
+  normalisation as the mechanism; v5 partially undoes that. A short question
+  whose few words happen not to overlap the query is invisible to BM25 — it has
+  no postings to be found through — while its embedding sits wherever its
+  meaning sits. That is the "how do I stop my bread being dense" / "why won't my
+  dough rise" case PRIMER §6 predicted for this rung, showing up as a length
+  distribution rather than as an anecdote.
+
+  HOW DIFFERENT ARE v4 AND v5 — the number 3.5 actually needs:
+
+    mean Jaccard of the two top-8 sets              0.1906
+    queries whose top-8 sets are DISJOINT      221 of 2304  (9.6%)
+
+  The two rungs agree on roughly a fifth of what they retrieve and on 9.6% of
+  queries they agree on nothing at all. RRF pays exactly when two systems fail on
+  different queries, so 3.5 gets to design against a measurement instead of
+  discovering it in its own results.
+
+
+10. COST — and why exact search rather than ANN
+------------------------------------------------------------------------------
+
+  npm run analyse:v5   ->   results/v5-embeddings.analysis.txt
+
+  HARDWARE, once, because 3.4's Done criterion names it and a wall time without
+  it is not a claim: MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB, macOS 26.6
+  (darwin 25.6.0), Node v25.8.1.
+
+  EMBEDDING THE FULL CORPUS   584.6 s and 620.6 s across two runs
+                              (44-47 docs/s over 27,325 documents, ~10 minutes)
+                              byte-identical output both times
+
+    The two runs bracket the figure rather than one being "the" number — §2.2's
+    convention. The variation is thermal and scheduling; the OUTPUT does not vary
+    at all, which is the property that matters.
+
+  INDEX BUILD    five builds 48 35 36 41 35 ms — MEDIAN 36 ms
+                 against v4's 982 ms and v3's ~1,470 ms. v5 builds no postings,
+                 no vocabulary and no df table; it copies 40 MB into a
+                 contiguous matrix and normalises each row. The work the other
+                 rungs do at index time was done once, by the embed step, and
+                 the honest accounting puts those ~600 seconds here.
+
+  MEMORY — three numbers, and a fourth that would have been wrong:
+
+    typed arrays, computed from the structures    40.24 MiB
+                       matrix 27,325 x 384 x 4B = 40.03 · norms 0.21
+    retained for one handle (--expose-gc)         42.2 MiB
+                       V8 heap 2.0 (the id Map, idByIndex) + arrayBuffers 40.2
+    peak RSS for the eval process                 325 MiB
+
+    THE FOURTH IS THE MISTAKE THIS SCRIPT MADE FIRST. heapUsed alone reports
+    2.0 MiB, because a large typed array's backing store lives outside the V8
+    heap. Quoting that as "v5's memory" would understate it by 20x, and it is
+    NOT comparable to v4's 34.8 MiB retained-heap figure (§16.12) — v4's Maps
+    and 34,928 vocabulary strings genuinely are on the heap. Two numbers with
+    the same name measuring different things is exactly what §16.12 separated
+    three of, so the report prints both terms.
+
+  SEARCH        mean 19.48 ms · p50 19.31 · p95 20.44 ms
+                against v4's 7.9 ms and v3's 8.1 ms. v5 is 2.6x slower and this
+                one IS a real difference, unlike v3-vs-v4 whose ranges overlapped
+                — but it is still an uncontrolled laptop figure and 6.5 owns the
+                controlled one.
+
+  WHY EXACT SEARCH AND NOT AN ANN INDEX. A query is one dot product against every
+  document: 2 x 27,325 x 384 = 21.0 MFLOP, measured at 1.09 GFLOP/s in plain JS
+  over a Float32Array, plus a 27,324-element sort. An approximate index would buy
+  sublinear search and cost three things:
+
+    1. a dependency, inside the step this phase is about pinning;
+    2. build-time hyperparameters (HNSW's M, efConstruction) needing their own
+       sweep and their own selection-bias accounting — §13.7 put 44% of v4's
+       tuning margin down to optimism, so that is not a formality;
+    3. APPROXIMATE RECALL — a new error source placed INSIDE the thing being
+       measured. A v4-vs-v5 difference would then confound the retriever with the
+       index's recall, and CLAUDE.md's never-two-variables rule would be broken
+       by the data structure rather than by the experiment.
+
+  ANN starts paying when N x dim stops fitting the latency budget, around
+  N > 1e6. This corpus is 27,325 and a full scan costs 19 ms.
+
+  NO SWEEP. v5's only knob is a boolean, so there is no grid, no selection and no
+  §13.7 optimism to estimate. §16.3's rule — ladder rungs ship untuned — is
+  satisfied trivially rather than by restraint, and that is worth saying so 3.6
+  does not go looking for a sweep file that was never warranted.
+
+
+11. WHAT THE RUNG EXPOSED
+------------------------------------------------------------------------------
+
+  - THE PREDICTION WAS WRONG AND THE ABLATIONS SAY WHY. Two of the four
+    arguments behind "v5 will lose" were testable and both failed. Truncation
+    (§6b): null. The query-side information loss argued from §16.9(b): if
+    discarding term frequencies were decisive, halving the input window would
+    have hurt, and it did not. What survives is that the task is less purely
+    lexical than it looks — §9's length distribution and §5b's by-hand check
+    both point there.
+
+  - A MODEL CARD IS PART OF THE PROVENANCE CHAIN, and this repo had no habit of
+    reading one. §8 was found by opening the card, not by reasoning. Every rung
+    up to v4 was a function of this corpus alone; v5 is the first that carries
+    somebody else's training data into the measurement, and the checksum chain
+    has no place to record that. The revision pin names the bytes; it does not
+    name what the bytes learned.
+
+  - THE RUNNER GAINED AN INPUT CLASS, not just an input. Corpus, qrels and split
+    are all REGENERABLE byte-identically (§6.3). Vectors are pinned but NOT
+    regenerable off this architecture. The .gitignore entry says so, because
+    "ignored" now means two different things inside data/.
+
+  - `explain` STAYS AT THREE SHAPES AND v5 EMITS NONE. There is no lexical
+    explanation to emit and {cosine: n} would only restate the score. Phase 7.4
+    inherits a finding rather than a fourth shape: explain cannot be a uniform
+    contract, because explaining a dense retrieval needs a separate mechanism
+    making a DIFFERENT CLAIM — a lexical overlap shown beside a dense hit is a
+    post-hoc rationalisation, not the reason the document ranked.
+
+  - THE METRICS AND THE BOOTSTRAP: NOTHING. No new flag, no new convention. All
+    four runs re-scored from their written run files and asserted against their
+    committed sidecars at exact float equality. The re-runs from a clean tree
+    produced byte-identical run files.
+
+  - EVERY RUNG BELOW v5 REGENERATES BYTE-IDENTICALLY, and that needed checking
+    rather than assuming. This session edited all four earlier retrievers (each
+    gained a `symmetric` declaration), types.js, and index.js (a registration
+    line and a describe field). Their SOURCE DIGESTS all moved, which
+    source-digest.js predicted and reports per file. Their RUN FILES did not:
+
+      v1-overlap  9618f1bf...    v2-jaccard  0b2531b7...
+      v3-tfidf    07fa22ce...    v4-bm25     9aa1881f...
+
+    each identical to the hash its committed sidecar records. Those sidecars are
+    deliberately NOT regenerated — that would churn 21 committed files to record
+    a digest change carrying no behavioural change — so their digests predate
+    v5's registration, which is the drift source-digest.js's header says is true
+    and reported rather than suppressed.
+
+  - ONE PROCESS FAILURE, RECORDED. Two of the four runs were first produced
+    against a modified package.json and their sidecars recorded dirty=true, and
+    the commit message quoted four nDCG values whose digits past the fourth were
+    extrapolated from a rounded display rather than read from the file. Both were
+    caught before pushing and both were redone; the run-file hashes are identical
+    across the re-runs, so only the provenance moved. 3.3 introduced the dirty
+    flag precisely so the first of those two would be visible.
+
+
+12. WHAT THIS RUNG DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+
+  - NOT A TEST-SET RESULT. Dev only, until 3.6.
+  - NOT HOLM-ADJUSTED. Raw p; the family is seven and five now exist. Like v3 and
+    v4, the outcome is statable in advance because p is at the floor.
+  - NOT "DENSE BEATS BM25". It is one 384-dimension local model, on one site,
+    against one positive-only key. §8 is the sharp version of this: the model was
+    trained on Stack Exchange duplicate pairs including this site's, which is the
+    relation being scored. The margin survives on documents postdating that
+    snapshot, which is evidence and not proof.
+  - NOT A STATEMENT ABOUT LARGER MODELS, in either direction. PRIMER §13's ~$1
+    escape hatch — running a hosted model and reporting both rows — is still
+    open and still unexercised.
+  - NOT A REASON TO SHIP v5 YET. It is 2.6x slower per query than v4 and it moves
+    ~600 s of embedding into the pipeline, which Phase 4 has to place somewhere
+    real: in the app, a new note is new text and DOES need embedding at save
+    time, where the eval's "query documents are corpus documents, so per-query
+    cost is zero" convenience does not hold.
+  - ABSOLUTES REMAIN LOWER BOUNDS (§5.1), and §5b is the least boilerplate that
+    sentence has been on any rung so far.

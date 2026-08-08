@@ -431,4 +431,17 @@ function termCount(state, docId) {
   return state.terms[state.indexById.get(docId)].length;
 }
 
-module.exports = { version: 'v3-tfidf', defaultParams, buildIndex, rank, termCount };
+module.exports = {
+  version: 'v3-tfidf',
+  defaultParams,
+  buildIndex,
+  rank,
+  termCount,
+  /**
+   * A cosine is symmetric, and §15.8 records that v3 kept it AT REAL COST —
+   * term ids are sorted so the two directions accumulate their float sums
+   * bit-identically. Exact float equality, not approximate agreement, which is
+   * what the test checks.
+   */
+  symmetric: true
+};
