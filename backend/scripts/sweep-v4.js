@@ -387,7 +387,8 @@ function main() {
 
   // --- phase 4: the surface -------------------------------------------------
   console.log('  phase 4  nDCG@8 surface');
-  console.log(`           b:      ${B_VALUES.map((b) => b.toFixed(1).padStart(7)).join('')}`);
+  // toFixed(1) would print 0.75 as "0.8" and collide with the real 0.8 column.
+  console.log(`           b:      ${B_VALUES.map((b) => String(b).padStart(7)).join('')}`);
   for (const k1 of K1_VALUES) {
     const cells = B_VALUES.map((b) => {
       const row = rows.find((r) => r.k1 === k1 && r.b === b);
@@ -429,7 +430,7 @@ function main() {
 
   // --- write ----------------------------------------------------------------
   fs.mkdirSync(SWEEP_DIR, { recursive: true });
-  const csvFile = path.join(SWEEP_DIR, 'v4-k1-b.csv');
+  const csvFile = path.join(SWEEP_DIR, 'v4-bm25-params.csv');
   const header = ['k1', 'b', 'label', 'digest8',
     ...KS.map((k) => `ndcg@${k}`), ...KS.map((k) => `p@${k}`), ...KS.map((k) => `r@${k}`),
     'mrr@10', 'runLines', 'zeroResultQueries', 'p95SearchMs'];
@@ -447,7 +448,7 @@ function main() {
 
   const manifest = {
     phase: '3.3',
-    what: 'Sweep of v4-bm25 k1 x b on the dev split. One row per grid point in v4-k1-b.csv.',
+    what: 'Sweep of v4-bm25 k1 x b on the dev split. One row per grid point in v4-bm25-params.csv.',
     gridIsASample:
       'k1 and b are CONTINUOUS with a genuine interior optimum, so unlike 2.7 (§13.2) this grid is a ' +
       'SAMPLE of the parameter space rather than an exhaustive enumeration of its behaviours, and unlike ' +
@@ -503,7 +504,7 @@ function main() {
   };
   fs.writeFileSync(path.join(SWEEP_DIR, 'v4-sweep.manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  console.log(`  wrote results/sweeps/v4-k1-b.csv (${rows.length} rows)`);
+  console.log(`  wrote results/sweeps/v4-bm25-params.csv (${rows.length} rows)`);
   console.log(`        results/sweeps/v4-sweep.manifest.json`);
   console.log(`\n  total ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   console.log(`\n  NEXT: the selected point is run as a NAMED configuration under the label`);
