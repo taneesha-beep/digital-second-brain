@@ -26,7 +26,7 @@
     "files": [
       {
         "path": "backend/retrieval/index.js",
-        "sha256": "8bf85864705b7ffd52828fcc7bc72ac767b1dcaba23425d92e9fc57b64357f43"
+        "sha256": "d3c5d8cf51890e3411a36c0c60057c8676e9a3f2f39d66a0506893548b850383"
       },
       {
         "path": "backend/retrieval/types.js",
@@ -41,7 +41,7 @@
         "sha256": "36989e9916c3af44871ecde3ac67832f101f956454ffbff07aab001d26c2e593"
       }
     ],
-    "digest": "56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786"
+    "digest": "8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf"
   },
   "k": 10,
   "ksReported": [
@@ -116,16 +116,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.3522288914930565,
-    "p50": 0.3265,
-    "p95": 0.691666,
-    "max": 5.462709
+    "mean": 0.3562628784722224,
+    "p50": 0.325666,
+    "p95": 0.686542,
+    "max": 6.0505
   },
   "timingsMs": {
-    "load": 81.007625,
-    "index": 1355.77425,
-    "search": 825.921042,
-    "total": 2262.702917
+    "load": 85.132209,
+    "index": 1397.860667,
+    "search": 835.176083,
+    "total": 2318.168959
   },
   "environment": {
     "node": "v25.8.1",
@@ -137,9 +137,9 @@
     "peakRssMiB": 386
   },
   "git": {
-    "commit": "57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07",
-    "dirty": true,
-    "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
+    "commit": "827e55b1cdbd662b8730dfa6f45b6ac939a4fbfe",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
   },
-  "generatedAt": "2026-08-07T18:26:43.561Z"
+  "generatedAt": "2026-08-08T09:20:59.826Z"
 }
