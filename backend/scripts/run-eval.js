@@ -323,18 +323,36 @@ function writeAtomic(file, contents) {
 /**
  * The question `dirty` answers is "does the code at `commit` reproduce this
  * run?", so it counts modifications to TRACKED files only. Untracked files are
- * excluded deliberately: this script's own outputs land untracked in
- * results/runs/, so counting them would mark every run after the first as dirty
- * for a reason that has nothing to do with the code that produced it — a flag
- * that is always set carries no information.
+ * excluded deliberately: run files land untracked in results/runs/, so counting
+ * them would mark every run after the first as dirty for a reason that has
+ * nothing to do with the code that produced it — a flag that is always set
+ * carries no information.
+ *
+ * THAT EXCLUSION WAS NOT ENOUGH, AND THE FLAG WAS ALWAYS SET ANYWAY (3.2's
+ * noticed-list). The .run file is untracked; the SIDECAR beside it is TRACKED
+ * and committed, because the provenance does not regenerate (§8.5). So writing
+ * one dirties the tree and the NEXT run records dirty=true — every sidecar
+ * committed since 3.1 says so, and none of them means anything by it.
+ *
+ * The fix is to exclude THIS SCRIPT'S OWN OUTPUT DIRECTORY, and only that. A
+ * blanket exclusion of results/ would be wrong in the other direction: results/
+ * also holds inputs to other tools — most importantly comparisons/registry.json,
+ * whose whole enforcement value (§11.5) is that an uncommitted edit to it is
+ * visible. Output is excluded because it is output, not because of where it
+ * lives.
  */
-function gitProvenance() {
+function gitProvenance(outDirRel) {
   const run = (args) => execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+  const exclude = outDirRel.replace(/\/+$/, '');
   try {
     return {
       commit: run(['rev-parse', 'HEAD']),
-      dirty: run(['status', '--porcelain', '--untracked-files=no']) !== '',
-      dirtyMeans: 'uncommitted changes to tracked files; untracked output is not counted'
+      dirty: run([
+        'status', '--porcelain', '--untracked-files=no', '--', '.', `:(exclude)${exclude}`
+      ]) !== '',
+      dirtyMeans:
+        `uncommitted changes to tracked files outside ${exclude}/; untracked output is not counted. ` +
+        'This run\'s own sidecar lives there and is tracked, so counting it would set the flag on every run.'
     };
   } catch {
     return { commit: null, dirty: null };
@@ -564,7 +582,7 @@ function main() {
       totalMemMiB: Math.round(os.totalmem() / 1048576),
       peakRssMiB: Math.round(process.memoryUsage().rss / 1048576)
     },
-    git: gitProvenance(),
+    git: gitProvenance(args.outDir),
     generatedAt: new Date().toISOString()
   };
   writeAtomic(`${runFile}.json`, `${JSON.stringify(sidecar, null, 2)}\n`);

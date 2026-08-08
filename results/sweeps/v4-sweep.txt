@@ -1,0 +1,270 @@
+SWEEP — v4-bm25 k1 x b on cooking.dev
+roadmap 3.3 · 2026-08-08
+==============================================================================
+
+BM25's two knobs, swept on dev. Every figure traces to
+results/sweeps/v4-bm25-params.csv and results/sweeps/v4-sweep.manifest.json,
+both committed, or to the two committed sidecars in results/runs/.
+
+Grid run at 218f59f — the commit that declared the selection rule and contained
+no results. The 108 per-point run files and sidecars are gitignored (§13.9);
+this file, the CSV and the manifest are evidence ABOUT the numbers, which is
+the category that gets committed.
+
+THE HEADLINE IS NOT THE TUNED POINT. IT IS HOW LITTLE OF IT IS REAL:
+
+  default   k1 1.2  b 0.75    nDCG@8 0.245760
+  selected  k1 1.6  b 0.75    nDCG@8 0.249946
+  margin                            +0.004186
+
+  split-half selection optimism     +0.001857   [p5 -0.003008, p95 +0.007910]
+
+44% of the margin is the optimism of taking a maximum over 108 noisy estimates,
+and the 5th percentile of the estimate is NEGATIVE. Across 200 random dev
+halves the selection lands on TEN different configurations and picks the
+full-dev winner only 65 times.
+
+
+1. WHY THIS SWEEP IS A DIFFERENT OBJECT FROM 2.7'S
+------------------------------------------------------------------------------
+  2.7's sweep was a VERIFICATION and this one is a search. Both of 2.7's
+  defences are structural and neither transfers.
+
+  §13.2 — EXHAUSTIVENESS. The threshold grid IS the achievable score lattice:
+  `strength` can only take the Farey fractions s/d for d <= 10, and between two
+  consecutive achievable values the kept set is constant. So 342 points covered
+  every behaviour the parameter has, which is a stronger claim than "I tried
+  twenty values". k1 and b are CONTINUOUS. There is no lattice. This grid is a
+  SAMPLE and is described as one everywhere.
+
+  §13.4 — MONOTONICITY. Cap: the list at cap c is a PREFIX of the list at any
+  larger cap. Threshold: lowering it APPENDS to the tail and never reorders.
+  Both give monotone metrics PER QUERY, so 2.7's argmax was forced by an
+  argument holding on every subset of dev, on test, and on any other corpus.
+  k1 and b have neither property. They have a genuine interior optimum on both
+  axes and they INTERACT.
+
+  CONSEQUENCE, AND IT IS DELIBERATE: sweep-v4.js has NO monotonicity phase.
+  2.7's asserted 4,452 adjacent-pair comparisons with 0 violations, and a
+  violation would have meant a defect in retrieval/index.js. Here there is
+  nothing to assert — a monotonicity check that passed would be measuring how
+  coarse the grid is, not how the parameter behaves. Its absence is a design
+  decision, not an omission.
+
+  AND THE ONE THAT MATTERS: §13.7 could call the split-half estimate a
+  formality confirming a structural argument. Here there is no structural
+  argument. The estimate is the only evidence there is about selection bias,
+  and section 5 reports what it says whether or not it is flattering.
+
+
+2. THE GRID
+------------------------------------------------------------------------------
+  points     108 = 9 k1 x 12 b
+  wall       1,327 s (22.1 min), 12.29 s/point, sequential
+  runner     every point through backend/scripts/run-eval.js — the same code
+             path, the same ten pre-search assertions and the same
+             written-bytes post-conditions that produced the named runs
+  disk       108 run files + 108 sidecars in results/sweeps/runs/ (gitignored)
+
+    k1  0, 0.3, 0.6, 0.9, 1.2, 1.6, 2.0, 2.5, 3.0
+    b   0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0
+
+  THE TWO ENDPOINTS ARE ON THE GRID ON PURPOSE.
+    k1 = 0   tf(k1+1)/(tf+0) = 1 for every tf. Binary tf; term frequency is
+             discarded entirely.
+    b  = 0   (1 - 0 + 0) = 1. No length normalisation whatsoever.
+  The k1 -> infinity limit (linear tf) is NOT on the grid. It is a named run,
+  v4-bm25-k1big, because it is a chain step; putting an unreachable limit on a
+  grid of reachable values would misdescribe the axis.
+
+  b = 0.75 IS ON THE GRID DELIBERATELY AND BREAKS THE EVEN SPACING, and the
+  guard that forces it earned its place on first use. A clean 0, 0.1 ... 1.0
+  ruler does not contain the default, so every "what did tuning buy" margin
+  would have been measured against a configuration that is not a row — either
+  quoted from the separately-run v4-bm25 or silently approximated by b = 0.7.
+  sweep-v4.js fails the run if the default is absent, and it did, before any
+  point had been scored. §13.2 solved the same problem from the other side by
+  adding the shipped 0.15 to a lattice it is not a member of.
+
+  k1 AND b DO NOT TOUCH THE INDEX, asserted at corpus scale before the grid
+  ran: every persistent structure identical between (1.2, 0.75) and (3.0, 0.0)
+  — postings, tf, lengths, length ratios, idf, vocabulary. Roadmap 3.3 says
+  they do; see results/v4-bm25.txt section 11.
+
+
+3. THE SELECTION RULE, DECLARED BEFORE THE GRID RAN
+------------------------------------------------------------------------------
+  In backend/scripts/sweep-v4.js, committed at 218f59f, which contains the grid
+  and the rule and no results. §11.5's reason: a rule chosen after the numbers
+  are visible is not a rule.
+
+    1. argmax nDCG@8 — the registry's own primary metric.
+    2. among EXACT ties, argmax nDCG@10 — declared in advance as a tie-break,
+       which is what separates it from metric-shopping.
+    3. among still-exact ties, PREFER THE DEFAULT (1.2, 0.75). A tie is not a
+       reason to leave the textbook.
+    4. then smaller |k1 - 1.2|, then smaller |b - 0.75|.
+
+  AND THE PART EASIEST TO LEAVE UNSAID, SO IT WAS SAID FIRST:
+
+    THE SELECTED POINT DOES NOT BECOME v4-bm25.
+
+  The rung ships at the defaults and the winner ships as v4-bm25-tuned,
+  EXPLORATORY. §14.2: a swept candidate against an unswept incumbent is not the
+  registered experiment. §11.5: sweeps select, they do not test. v3 was never
+  swept. registry.json was NOT edited — an eighth entry would retroactively move
+  Holm's bound from alpha/7 = 0.00714 to alpha/8 = 0.00625 for every comparison
+  already run.
+
+  NO TIE-BREAK WAS NEEDED. The plateau at the primary metric is 1 of 108, which
+  is what a continuous score predicts and the opposite of 2.7, where the primary
+  plateau was 4 points and both tie-breaks fired.
+
+
+4. THE SURFACE — nDCG@8
+------------------------------------------------------------------------------
+  b:        0    0.1    0.2    0.3    0.4    0.5    0.6    0.7   0.75   0.8    0.9      1
+  k1   0  .1518  .1518  .1518  .1518  .1518  .1518  .1518  .1518  .1518  .1518  .1518  .1518
+  k1 0.3  .1671  .1811  .1884  .1953  .2013  .2055  .2090  .2136  .2151  .2159  .2174  .2198
+  k1 0.6  .1719  .1949  .2056  .2134  .2194  .2257  .2301  .2331  .2334  .2353  .2356  .2368
+  k1 0.9  .1761  .2003  .2123  .2224  .2285  .2338  .2384  .2415  .2430  .2429  .2434  .2440
+  k1 1.2  .1771  .2038  .2182  .2274  .2327  .2406  .2438  .2442  .2458  .2472  .2468  .2460
+  k1 1.6  .1758  .2066  .2191  .2292  .2378  .2418  .2456  .2488  .2499  .2497  .2476  .2445
+  k1   2  .1747  .2046  .2183  .2298  .2369  .2417  .2460  .2492  .2497  .2481  .2440  .2418
+  k1 2.5  .1716  .2019  .2187  .2304  .2361  .2428  .2452  .2482  .2478  .2460  .2419  .2392
+  k1   3  .1688  .1993  .2157  .2284  .2344  .2404  .2440  .2446  .2447  .2427  .2394  .2330
+
+  THE k1 = 0 ROW IS FLAT IN b TO ALL SIX DECIMALS — 0.151755 at every one of
+  the twelve b values. That is not a coarse grid, it is algebra: the length
+  factor enters only as k1.(1 - b + b.|D|/avgdl), so at k1 = 0 it is multiplied
+  by zero and b cannot act. Worth stating because it is also the check that b
+  is reaching the scorer through the path the formula describes and no other.
+
+  THE OPTIMUM IS INTERIOR ON BOTH AXES, which is the thing 2.7 never had. k1
+  rises to 1.6 and falls; b rises to 0.75-0.8 and falls. At k1 = 1.2 the b
+  optimum is 0.8; at k1 = 2 it is 0.7. THE AXES INTERACT, which is why a
+  one-axis-at-a-time study would have found a different answer than the grid.
+
+  b IS THE STEEP AXIS. Along the default k1 = 1.2 row, nDCG@8 runs 0.1771 to
+  0.2472 — a 39.6% spread. Along the b = 0.75 column, excluding the degenerate
+  k1 = 0, it runs 0.2151 to 0.2499, a 16.2% spread. Both knobs matter and the
+  length normalisation matters more.
+
+  TOP EIGHT POINTS:
+
+    k1 1.6  b 0.75   0.249946   <- selected
+    k1 1.6  b 0.8    0.249741
+    k1 2.0  b 0.75   0.249663
+    k1 2.0  b 0.7    0.249195
+    k1 1.6  b 0.7    0.248820
+    k1 2.5  b 0.7    0.248184
+    k1 2.0  b 0.8    0.248071
+    k1 2.5  b 0.75   0.247762
+
+  THE DEFAULT RANKS 15TH OF 108, and 14 points beat it. The top eight span
+  0.002184 nDCG@8 — half the default-to-selected margin — across k1 from 1.6 to
+  2.5 and b from 0.7 to 0.8. That plateau is what section 5 then measures.
+
+
+5. SELECTION BIAS — THE EVIDENCE, NOT A FORMALITY
+------------------------------------------------------------------------------
+  §13.7's estimator, unchanged in mechanism and changed in status. Dev split in
+  half 200 times (mulberry32, seed 20260808 — 1.4 uses 20260803, 2.5 uses
+  20260804, 2.7 used 20260806; different purpose, different stream), the FULL
+  108-point selection redone on half A, and the margin the chosen point earns on
+  A compared against the margin the same point earns on held-out half B. The
+  baseline is the DEFAULT, since the margin being estimated is what tuning
+  bought over the textbook.
+
+    mean margin(A) - margin(B)     +0.001857
+    5th / 95th percentile          -0.003008 / +0.007910
+    distinct configurations chosen across 200 halves    10
+    most frequent   k1=1.6 b=0.75 x65 · k1=1.6 b=0.8 x51 ·
+                    k1=2 b=0.75 x44 · k1=2 b=0.7 x14
+
+    full-dev selection margin      +0.004186
+
+  READ IT PLAINLY. The optimism is 44% of the margin. 2.7's was +1.4e-5 against
+  +2.3e-4 — 6% — and even there §13.7 wrote "the margin is smaller than the
+  split-half noise on it". Here the optimism is a large fraction of the margin
+  AND the p5 is negative, meaning in 1 repeat in 20 the point selected on half
+  A does BETTER on the held-out half than on the half that chose it, which is
+  what a noisy surface looks like.
+
+  THE INSTABILITY IS ALSO VISIBLE WITHOUT THE ARITHMETIC. Ten different
+  configurations win across 200 halves, and the full-dev winner is picked 65
+  times. 2.7's equivalent was "threshold chosen on half A: 0, in 200 of 200
+  repeats" — a selection that could not move.
+
+  WHAT THIS BOUNDS AND WHAT IT DOES NOT. It bounds SELECTION optimism only. It
+  says nothing about the difference between two samples of this corpus, and it
+  does not substitute for test. It stays entirely inside dev; test is opened
+  once, at 3.6, and a cross-validated optimism estimate is not a reason to open
+  it early.
+
+  THE DEFENSIBLE SENTENCE: tuning k1 and b on dev buys about +0.004 nDCG@8, of
+  which roughly +0.002 is the optimism of choosing the maximum of 108 estimates
+  on the same data. Whether the remainder survives test is not knowable from
+  dev, and the rung does not ship the tuned point either way.
+
+
+6. THE TUNED RUN, BANKED AND EXPLORATORY
+------------------------------------------------------------------------------
+  results/runs/v4-bm25-tuned.dev.run.json
+  results/comparisons/v4-bm25-tuned-vs-v4-bm25.dev.txt
+
+    nDCG@8   0.249946 vs 0.245760   +0.004186  CI [+0.0015, +0.0070]
+    nDCG@10  0.257743 vs 0.254790   +0.002953  CI [+0.0004, +0.0055]
+    R@8      0.3357   vs 0.3261     +0.0096
+    MRR@10   0.2704   vs 0.2687     +0.0018    CI [-0.0017, +0.0053]
+    388 of 2,304 moved; tuned ahead on 238, default on 150
+
+  ONE variable changed (k1), because the selected b equals the default b. The
+  pair is not registered and compare-runs.js suppresses its p-value.
+
+  The @8 interval clears zero. Section 5 is why that is not the whole story:
+  the interval quantifies sampling uncertainty about THIS configuration's
+  margin, and says nothing about the fact that the configuration was chosen by
+  looking at the same 2,304 queries.
+
+
+7. WHAT IS COMMITTED
+------------------------------------------------------------------------------
+  §13.9's rule, applied unchanged — a NAMED configuration gets a sidecar, a
+  GRID POINT gets a CSV row.
+
+    committed   v4-bm25-params.csv (108 rows) · v4-sweep.manifest.json (grid,
+                selection rule, input hashes, environment, commit, the
+                k1/b-do-not-touch-the-index assertion, the optimism block, and
+                the per-point digest + run SHA-256 table) · this file ·
+                results/runs/v4-bm25-tuned.dev.run.json · the comparison report
+    gitignored  results/sweeps/runs/ — 216 files
+
+  LABELS. 3.2 noticed that param-encoding labels
+  (v3-tfidf-top10-minshared2) break on continuous axes, and they do: k1 and b
+  do not have short exact decimal names in general. The resolution is a SPLIT
+  rather than a replacement — a run CITED IN PROSE keeps a descriptive label
+  (v4-bm25-b0, v4-bm25-tuned); a GRID POINT gets an index, v4-p001 ... v4-p108,
+  with the params in the CSV and the manifest, which is where §13.9 already put
+  them. Encoding 0.30000000000000004 in a filename was the failure mode;
+  making the eight cited runs unreadable would have been a different one.
+
+
+8. ENVIRONMENT
+------------------------------------------------------------------------------
+  MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB, macOS 26.6 (darwin 25.6.0),
+  Node v25.8.1. Corpus cooking N=27,325; dev 2,304 queries; all three inputs
+  SHA-256-verified against their Phase 1 manifests at every one of the 108 runs.
+
+  1,327 s of grid, 12.29 s/point. That figure is a COST, not a claim about the
+  system. Per-point p95 search latency is in the CSV and is quoted nowhere: it
+  is an uncontrolled laptop measurement (§12.4) and the grid ran sequentially
+  over 22 minutes on a machine that was not otherwise idle.
+
+  All 108 per-point aggregates were re-derived from the written run files
+  through eval/metrics.js and asserted against their own sidecars at EXACT
+  float equality. Passed.
+
+==============================================================================
+  A SELECTION margin on dev, not a result. Absolutes remain LOWER BOUNDS
+  (§5.1). The rung ships at the default; test is opened once, at 3.6.

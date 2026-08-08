@@ -29,7 +29,7 @@
     "files": [
       {
         "path": "backend/retrieval/index.js",
-        "sha256": "8bf85864705b7ffd52828fcc7bc72ac767b1dcaba23425d92e9fc57b64357f43"
+        "sha256": "d3c5d8cf51890e3411a36c0c60057c8676e9a3f2f39d66a0506893548b850383"
       },
       {
         "path": "backend/retrieval/types.js",
@@ -44,7 +44,7 @@
         "sha256": "c12eb4325b8696caf5af5357eb2f8ea4048e08649dd7cd265da2b466acbdc057"
       }
     ],
-    "digest": "e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf"
+    "digest": "349dd5154f896663aa38ed597e40d17e2f183e408845ee38884a6e43b8817f16"
   },
   "k": 10,
   "ksReported": [
@@ -53,7 +53,7 @@
     8,
     10
   ],
-  "command": "npm run eval -- --retriever v2-jaccard --split dev --param minShared=1 --param threshold=0.15 --label v2-jaccard-naive",
+  "command": "npm run eval -- --retriever v2-jaccard --split dev --param threshold=0.15 --param minShared=1 --label v2-jaccard-naive",
   "inputs": [
     {
       "name": "corpus",
@@ -119,16 +119,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 0.549548383246528,
-    "p50": 0.5155,
-    "p95": 1.031708,
-    "max": 1.730167
+    "mean": 0.5529398098958341,
+    "p50": 0.512333,
+    "p95": 1.046125,
+    "max": 2.539792
   },
   "timingsMs": {
-    "load": 83.269708,
-    "index": 1351.100208,
-    "search": 1276.70525,
-    "total": 2711.075166
+    "load": 82.387,
+    "index": 1346.204167,
+    "search": 1284.977375,
+    "total": 2713.568542
   },
   "environment": {
     "node": "v25.8.1",
@@ -140,9 +140,9 @@
     "peakRssMiB": 378
   },
   "git": {
-    "commit": "57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07",
-    "dirty": true,
-    "dirtyMeans": "uncommitted changes to tracked files; untracked output is not counted"
+    "commit": "827e55b1cdbd662b8730dfa6f45b6ac939a4fbfe",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
   },
-  "generatedAt": "2026-08-07T18:26:08.234Z"
+  "generatedAt": "2026-08-08T09:20:15.923Z"
 }

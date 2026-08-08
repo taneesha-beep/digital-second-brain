@@ -1,40 +1,41 @@
-PAIRED BOOTSTRAP — v3-tfidf-minshared2  vs  v3-tfidf
-roadmap 2.5 · 2026-08-08T09:24:23Z
+PAIRED BOOTSTRAP — v4-bm25  vs  v4-bm25-title1
+roadmap 2.5 · 2026-08-08T09:24:08Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
 
 1. THE TWO RUNS
 ------------------------------------------------------------------------------
-  A  v3-tfidf-minshared2
-     runid    v3-tfidf-minshared2.dev.5d23fb69
-     digest   5d23fb694d81f3c73b95125ddb6d5affa85e2dda9ff3487ce1267ea388eec7ed
-     source   8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf
-     run      results/runs/v3-tfidf-minshared2.dev.run
-              sha256 95390e3555633771c3ad1df9d9057c8f492f995d78e6e878935eb88c6c6c2f0d  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v3-tfidf-minshared2.dev.run.json  (committed)
-     command  npm run eval -- --retriever v3-tfidf --split dev --param minShared=2 --label v3-tfidf-minshared2
+  A  v4-bm25
+     runid    v4-bm25.dev.ba72e199
+     digest   ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c
+     source   bfef8f488839df6203f0bc304fcee63ec8bf79f1eda43a4a31300c5f602c5d4c
+     run      results/runs/v4-bm25.dev.run
+              sha256 9aa1881f581eca59afbdf31879c0a52faaa2401b379f387b7d47a10f42df142d  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v4-bm25.dev.run.json  (committed)
+     command  npm run eval -- --retriever v4-bm25 --split dev
 
-  B  v3-tfidf
-     runid    v3-tfidf.dev.3625fedf
-     digest   3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4
-     source   8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf
-     run      results/runs/v3-tfidf.dev.run
-              sha256 07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v3-tfidf.dev.run.json  (committed)
-     command  npm run eval -- --retriever v3-tfidf --split dev
+  B  v4-bm25-title1
+     runid    v4-bm25-title1.dev.f869389c
+     digest   f869389cc01049681e5fc134d2c5620ede594de45873932cc12408d26fcaf9ac
+     source   bfef8f488839df6203f0bc304fcee63ec8bf79f1eda43a4a31300c5f602c5d4c
+     run      results/runs/v4-bm25-title1.dev.run
+              sha256 2db8d13b1177f5101743c1b61da469b1b44f7c44d78322904b7908bfc75c5d92  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v4-bm25-title1.dev.run.json  (committed)
+     command  npm run eval -- --retriever v4-bm25 --split dev --param titleWeight=1 --label v4-bm25-title1
 
   parameters, and how many of them moved:
-     idfCorpus        A "leave-one-out"  B "leave-one-out" 
-     lengthBonus      A true             B true            
-     minShared        A 2                B 1                 <-- differs
-     topN             A null             B null            
+     b                A 0.75             B 0.75            
+     idfVariant       A "lucene"         B "lucene"        
+     k1               A 1.2              B 1.2             
+     qtfMode          A "linear"         B "linear"        
+     titleWeight      A 2                B 1                 <-- differs
 
-  ONE variable changed (minShared). The difference below is attributable to it.
+  ONE variable changed (titleWeight). The difference below is attributable to it.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  8a6290f7faa0d07e…  MATCHES the working tree (4 files)
-     B  8a6290f7faa0d07e…  MATCHES the working tree (4 files)
+     A  bfef8f488839df62…  MATCHES the working tree (4 files)
+     B  bfef8f488839df62…  MATCHES the working tree (4 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
@@ -44,9 +45,8 @@ roadmap 2.5 · 2026-08-08T09:24:23Z
                        This is the only thing pairing requires, and it is a hard
                        failure if it does not hold.
 
-  zero-result queries  A 1   B 0   both 0
-                       only A: 1 (52326)
-                       only B: 0
+  zero-result queries  A 0   B 0   both 0
+                       The two sets are IDENTICAL.
                        Reported, never gated. A retriever that returns results
                        where the other returned none is a better retriever, not an
                        unpairable one — that query is exactly the difference the
@@ -62,7 +62,7 @@ roadmap 2.5 · 2026-08-08T09:24:23Z
   status               EXPLORATORY — this pair is not in the registry.
   registry             results/comparisons/registry.json
   family               7 registered comparisons, none matching
-                       (v3-tfidf-minshared2 vs v3-tfidf on dev)
+                       (v4-bm25 vs v4-bm25-title1 on dev)
 
   Differences and intervals below are printed in full. p-values are SUPPRESSED.
   Six rungs is 15 pairwise comparisons; times 13 metrics is 195 p-values, about
@@ -74,19 +74,19 @@ roadmap 2.5 · 2026-08-08T09:24:23Z
 ------------------------------------------------------------------------------
   metric        mean A     mean B        A − B    95% CI              differ   p
   ----------------------------------------------------------------------------
-   nDCG@1      0.1492    0.1474     +0.0017   [-0.0014, +0.0051]     16      -
-   nDCG@5      0.1977    0.1941     +0.0036   [+0.0007, +0.0064]     85      -
-  *nDCG@8      0.2130    0.2107     +0.0023   [-0.0004, +0.0049]    115      -
-   nDCG@10     0.2223    0.2182     +0.0042   [+0.0013, +0.0069]    158      -
-   P@1         0.1549    0.1532     +0.0017   [-0.0017, +0.0052]     16      -
-   P@5         0.0757    0.0742     +0.0015   [+0.0003, +0.0027]     49      -
-   P@8         0.0569    0.0563     +0.0007   [-0.0001, +0.0015]     48      -
-   P@10        0.0506    0.0491     +0.0014   [+0.0007, +0.0022]     76      -
-   R@1         0.1080    0.1067     +0.0013   [-0.0013, +0.0040]     16      -
-   R@5         0.2448    0.2396     +0.0053   [+0.0007, +0.0100]     49      -
-   R@8         0.2867    0.2846     +0.0021   [-0.0025, +0.0066]     48      -
-   R@10        0.3155    0.3083     +0.0072   [+0.0020, +0.0125]     76      -
-   MRR@10      0.2299    0.2266     +0.0033   [+0.0005, +0.0061]    135      -
+   nDCG@1      0.1842    0.1726     +0.0116   [+0.0027, +0.0205]    114      -
+   nDCG@5      0.2272    0.2166     +0.0105   [+0.0052, +0.0158]    434      -
+  *nDCG@8      0.2458    0.2339     +0.0119   [+0.0069, +0.0169]    582      -
+   nDCG@10     0.2548    0.2413     +0.0135   [+0.0089, +0.0183]    663      -
+   P@1         0.1923    0.1801     +0.0122   [+0.0030, +0.0213]    112      -
+   P@5         0.0868    0.0819     +0.0049   [+0.0026, +0.0073]    163      -
+   P@8         0.0649    0.0616     +0.0033   [+0.0018, +0.0049]    182      -
+   P@10        0.0570    0.0533     +0.0037   [+0.0025, +0.0050]    204      -
+   R@1         0.1298    0.1218     +0.0080   [+0.0013, +0.0149]    112      -
+   R@5         0.2732    0.2636     +0.0096   [+0.0019, +0.0174]    163      -
+   R@8         0.3261    0.3109     +0.0152   [+0.0067, +0.0239]    182      -
+   R@10        0.3544    0.3337     +0.0207   [+0.0126, +0.0290]    204      -
+   MRR@10      0.2687    0.2550     +0.0137   [+0.0075, +0.0200]    565      -
 
   * = the pre-registered primary metric. p is reported for that metric only.
   . = computed but not reported: one pre-registered metric per comparison is what
@@ -95,26 +95,22 @@ roadmap 2.5 · 2026-08-08T09:24:23Z
 
 5. PRIMARY RESULT — nDCG@8
 ------------------------------------------------------------------------------
-  mean difference      +0.002347
-  95% CI               [-0.000382, +0.004946]
+  mean difference      +0.011879
+  95% CI               [+0.006924, +0.016851]
   p                    suppressed (exploratory — see §3)
 
-  queries differing    115 of 2304 (5.0%)
-                       v3-tfidf-minshared2 ahead on 96, v3-tfidf ahead on 19
-  effective n          115 — the CLT here runs on the queries that moved,
+  queries differing    582 of 2304 (25.3%)
+                       v4-bm25 ahead on 355, v4-bm25-title1 ahead on 227
+  effective n          582 — the CLT here runs on the queries that moved,
                        not on all 2304. This is why the test is a bootstrap and
                        not a paired t-test: a point mass at zero with a thin slab
                        is where the normal approximation to the mean is worst.
-  mean over those      +0.047029 — the overall mean is this number
-                       diluted by the 2189 queries at exactly zero
+  mean over those      +0.047026 — the overall mean is this number
+                       diluted by the 1722 queries at exactly zero
 
   THE SENTENCE:
-    v3-tfidf-minshared2 beats v3-tfidf by 0.0023 nDCG@8,
-    95% CI [0.0004, 0.0049] (p not reported).
-
-    The interval STRADDLES ZERO. Whatever the p-value says, the data is
-    consistent with no difference at all, and the sentence above should not
-    be written anywhere without this line beside it.
+    v4-bm25 beats v4-bm25-title1 by 0.0119 nDCG@8,
+    95% CI [0.0069, 0.0169] (p not reported).
 
 6. HOW THE RANDOMNESS IS PINNED
 ------------------------------------------------------------------------------
@@ -142,7 +138,7 @@ roadmap 2.5 · 2026-08-08T09:24:23Z
                        the (1+r)/(B+1) convention. Smucker, Allan & Carterette
                        (2007). NOT the interval inversion PRIMER §5.5 describes;
                        that reading is the raw count below.
-  resamples favouring  A 9572   B 428   tied 0
+  resamples favouring  A 10000   B 0   tied 0
                        PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
                        its own name. Deliberately not labelled a second p-value:
                        two p-values in one report is an invitation to quote the

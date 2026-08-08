@@ -1,5 +1,5 @@
 PAIRED BOOTSTRAP — v2-jaccard-uncapped  vs  v2-jaccard
-roadmap 2.5 · 2026-08-07T18:28:29Z
+roadmap 2.5 · 2026-08-08T09:24:18Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
@@ -9,7 +9,7 @@ roadmap 2.5 · 2026-08-07T18:28:29Z
   A  v2-jaccard-uncapped
      runid    v2-jaccard-uncapped.dev.e2bf99aa
      digest   e2bf99aa105360fe8b0e4153bb3325d3671184a8ab4632c18e4677563139b219
-     source   e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf
+     source   349dd5154f896663aa38ed597e40d17e2f183e408845ee38884a6e43b8817f16
      run      results/runs/v2-jaccard-uncapped.dev.run
               sha256 de30944d8405bc2c08c60829e0d942be94d9e95f814824fff92c21e0b710bb58  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v2-jaccard-uncapped.dev.run.json  (committed)
@@ -18,7 +18,7 @@ roadmap 2.5 · 2026-08-07T18:28:29Z
   B  v2-jaccard
      runid    v2-jaccard.dev.fb0bc25a
      digest   fb0bc25ae7241f19797701560e7a56b1c1c071edd4ce46599e1f7b0ba1a7fe06
-     source   e1c1bd5760719629fba0437e097f03976e76a9edda343c2be36bd3b88fe6f2bf
+     source   349dd5154f896663aa38ed597e40d17e2f183e408845ee38884a6e43b8817f16
      run      results/runs/v2-jaccard.dev.run
               sha256 0b2531b72fdfb3bc58a60c922109238b8180d7a7b27f5e020370f4a26e4dd111  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v2-jaccard.dev.run.json  (committed)
@@ -36,8 +36,8 @@ roadmap 2.5 · 2026-08-07T18:28:29Z
   ONE variable changed (cap). The difference below is attributable to it.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  e1c1bd5760719629…  MATCHES the working tree (4 files)
-     B  e1c1bd5760719629…  MATCHES the working tree (4 files)
+     A  349dd5154f896663…  MATCHES the working tree (4 files)
+     B  349dd5154f896663…  MATCHES the working tree (4 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
@@ -146,7 +146,7 @@ roadmap 2.5 · 2026-08-07T18:28:29Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07  (tracked files dirty)
+  git commit           e0420c19f024292c39cc3f42fd6b749b5c9b466b
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js

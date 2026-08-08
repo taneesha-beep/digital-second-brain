@@ -1,0 +1,632 @@
+RUNG v4 — OKAPI BM25 (roadmap 3.3)
+runs generated from a clean tree at 827e55b · comparison reports at e0420c1
+==============================================================================
+
+The first honest opponent. v1, v2 and v3 all sit downstream of one decade-old
+product constant — the top-10 keyword list, or a threshold calibrated against
+it — so every rung comparison so far has been partly a measurement of that
+constant. BM25 is 1994, it is what every new retrieval system is still measured
+against, and its two knobs were chosen on TREC collections that are not this
+one.
+
+  IT WINS. v4-bm25 beats v3-tfidf by 0.0351 nDCG@8, 95% CI [0.0255, 0.0449],
+  p < 0.0001. The second rung to clear Holm's alpha/7 = 0.00714, and it clears
+  it at the bootstrap floor.
+
+SAID PLAINLY, BECAUSE IT IS THE UNCOMFORTABLE READING AND IT IS THE TRUE ONE:
+a 1994 algorithm at its textbook defaults, with no tuning on this corpus at
+all, beats the retriever this project spent three sessions building. v3 was not
+a wasted rung — it is +0.068 over v2 and it is what made the ladder's
+similarity-function finding legible — but as a retriever it is beaten by the
+standard baseline, and the margin is not close to the resolution limit.
+
+  npm run eval -- --retriever v4-bm25 --split dev
+  npm run eval:compare v4-bm25 v3-tfidf
+  npm run analyse:rungs -- --a v4-bm25 --b v3-tfidf --split dev
+  npm run analyse:bm25
+  npm run sweep:v4                      # results/sweeps/v4-sweep.txt
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+
+                                       nDCG@8    P@8     R@8   MRR@10   p95
+  v1-overlap  overlap, top-10, cap 8    0.1402  0.0375  0.1887  0.1520  1.0 ms
+  v2-jaccard  Jaccard, top-10, cap 8    0.1427  0.0381  0.1921  0.1546  0.87 ms
+  v3-tfidf    cosine, full vocabulary   0.2107  0.0563  0.2846  0.2266  8.1 ms
+  v4-bm25     BM25, k1 1.2, b 0.75      0.2458  0.0649  0.3261  0.2687  7.9 ms
+
+  All four k, v4-bm25:
+
+    metric       @1       @5       @8      @10
+  --------------------------------------------
+      nDCG   0.1842   0.2272   0.2458   0.2548
+         P   0.1923   0.0868   0.0649   0.0570
+         R   0.1298   0.2732   0.3261   0.3544
+    MRR@10   0.2687
+
+  {"k1":1.2,"b":0.75,"idfVariant":"lucene","qtfMode":"linear","titleWeight":2}
+  digest ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c
+  source bfef8f488839df6203f0bc304fcee63ec8bf79f1eda43a4a31300c5f602c5d4c
+  runid  v4-bm25.dev.ba72e199
+  run    results/runs/v4-bm25.dev.run  sha256 9aa1881f581eca59... (23,040 lines)
+
+  ZERO-RESULT QUERIES: 0, matching v3. There is no admission rule, so a query
+  returns nothing only if it has no terms. 23,040 lines is exactly 2,304 x 10.
+
+  nDCG@8 0.2458 sits inside CLAUDE.md's 0.1-0.4 plausibility band. Every
+  absolute here remains a LOWER BOUND (§5.1); the judgments are positive-only,
+  so R@8 0.3261 means 33% of the JUDGED relevant documents were found and says
+  nothing about the genuinely relevant ones.
+
+  THE SOURCE DIGEST ANSWERS A QUESTION 3.2 ASKED FORWARD. It said "v4 will
+  import nothing from v1 if it builds its own postings — check, because the
+  digest is what will say so." It does import v1. The four files hashed are
+  index.js, types.js, v1-overlap.js and v4-bm25.js, and the single import is
+  tokenise(). That is deliberate and non-negotiable: the tokenizer decides what
+  the corpus IS, and changing it would make every rung on the ladder
+  incomparable at once. v4 builds its own postings and shares the tokenizer.
+
+
+2. ENVIRONMENT, INDEX BUILD TIME AND MEMORY
+------------------------------------------------------------------------------
+  3.3's Done criterion names index build time AND memory at corpus scale, so
+  both are measured rather than estimated. `npm run analyse:bm25`.
+
+  MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB, macOS 26.6 (darwin 25.6.0),
+  Node v25.8.1. Corpus cooking N=27,325; dev 2,304 queries; all three inputs
+  SHA-256-verified against their Phase 1 manifests at run time.
+
+  INDEX BUILD — five consecutive builds, ms:
+
+    964  980  982  994  1008        median 982 ms, range [964, 1008]
+
+  Against v3's ~1.47 s. v4's buildIndex does strictly less work: it stores raw
+  tf rather than computing a tf-idf weight and an L2 norm per document.
+
+  MEMORY — two numbers, and they are not the same number.
+
+    typed arrays, computed from the structures rather than estimated
+      postings docIds   Int32 x 997,749             3.81 MiB
+      postings tf       Int32 x 997,749             3.81 MiB
+      per-doc termIds   Int32                       3.81 MiB
+      per-doc tf        Int32                       3.81 MiB
+      lengths           Float64 x 27,325            0.21 MiB
+      length ratios     Float64 x 27,325            0.21 MiB
+      idf               Float64 x 34,928            0.27 MiB
+      rank() scratch    3 arrays x 27,325           0.42 MiB
+      TOTAL                                        16.32 MiB
+
+    retained heap for one handle    34.8 MiB   (node --expose-gc)
+    peak RSS for the eval process      650 MiB
+
+  The 16.32 MiB is what the index costs in typed arrays and is computable from
+  the structures. The 34.8 MiB is what it costs in the heap and includes the
+  34,928-string vocabulary Map and the df Map, whose footprint is NOT computable
+  from a length. The 650 MiB is the whole process and is dominated by the
+  27,325 parsed corpus documents, which every rung pays and which is not part of
+  the index. Quoting the third as "BM25's memory" would be wrong by 19x.
+
+  Postings are 8 bytes per entry against v3's 12 (Int32 + Float64), which is why
+  v4 is not slower despite doing a division per postings visit — see section 7.
+
+  p95 per-query search(), eight consecutive runs all emitting run file
+  9aa1881f:
+
+    7.760  7.804  7.841  7.868  7.886  7.901  7.918  8.200
+
+  MEDIAN 7.9 ms, range [7.76, 8.20], spread 5.7%. Reported as a median with its
+  range for §14.9's reason. v3's is 8.1 ms [7.74, 8.63]. THE RANGES OVERLAP
+  HEAVILY AND NO CLAIM IS MADE IN EITHER DIRECTION. Both are UNCONTROLLED
+  laptop measurements and a controlled figure against a published budget is
+  6.5's job.
+
+  npm test — 171 tests across 9 suites, up from 142 across 8. The Node eval path
+  stays dependency-free.
+
+
+3. WHAT v4 IS, AND THE PARAM THE LADDER LOST
+------------------------------------------------------------------------------
+
+    score(q,D) = SUM over t in q&D of
+
+                        idf(t) . qw(t) . ------ tf(t,D).(k1+1) ------
+                                          tf(t,D) + k1.(1-b+b.|D|/avgdl)
+
+  FIVE PARAMS.
+
+    k1          1.2       tf saturation. Textbook default, deliberately NOT
+                          selected on this corpus — section 4.
+    b           0.75      length normalisation, pivoted between none and full.
+    idfVariant  lucene    ln(1 + (N-df+0.5)/(df+0.5)) — section 6.
+    qtfMode     linear    Robertson's k3 at its limits: linear is k3 -> inf
+                          (qw = qtf), binary is k3 = 0 (qw = 1).
+    titleWeight 2         the inherited title doubling, made explicit.
+
+  WHAT IS INHERITED, AND WHY EACH IS DEFENSIBLE RATHER THAN COPIED.
+
+  tokenise() + STOPWORDS   from v1, unchanged. Non-negotiable: see section 1.
+
+  the df table             IDENTICAL to v3's, asserted by a test rather than
+                           argued. Both count one document per term from
+                           new Set(tokenise(title + ' ' + body)), so the title
+                           doubling cannot reach a Set. Only the FORMULA
+                           mapping df to idf changed, not the counts. That is
+                           what keeps "v3 vs v4" a scoring comparison.
+
+  titleWeight 2            §15.1's principle — a rung changes how a PAIR is
+                           scored, not how a DOCUMENT is read. Kept, and priced
+                           by an ablation (section 5), because it is newly
+                           interesting: under BM25 the doubling feeds |D| as
+                           well as tf, which it never did before. Measured, the
+                           doubling is 9.2% of every length BM25 divides by
+                           (avgdl 53.9953 at titleWeight 2, 49.0017 at 1).
+
+  WHAT DID NOT CARRY, AND THE FIRST ONE IS THE METHODOLOGICAL CONTENT.
+
+  idfCorpus  DROPPED. THIS IS THE ONE PARAM HELD CONSTANT v1 -> v2 -> v3, and
+             3.3 is where the chain breaks. Not for convenience: it has NO
+             REFERENT. §15.1's exactness argument works because a document's
+             vector holds only terms it CONTAINS, so df_loo = df - 1 for every
+             such document and one global table is exact. BM25's idf multiplies
+             a (query, document) pair where BOTH contain t, so "leave one out"
+             is ambiguous between df-1 (exclude the query) and df-2 (exclude
+             both), with no principled tiebreak.
+
+             The price is MEASURED rather than waved at, and it is not
+             uniformly negligible:
+
+               max |idf(df) - idf(df-1)| over df >= 2   0.510826  at df 2
+               at df = 5150 ("recipe")                  0.00019417
+               at df = 100                              0.01000008
+               at df = 10                               0.10008346
+               at df = 2                                0.51082562
+
+             Negligible across the mass of the vocabulary, a whole half-nat at
+             the rare-term end — which is where duplicate detection lives. So
+             the drop is a decision with a cost, stated, not a simplification.
+
+  lengthBonus  DROPPED. It only ordered terms for slice(0, topN) and there is no
+               topN. §15.4b already proved it inert at full vocabulary by a
+               byte-identical run.
+  topN         DROPPED. Full vocabulary by construction; §15.4a priced the
+               truncation at +0.0289 on v3.
+  minShared    DROPPED. §15.4c priced it on v3 at +0.0023 with an interval
+               straddling zero, and v3 declined it. Same structure here —
+               candidates come from the query's postings — so carrying the
+               handle would re-ask a settled question.
+  threshold / scorePrecision / cap  ABSENT. §15.2's reasoning transfers
+               unchanged, and `cap` was pre-registered absent FOR v4
+               SPECIFICALLY at 3.1 (types.js, §14.3), before this file existed.
+
+  AND A PROPERTY THE LADDER LOSES.
+
+  v4 IS NOT SYMMETRIC. score(A->B) != score(B->A): the document side is
+  length-normalised and saturated, the query side is neither. v2 ESTABLISHED
+  symmetry as a property of the algorithm (§14.5, exact float equality, with v1
+  put through the same test and failing it) and v3 preserved it at real cost
+  (§15.8's sorted term ids). v4 gives it back.
+
+  Measured rather than left as an omission, in the same shape §14.5 used:
+  190 of 197 reachable fixture pairs disagree between directions. Every
+  symmetric exception has |A| = |B|, which is necessary — with unequal lengths
+  the two directions evaluate different saturation curves. Equal length is not
+  SUFFICIENT: documents 025 and 033 share `brine` (3 vs 1) and `poultry`
+  (1 vs 3) at equal length and are symmetric anyway, because those two terms
+  carry the same df and the contributions swap without changing the sum. A
+  structural coincidence, and worth knowing the formula permits it.
+
+  PHASE 4 INHERITS THE TENSION DIRECTLY. Bidirectional note links are what v2
+  was built for; the rung that beats it is asymmetric, so a v4 deployment
+  re-introduces the direction-dependence v2 removed at the algorithm level.
+
+
+4. THE TUNING DECISION, AND WHAT THE REGISTERED COMPARISON MEANS
+------------------------------------------------------------------------------
+  Roadmap 3.3 says "start at k1 = 1.2, b = 0.75; tune on dev only". Two rulings
+  already on the books decide what that can mean for the REGISTERED comparison:
+
+    §14.2  "a swept v2 measured against an unswept v1 is not the registered
+           experiment."
+    §11.5  sweep-tuned-vs-shipped is registered on TEST, because "sweeps select;
+           they do not test."
+
+  v3 was never swept. So:
+
+    ladder-v3-v4 IS DEFAULT BM25 (k1 1.2, b 0.75) AGAINST UNTUNED v3.
+
+  Both sides carry zero cooking-dev selection and the p-value means what it
+  says. The alternative would price "BM25 plus a 108-point search over the same
+  2,304 queries the bootstrap resamples" against "v3 with no search at all",
+  which is the circularity §11.5 named in advance.
+
+  THE DEFAULTS ARE NOT A HANDICAP. k1 = 1.2 / b = 0.75 carry a decade of
+  selection — on other corpora. That is exactly what makes BM25 a fair opponent
+  here rather than a weak one, and it is the difference between this rung and
+  the three below it.
+
+  DECLARED BEFORE THE GRID RAN, in scripts/sweep-v4.js, committed at 218f59f:
+
+    - the selected point does NOT become v4-bm25. It ships as v4-bm25-tuned,
+      EXPLORATORY, p suppressed by the tool.
+    - therefore registry.json's ladder-v4-v5 compares v5 against DEFAULT v4 at
+      3.4, and 3.5's RRF constant hits the identical question. The general rule,
+      stated once so it is not re-litigated per rung: LADDER RUNGS SHIP
+      UNTUNED; TUNING IS MEASURED BESIDE THEM. That keeps every ladder
+      comparison a comparison of algorithms rather than of search budgets.
+    - registry.json was NOT edited. An eighth entry would retroactively move
+      Holm's bound from alpha/7 = 0.00714 to alpha/8 = 0.00625 for every
+      comparison already run. If a tuned-vs-default number is wanted on test,
+      3.6 registers it, where the family closes anyway.
+
+
+5. THE REGISTERED COMPARISON
+------------------------------------------------------------------------------
+  results/comparisons/v4-bm25-vs-v3-tfidf.dev.txt
+
+  metric        mean A     mean B        A - B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.1842    0.1474     +0.0367   [+0.0230, +0.0506]    285      .
+   nDCG@5      0.2272    0.1941     +0.0331   [+0.0230, +0.0433]    747      .
+  *nDCG@8      0.2458    0.2107     +0.0351   [+0.0255, +0.0449]    876   <0.0001
+   nDCG@10     0.2548    0.2182     +0.0366   [+0.0274, +0.0461]    943      .
+   P@8         0.0649    0.0563     +0.0087   [+0.0062, +0.0112]    439      .
+   R@8         0.3261    0.2846     +0.0415   [+0.0282, +0.0548]    439      .
+   MRR@10      0.2687    0.2266     +0.0420   [+0.0306, +0.0538]    873      .
+
+  THE SENTENCE: v4-bm25 beats v3-tfidf by 0.0351 nDCG@8, 95% CI
+  [0.0255, 0.0449], p < 0.0001.
+
+  All thirteen metrics move up and no interval straddles zero — the second time
+  on this ladder, after v3.
+
+  HOLM. The family is seven and the correction applies when it is complete, at
+  3.6. The p is at the bootstrap floor of 1/(B+1) = 0.0001 and Holm needs the
+  smallest raw p below alpha/7 = 0.00714, so like v3 this rung WILL still be
+  significant when the family closes. No high-B re-run: §11.3 authorises
+  driving B up as a PRECISION check when a p lands near 0.05, and this one is
+  pinned at the floor.
+
+  THE SHAPE. 876 of 2,304 queries move (38.0%); v4 ahead on 546, v3 on 330 —
+  mean gain +0.320276 against mean loss -0.284848. v4 wins more often AND
+  bigger, the same healthy shape v3 had and the opposite of 3.1's fragile
+  50-against-91.
+
+  THE TOOL PRINTS "10 variables changed at once" and it is right to. Three of
+  those ten are params v3 has and v4 does not (idfCorpus, lengthBonus, topN,
+  minShared) and four are the reverse; the tool counts params, the experiment
+  counts behaviours, and the disagreement is printed rather than suppressed —
+  the same convention §14.3 and §15.5 recorded, two rungs larger. Section 8
+  is the attribution.
+
+
+6. THE ABLATIONS — each ONE variable, all EXPLORATORY
+------------------------------------------------------------------------------
+  All four report "ONE variable changed" in their own report and all have their
+  p suppressed by the tool, because none is registered.
+
+  (a) LENGTH NORMALISATION — `b`, at the shipped k1. The biggest single knob.
+
+      nDCG@8   0.245760 vs 0.177099   +0.068661  CI [+0.0600, +0.0777]
+      nDCG@10  0.254790 vs 0.183596   +0.071194  CI [+0.0626, +0.0800]
+      839 of 2,304 moved; b=0.75 ahead on 669, b=0 on 170
+
+      Turning length normalisation off costs 27.9% of nDCG@8 — nearly twice
+      what the whole rung gains over v3. Consistent with the surface in
+      section 9, where b is the axis with the steep gradient.
+
+  (b) THE QUERY SIDE — `qtfMode`, and this is the surprise of the rung.
+
+      nDCG@8   0.245760 vs 0.200163   +0.045597  CI [+0.0363, +0.0548]
+      nDCG@10  0.254790 vs 0.206100   +0.048690  CI [+0.0397, +0.0577]
+      842 of 2,304 moved; linear ahead on 571, binary on 271
+
+      Treating the query as a SET of terms rather than a bag costs +0.0456 —
+      1.3x the entire v3 -> v4 margin. This is not a knob BM25 is usually
+      reported with, because BM25's queries are usually a handful of words
+      where qtf is 1 anyway. HERE THE QUERIES ARE DOCUMENTS, with tf reaching
+      47, so the query side carries real information and discarding it is
+      expensive. Worth stating as an asymmetry BM25 was never asked to justify:
+      at qtfMode linear the DOCUMENT side saturates via k1 and the QUERY side
+      does not saturate at all.
+
+  (c) THE INHERITED TITLE DOUBLING — `titleWeight`.
+
+      nDCG@8   0.245760 vs 0.233881   +0.011879  CI [+0.0069, +0.0169]
+      nDCG@10  0.254790 vs 0.241259   +0.013531  CI [+0.0089, +0.0183]
+      582 of 2,304 moved; doubled ahead on 355, single on 227
+
+      keywords.js:59's doubling, inherited unexamined by v1, v2 and v3 and
+      never priced by any of them, is worth +0.0119 here. It survives its first
+      measurement — and it is the first rung where it could have hurt, since it
+      inflates |D| by 9.2% as well as raising tf.
+
+  (d) THE IDF VARIANT — `idfVariant`. The one that measures nothing, which is
+      the finding.
+
+      nDCG@8   0.245760 vs 0.245255   +0.000505  CI [-0.0003, +0.0013]
+      nDCG@10  0.254790 vs 0.254023   +0.000767  CI [+0.0000, +0.0016]
+      77 of 2,304 moved (3.3%); lucene ahead on 39, robertson on 38
+
+      A COIN FLIP. 39 against 38, and the @8 interval straddles zero. The two
+      variants differ only in the smoothing shape on this corpus because
+      NEITHER GOES NEGATIVE: max df is 5,150 ("recipe", 18.8%) and robertson
+      needs df > N/2 = 13,662. So the reason to prefer lucene is STRUCTURAL —
+      it cannot go negative for any df <= N — and NOT empirical. Section 7 is
+      why that distinction is load-bearing.
+
+
+7. NEGATIVE IDF — WHAT WOULD BREAK, AND WHY assertHits WOULD NOT CATCH IT
+------------------------------------------------------------------------------
+  Robertson/Sparck-Jones is ln((N-df+0.5)/(df+0.5)), negative for df > N/2. It
+  cannot fire on cooking, which is exactly why it would ship unnoticed. A
+  note-taking app's own corpus is the kind that could easily have a term in most
+  documents.
+
+  MEASURED ON A CORPUS BUILT TO CROSS THE BOUNDARY (four documents, "salt" in
+  three of them), in tests/retrieval.v4-bm25.test.js:
+
+    - assertHits ACCEPTS A NEGATIVE-SCORING HIT. types.js checks
+      Number.isFinite(score) and descending order. A negative score satisfies
+      both. So a document that is EVIDENCE AGAINST the query is returned as a
+      hit and written to the run file as a retrieval — an anti-match presented
+      as a result, invisible to every postcondition the interface has. The test
+      asserts the hits are still a well-formed, correctly ordered list, which
+      is the point.
+
+    - v3's [0,1] INVARIANT HAS NO ANALOGUE. v3 asserts 0 <= score <= 1+1e-9
+      inside rank() because a cosine of non-negative vectors is bounded. BM25 is
+      an unbounded sum with no bound at either end.
+
+  WHAT v4 ASSERTS INSTEAD, which is what the formula actually guarantees:
+
+    always            Number.isFinite(score), else throw
+    under lucene      score > 0, else throw. Every idf is strictly positive and
+                      every candidate shares at least one term, so a
+                      non-positive score is a defect rather than an edge case.
+    under robertson   finiteness only. A negative score there is the formula
+                      working as designed, and asserting it away would hide the
+                      behaviour the variant exists to expose.
+
+  AND IT IS RECORDED RATHER THAN ASSUMED AWAY. buildIndex counts terms with
+  idf <= 0 and the count reaches the handle; under lucene a non-zero count is
+  impossible for df <= N and throws at index() naming the cause. On cooking the
+  count is 0 under both variants — and that zero being in the provenance is the
+  difference between "it does not happen here" and "nobody checked".
+
+  Measured idf ranges, `npm run analyse:bm25`:
+
+    lucene     [1.6687, 9.8101]   ratio 5.88x   non-positive terms 0
+    robertson  [1.4599, 9.8101]   ratio 6.72x   non-positive terms 0
+    v3-tfidf   [2.6688, 11.2156]  ratio 4.20x
+
+  v3's idf enters the cosine SQUARED — once in the query weight, once in the
+  document weight — so its effective rare-term emphasis is 17.66x against
+  BM25's linear 5.88x. That is a large difference in how aggressively rare
+  terms are favoured, and it is one of the behaviours section 8's first chain
+  step bundles.
+
+
+8. THE THREE-STEP CHAIN, WHICH CLOSES EXACTLY
+------------------------------------------------------------------------------
+  The registered comparison moves several behaviours at once. 3.2 set the
+  precedent (§15.5): a comparison that moves more than one behaviour gets a
+  telescoping one-variable chain closing to the registered total at exact float
+  equality. Six behaviours move here, and one of them is free:
+
+    1. the idf formula                    ln(N/df)+1  ->  BM25's
+    2. the idf EXPONENT                   squared in a cosine, linear in BM25
+    3. the query-side weight              tf_q . idf  ->  qtf
+    4. tf saturation                      linear  ->  k1
+    5. document normalisation             L2 norm  ->  pivoted b
+    6. query normalisation                ||q||  ->  none
+
+  (6) IS FREE AND CAN BE SAID EXACTLY: ||q|| is constant within a query and
+  every metric reads rank order within a query, so dropping it is
+  rank-preserving. It changes the score column's scale and nothing that is
+  measured. Six become five.
+
+    step                                       nDCG@8        delta
+    v3-tfidf                                  0.210660
+    -> v4-bm25-flat   (k1 -> linear, b = 0)   0.088288    -0.122372
+    -> v4-bm25-k1big  (b: 0 -> 0.75)          0.151143    +0.062856
+    -> v4-bm25        (k1: linear -> 1.2)     0.245760    +0.094617
+                                                          ----------
+                                                          +0.035100
+    registered v4 - v3                                    +0.035100  identical
+
+  Sum and registered difference are +0.03510010508476688 on both sides — the
+  same float, not the same rounding.
+
+  AND IT OVERTURNS THE OBVIOUS READING OF THE HEADLINE.
+
+  BM25's SCORING FORM, ON ITS OWN, IS A CATASTROPHE HERE: -0.1224, a 58%
+  regression against v3 and well below v1's 0.1402. 903 queries move and v3 is
+  ahead on 741 of them. Stripped of both corrections, BM25 is linear tf with no
+  length normalisation at all — so long documents dominate every ranking, which
+  is the exact failure BM25 was invented to fix.
+
+  THE RUNG IS THE TWO KNOBS, NOT THE FORMULA. Length normalisation is +0.0629
+  and tf saturation is +0.0946, and together they turn a -0.1224 regression
+  into a +0.0351 win. "BM25 beats tf-idf cosine" is true and is the wrong
+  summary; the true one is that BM25's CORRECTIONS beat the cosine's, and the
+  underlying weighting scheme is worse.
+
+  THE FIRST STEP IS IRREDUCIBLE AND THAT IS STATED RATHER THAN FAKED. It
+  bundles (1), (2) and (3). Splitting them needs a retriever carrying idfPower,
+  a v3-flavoured idfVariant and norm: 'l2' — a superset-of-everything scorer
+  that is neither v3 nor BM25, whose numbers would answer no question at 3.6,
+  on a rung §15.1 praised for REMOVING machinery. What the reader gets instead
+  is the arithmetic in section 7 (17.66x vs 5.88x rare-term emphasis) and the
+  measured price of (3) alone in ablation (b), +0.0456. Pricing the idf
+  exponent separately is on the noticed-list, not done.
+
+  MY PREDICTION WAS WRONG ON k1 AND IT IS WORTH SAYING SO. Before the run I
+  expected k1 to barely matter, because at tf = 1 and |D| = avgdl the
+  saturation factor is exactly 1 for every k1, and 75.8% of (document, term)
+  pairs have tf = 1. The reasoning was right and the conclusion was not: k1 is
+  the LARGEST chain step at +0.0946. Two reasons, both measurable — 24.2% of
+  pairs have tf > 1 and the max is 47, so the tail is real; and the k1 term
+  multiplies the LENGTH factor, so k1 also controls how hard b acts. That
+  second coupling is visible in the surface (section 9), where the k1 = 0 row
+  is flat in b: at k1 = 0 the length term is multiplied by zero and b is inert.
+
+
+9. THE SWEEP — 108 POINTS, AND SELECTION BIAS THAT IS REAL THIS TIME
+------------------------------------------------------------------------------
+  Full writeup in results/sweeps/v4-sweep.txt. The headline here.
+
+    default   k1 1.2  b 0.75    nDCG@8  0.245760
+    selected  k1 1.6  b 0.75    nDCG@8  0.249946
+    margin                             +0.004186
+
+    split-half optimism, 200 repeats, seed 20260808
+      mean margin(A) - margin(B)  +0.001857   [p5 -0.003008, p95 +0.007910]
+      distinct configurations chosen across 200 halves: 10
+
+  44% OF THE MARGIN IS SELECTION OPTIMISM, and the 5th percentile is negative.
+  2.7's equivalent figure was +1.4e-5 against a margin of +2.3e-4 — 6% — and
+  §13.7 could call it a formality because both of that grid's axes were monotone
+  PER QUERY, so the argmax was forced by an argument holding on every subset.
+  NONE OF THAT TRANSFERS. k1 and b are continuous, they interact, and the
+  optimum is interior on both axes, so the split-half estimate is the only
+  evidence there is — and it says most of what tuning appears to buy is the
+  maximum of 108 noisy estimates.
+
+  The instability is visible directly, without the arithmetic: across 200 dev
+  halves the selection lands on TEN different configurations, and the winner on
+  full dev is chosen only 65 times out of 200.
+
+  THE TUNED RUN IS BANKED AND IS EXPLORATORY. v4-bm25-tuned, k1 1.6 b 0.75,
+  nDCG@8 0.249946, +0.0042 over the default with CI [+0.0015, +0.0070] and its
+  p suppressed by the tool. It is not the rung, by a rule declared before the
+  grid ran.
+
+
+10. THE MECHANISM — MEASURED
+------------------------------------------------------------------------------
+  npm run analyse:rungs -- --a v4-bm25 --b v3-tfidf --split dev
+
+  Stratified by query term count (both rungs use the same termCount() quantity,
+  so the strata mean one thing):
+
+    stratum      n     v3 nDCG@8    v4 nDCG@8   moved   contribution
+    d <= 6      25    0.27398441   0.31809603      10    +0.00047864
+    d >= 7    2279    0.20996536   0.24496661     866    +0.03462146
+                                                         +0.03510011
+
+  TERM LENGTH OF RETRIEVED DOCUMENTS, top 8 over the whole dev run:
+
+     d          v3         v4      delta
+        1       12          2        -10
+        3       44          2        -42
+        5       89         17        -72
+        7      240         75       -165
+        9      463        171       -292
+    10-19     5582       3325      -2257
+    20-49     8720       9873      +1153
+      50+     2812       4783      +1971
+    d<=9      1318        451      0.34x
+
+  v4 RETRIEVES LONGER DOCUMENTS, and the direction is the opposite of v2's.
+  §14.6 measured Jaccard promoting SHORT targets by 4.75x; here v4 retrieves
+  only 0.34x as many documents with fewer than ten distinct terms and
+  substantially more with fifty or more.
+
+  That is the textbook mechanism showing up in the data. A cosine's L2 norm
+  over-penalises long documents — dividing by sqrt(sum of squared weights)
+  grows faster than a long document's genuine extra relevance — which is the
+  observation pivoted length normalisation exists to correct. b = 0.75 pivots
+  between "no normalisation" and "full", and what it buys is exactly the long
+  documents v3 was pushing out.
+
+
+11. WHAT THE RUNG EXPOSED
+------------------------------------------------------------------------------
+  - THE ROADMAP'S PREMISE ABOUT THE INDEX IS FALSE, and correcting it removed a
+    task rather than adding one. 3.3 inherited from 2.7 that "k1 and b both
+    change the index, so they cannot reuse a cached one" and budgeted ~30 lines
+    of runner mode for it. In a standard BM25 the postings hold raw tf, the
+    length ratio is b-independent, and both knobs act at scoring time. It WOULD
+    have been true of a v3-style implementation that bakes the finished weight
+    into the postings (v3-tfidf.js:303), so this is a design decision made
+    deliberately and then ENFORCED: buildIndex() never reads k1 or b, the
+    dependent normalisation is memoised lazily at first rank(), a test indexes
+    at (1.2, 0.75) and (2.5, 0.1) and asserts every persistent structure is
+    identical, and sweep-v4.js re-asserts it at corpus scale before the grid
+    runs. The runner mode was not written: index() is ~1.0 s against a ~11 s
+    search, under 10%, where §13.10 measured 57%.
+
+  - THE `dirty` FLAG NOW CARRIES INFORMATION, and it changed how this session
+    had to be committed. 3.2's noticed-list: sidecars are tracked, so writing
+    one dirtied the tree and the next run recorded dirty=true forever. Fixed at
+    6e006a7 by excluding each tool's OWN OUTPUT and only that —
+    results/comparisons/registry.json is deliberately NOT excluded from
+    compare-runs' check, because §11.5's enforcement value is that an
+    uncommitted registry edit stays visible. The consequence is an ORDER: a
+    comparison report reads the run sidecars, so it can only be clean once they
+    are committed. Runs at e0420c1, reports naming it. Every sidecar and every
+    report in this session records dirty=false, which no artifact in this repo
+    had ever done.
+
+  - assertHits HAS A HOLE THE LADDER HAD NOT REACHED. Section 7. Nothing on
+    this corpus triggers it; the test corpus that does is four documents long.
+
+  - THE LABEL SCHEME BROKE WHERE 3.2 PREDICTED, and the fix is a split rather
+    than a replacement. Param-encoding cannot express continuous axes. Runs
+    cited in prose keep descriptive labels (v4-bm25-b0); the 108 grid points are
+    indexed v4-p001...v4-p108 with the params in the CSV and manifest, which is
+    where §13.9 already put them.
+
+  - THE LOADER COUNT WAS FOUR, NOT THREE. 3.1's noticed-list named
+    emit-per-query-scores.js, compare-runs.js and analyse-rungs.js;
+    sweep-v1.js carries its own too. scripts/lib/run-io.js exists so
+    sweep-v4.js is not a fifth. It consolidates nothing — §10's validated
+    evidence chain and §11.1's deliberate second copy both stay put. Still due
+    at 3.6.
+
+  - THE GRID GUARD EARNED ITS PLACE ON FIRST USE. sweep-v4.js fails if the
+    default configuration is not on the grid, and it fired: an even
+    0, 0.1 ... 1.0 ruler does not contain b = 0.75, so every "what did tuning
+    buy" margin would have been measured against a point that was not a row.
+    b = 0.75 is on the grid deliberately, breaking the even spacing, exactly as
+    §13.2 added the shipped 0.15 to a lattice it is not a member of.
+
+  - THE RUNNER AND THE METRICS: NOTHING. All 21 runs re-scored from the written
+    run files through metrics.js and asserted against their committed sidecars
+    at exact float equality; passed. No new flag was needed.
+
+
+12. WHAT THIS RUNG DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+  - NOT A TEST-SET RESULT. Dev only, until 3.6.
+  - NOT HOLM-ADJUSTED. The p is raw; the family is seven and four now exist.
+    Like v3 and unlike v2, the outcome is statable in advance.
+  - NOT A CLAIM THAT BM25 BEATS TF-IDF COSINE IN GENERAL. It is a claim about
+    2,304 cooking questions whose "queries" are whole documents — which is why
+    ablation (b) matters so much and would matter far less on keyword queries.
+    Section 8's chain says the weighting scheme is not what wins; the two
+    corrections are.
+  - NOT A TUNED-vs-TUNED COMPARISON. v3 was never swept. If v3 has a knob worth
+    turning, nobody has looked, and the +0.0351 is a comparison of two untuned
+    configurations, which is a fair fight and not the same as a best-vs-best.
+  - NOT A REASON TO SHIP v4 IN THE APP. It is asymmetric (section 3), and
+    Phase 4 has to decide what that costs a bidirectional link graph.
+  - ABSOLUTES REMAIN LOWER BOUNDS (§5.1). Validation (§10) and incompleteness
+    are two separate qualifiers and neither retires the other.
+
+
+13. REPRODUCTION
+------------------------------------------------------------------------------
+  All 21 named runs regenerate from a clean tree at 827e55b to the SHA-256
+  their sidecars record, including the thirteen predating this session. The 20
+  comparison reports regenerate at e0420c1 and every number in the eleven older
+  ones is unchanged — 3.1's +0.0025 / p 0.0482 and 3.2's +0.0680 / p <0.0001
+  both reproduce exactly, because the seed is pinned. results/parity/ still
+  hashes to 83f9e35e, so the frozen v1 baseline is byte-intact and no line of
+  v1-overlap.js was edited.
+
+  npm test — 171 tests across 9 suites.
+
+==============================================================================
+  Absolutes remain LOWER BOUNDS (§5.1). Dev only until 3.6.

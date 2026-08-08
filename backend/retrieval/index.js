@@ -185,5 +185,6 @@ function search(handle, query, k) {
 register(require('./v1-overlap'));
 register(require('./v2-jaccard'));
 register(require('./v3-tfidf'));
+register(require('./v4-bm25'));
 
 module.exports = { index, search, describe, register, versions };

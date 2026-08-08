@@ -7,20 +7,21 @@
     "evidence": "results/metric-validation.txt",
     "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
   },
-  "runId": "v3-tfidf.dev.3625fedf",
-  "label": "v3-tfidf",
+  "runId": "v4-bm25-qtf1.dev.9977df28",
+  "label": "v4-bm25-qtf1",
   "site": "cooking",
   "split": "dev",
   "retriever": {
-    "version": "v3-tfidf",
+    "version": "v4-bm25",
     "params": {
-      "idfCorpus": "leave-one-out",
-      "topN": null,
-      "lengthBonus": true,
-      "minShared": 1
+      "k1": 1.2,
+      "b": 0.75,
+      "idfVariant": "lucene",
+      "qtfMode": "binary",
+      "titleWeight": 2
     },
     "docCount": 27325,
-    "digest": "3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4"
+    "digest": "9977df285e6d5eff0c429df4c3d3863adf54cc416e4194c9cda4ad92d7f6304b"
   },
   "retrieverSource": {
     "files": [
@@ -37,11 +38,11 @@
         "sha256": "cc86cb4b63a598f3534b1f821dd23ced67af3b86ad9f0cbb7304f5b3418a12e4"
       },
       {
-        "path": "backend/retrieval/v3-tfidf.js",
-        "sha256": "36989e9916c3af44871ecde3ac67832f101f956454ffbff07aab001d26c2e593"
+        "path": "backend/retrieval/v4-bm25.js",
+        "sha256": "d752425fdd4b2f5f9214ae12503260a40119ed71adc1bcd3196f67556ef5feb4"
       }
     ],
-    "digest": "8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf"
+    "digest": "bfef8f488839df6203f0bc304fcee63ec8bf79f1eda43a4a31300c5f602c5d4c"
   },
   "k": 10,
   "ksReported": [
@@ -50,7 +51,7 @@
     8,
     10
   ],
-  "command": "npm run eval -- --retriever v3-tfidf --split dev",
+  "command": "npm run eval -- --retriever v4-bm25 --split dev --param qtfMode=\"binary\" --label v4-bm25-qtf1",
   "inputs": [
     {
       "name": "corpus",
@@ -72,10 +73,10 @@
     }
   ],
   "output": {
-    "run": "results/runs/v3-tfidf.dev.run",
+    "run": "results/runs/v4-bm25-qtf1.dev.run",
     "lines": 23040,
-    "bytes": 1110316,
-    "sha256": "07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0"
+    "bytes": 1227676,
+    "sha256": "bd73e61814a6df9e012052579511ccf058c207e9335223081020a2fe0b78e2b1"
   },
   "queries": {
     "total": 2304,
@@ -83,28 +84,28 @@
     "unjudgeable": 0,
     "unjudgeableIds": [],
     "zeroResult": 0,
-    "zeroResultFile": "results/runs/v3-tfidf.dev.zero.txt"
+    "zeroResultFile": "results/runs/v4-bm25-qtf1.dev.zero.txt"
   },
   "metrics": {
     "ndcg": {
-      "1": 0.1474247685185185,
-      "5": 0.19406996350938943,
-      "8": 0.2106600078244242,
-      "10": 0.21818909802323846
+      "1": 0.14742476851851852,
+      "5": 0.1847073933933509,
+      "8": 0.20016252443768656,
+      "10": 0.2061004741881263
     },
     "p": {
-      "1": 0.15321180555555555,
-      "5": 0.07421874999999974,
-      "8": 0.05626085069444445,
-      "10": 0.04913194444444382
+      "1": 0.1540798611111111,
+      "5": 0.06857638888888887,
+      "8": 0.05213758680555555,
+      "10": 0.045138888888888506
     },
     "r": {
-      "1": 0.10672325057359915,
-      "5": 0.2395589486729198,
-      "8": 0.28462980271321914,
-      "10": 0.3082814638639014
+      "1": 0.10726356050848929,
+      "5": 0.222083940234786,
+      "8": 0.2642103253927003,
+      "10": 0.28272539924631573
     },
-    "mrr": 0.2266091752094355
+    "mrr": 0.21974206349206346
   },
   "conventions": {
     "gain": "2^grade - 1",
@@ -116,16 +117,16 @@
   },
   "latencyMs": {
     "note": "per-query search() only; index build reported separately",
-    "mean": 4.929139645833331,
-    "p50": 4.870042,
-    "p95": 8.043875,
-    "max": 35.537208
+    "mean": 4.87531763758681,
+    "p50": 4.804334,
+    "p95": 7.9945,
+    "max": 11.652833
   },
   "timingsMs": {
-    "load": 84.635166,
-    "index": 1499.854291,
-    "search": 11379.364,
-    "total": 12963.853457
+    "load": 82.785083,
+    "index": 1025.548125,
+    "search": 11253.641333,
+    "total": 12361.974541
   },
   "environment": {
     "node": "v25.8.1",
@@ -134,12 +135,12 @@
     "cpu": "Apple M2",
     "cpus": 8,
     "totalMemMiB": 8192,
-    "peakRssMiB": 548
+    "peakRssMiB": 590
   },
   "git": {
     "commit": "827e55b1cdbd662b8730dfa6f45b6ac939a4fbfe",
     "dirty": false,
     "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
   },
-  "generatedAt": "2026-08-08T09:21:15.358Z"
+  "generatedAt": "2026-08-08T09:22:03.490Z"
 }
