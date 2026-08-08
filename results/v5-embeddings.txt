@@ -195,6 +195,17 @@ stack will differ in the last ULPs between arm64 and x86_64.
     run 2   cca439790d3ce14900b5fb50360e0ed0e883fd5fe1d51812af8b2059a0e82a33
     cmp     byte-identical, all 41,971,200 bytes
 
+  PROPOSED AND NOT DONE, recorded so the gap is visible rather than implied. The plan for
+  this rung included a cross-architecture PROBE — embedding a ~100-document slice under
+  the emulated Alpine/x86_64 image §6.3 already uses, to measure how far the vectors
+  actually drift and, more usefully, whether the TOP-8 RANKING SURVIVES a drift in the
+  last ULPs. That is the question with content in it: "the bytes differ" is predictable,
+  "the ranking moves" would be a finding. Skipped because the full pass is ~10 minutes
+  natively and emulation is roughly an order of magnitude slower, which put even a slice
+  beyond this session. So the cross-architecture statement above is AN ARGUMENT FROM HOW
+  ONNX RUNTIME DISPATCHES, NOT A MEASUREMENT — the same distinction §5.1 draws between its
+  measured counts and its argument from the schema. Worth one probe at 3.6.
+
   THE PINS
 
     model        HF revision COMMIT SHA + a SHA-256 per downloaded file
