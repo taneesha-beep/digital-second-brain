@@ -598,6 +598,21 @@ its links. If memorisation were the mechanism, the margin would collapse there.
     committed sidecars at exact float equality. The re-runs from a clean tree
     produced byte-identical run files.
 
+  - EVERY RUNG BELOW v5 REGENERATES BYTE-IDENTICALLY, and that needed checking
+    rather than assuming. This session edited all four earlier retrievers (each
+    gained a `symmetric` declaration), types.js, and index.js (a registration
+    line and a describe field). Their SOURCE DIGESTS all moved, which
+    source-digest.js predicted and reports per file. Their RUN FILES did not:
+
+      v1-overlap  9618f1bf...    v2-jaccard  0b2531b7...
+      v3-tfidf    07fa22ce...    v4-bm25     9aa1881f...
+
+    each identical to the hash its committed sidecar records. Those sidecars are
+    deliberately NOT regenerated — that would churn 21 committed files to record
+    a digest change carrying no behavioural change — so their digests predate
+    v5's registration, which is the drift source-digest.js's header says is true
+    and reported rather than suppressed.
+
   - ONE PROCESS FAILURE, RECORDED. Two of the four runs were first produced
     against a modified package.json and their sidecars recorded dirty=true, and
     the commit message quoted four nDCG values whose digits past the fourth were
