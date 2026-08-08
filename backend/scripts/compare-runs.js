@@ -398,12 +398,37 @@ function formatP(boot) {
   return boot.p <= boot.pFloor ? `<${boot.pFloor.toFixed(4)}` : fmt(boot.p);
 }
 
+/**
+ * Same defect and same fix as run-eval.js's, but the exclusion has to be
+ * NARROWER here, and the difference is the whole point of not writing
+ * `:(exclude)results`.
+ *
+ * This tool's own output is results/comparisons/<A>-vs-<B>.<split>.txt, so
+ * writing one dirtied the tree and the next comparison recorded dirty=true.
+ * Those .txt files are excluded.
+ *
+ * results/comparisons/registry.json is NOT, and must never be. It is an INPUT,
+ * and §11.5's entire enforcement mechanism is that adding or amending a
+ * pre-registered comparison requires a commit — "a pre-registration that can be
+ * amended silently is not one". A report generated against an uncommitted
+ * registry edit is exactly the case this flag should be shouting about.
+ *
+ * The committed run SIDECARS under results/runs/ are not excluded either, for
+ * the same reason: they are inputs to the comparison, and §11.1 already asserts
+ * the re-derived aggregate against them.
+ */
 function gitProvenance() {
   const run = (a) => execFileSync('git', a, { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
   try {
     return {
       commit: run(['rev-parse', 'HEAD']),
-      dirty: run(['status', '--porcelain', '--untracked-files=no']) !== ''
+      dirty: run([
+        'status', '--porcelain', '--untracked-files=no',
+        '--', '.', ':(exclude)results/comparisons/*.txt'
+      ]) !== '',
+      dirtyMeans:
+        'uncommitted changes to tracked files, EXCLUDING this tool\'s own reports ' +
+        '(results/comparisons/*.txt). registry.json and the run sidecars are inputs and ARE counted.'
     };
   } catch {
     return { commit: null, dirty: null };
