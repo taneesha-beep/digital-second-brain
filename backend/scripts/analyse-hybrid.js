@@ -130,13 +130,27 @@ function main() {
   w(`    bm25 half   ${(bm25Typed / 1024 ** 2).toFixed(2)} MiB   postings, per-doc terms/tfs, lengths, idf, scratch`);
   w(`    dense half  ${(denseTyped / 1024 ** 2).toFixed(2)} MiB   matrix ${n} x ${dim} x 4B, norms ${n} x 8B`);
   if (typeof global.gc === 'function') {
+    // DROP THE TIMING HANDLES FIRST, AND COLLECT TWICE. The five builds above
+    // leave four dead v6 indexes holding ~56 MiB of ArrayBuffer each, and V8
+    // releases external backing stores a collection LATER than it releases the
+    // objects pointing at them. Measured with `handle` still live and one gc,
+    // this reported 1.4 MiB of arrayBuffers for a structure containing a 40 MiB
+    // matrix — the `before` snapshot was inflated by garbage that the `after`
+    // snapshot had finally released, so the delta came out near zero. That is
+    // the §17.11 trap in a second costume: the first number this section
+    // produced was wrong, and it is recorded rather than quietly corrected.
+    handle = null;
+    global.gc();
     global.gc();
     const before = process.memoryUsage();
     const held = retrieval.index('v6-hybrid', docs);
     global.gc();
+    global.gc();
     const after = process.memoryUsage();
     const heapDelta = after.heapUsed - before.heapUsed;
     const bufferDelta = after.arrayBuffers - before.arrayBuffers;
+    // Reused below rather than discarded, so section 4 does not build a seventh.
+    handle = held;
     w(`  retained for one handle (--expose-gc)         ${((heapDelta + bufferDelta) / 1024 ** 2).toFixed(1)} MiB`);
     w(`    of which V8 heap      ${(heapDelta / 1024 ** 2).toFixed(1)} MiB   BM25's vocabulary Map and df Map, the id Maps`);
     w(`    of which arrayBuffers ${(bufferDelta / 1024 ** 2).toFixed(1)} MiB   the dense matrix, the postings`);
@@ -151,10 +165,21 @@ function main() {
   } else {
     w('  retained for one handle                       re-run with `node --expose-gc` to measure');
   }
-  w(`  peak RSS for this process                     ${(process.memoryUsage().rss / 1024 ** 2).toFixed(0)} MiB`);
+  // From the RUN's sidecar, not from this process. §16.12's 650 MiB and §17.11's
+  // 325 MiB are both "peak RSS for the eval process"; this script builds six
+  // indexes to time them, so its own RSS is a different and larger quantity that
+  // would not be comparable to either.
+  const evalSidecar = path.join(REPO_ROOT, 'results', 'runs', `v6-hybrid.${SPLIT}.run.json`);
+  const evalRss = fs.existsSync(evalSidecar)
+    ? JSON.parse(fs.readFileSync(evalSidecar, 'utf8')).environment.peakRssMiB
+    : null;
+  w(`  peak RSS for the EVAL process                 ${evalRss === null ? '(run v6-hybrid first)' : `${evalRss} MiB`}`);
+  w(`    (this analysis process peaks at ${(process.memoryUsage().rss / 1024 ** 2).toFixed(0)} MiB — it builds six indexes to time`);
+  w('     them, so its own RSS is not the comparable quantity)');
   w();
   w('  The third is dominated by the parsed corpus, which EVERY rung pays and');
-  w('  which is not part of the index. §16.12 made the same separation for v4.');
+  w('  which is not part of the index. §16.12 made the same separation for v4,');
+  w('  where quoting RSS as "BM25\'s memory" would have been wrong by 19x.');
   w();
 
   // --- 4. search -------------------------------------------------------------

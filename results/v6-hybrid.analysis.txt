@@ -1,0 +1,102 @@
+ANALYSE v6-hybrid — cooking, N=27325
+==============================================================================
+
+1. WHAT v6 IS
+------------------------------------------------------------------------------
+  score(q,d) = SUM over r in {bm25, dense} of  1 / (rrfK + rank_r(q,d))
+
+  rrfK          60    the published default (Cormack et al. 2009). SHIPPED UNTUNED.
+  fusion        rrf
+  depth         null (every candidate each component produces)
+  bm25 half     k1=1.2 b=0.75 idfVariant="lucene" qtfMode="linear" titleWeight=2
+  dense half    vectors="minilm-l6-v2-fp32-256" dim=384 normalise=true
+  symmetric     false
+
+  ASYMMETRIC, AND NOT ONLY BECAUSE BM25 IS. Rank is a property of a LIST,
+  not of a pair: score(A->B) reads B's position in the lists ranked against
+  A, score(B->A) reads A's position in different lists. A rank fusion of two
+  perfectly score-symmetric retrievers would still be asymmetric — measured
+  on v5 alone in tests/retrieval.symmetry.test.js.
+
+2. INDEX BUILD — both components, one handle
+------------------------------------------------------------------------------
+  five builds   1059 1026 1023 980 1044 ms
+  median        1026 ms
+  reference     v4-bm25 982 ms (§16.12) · v5-embeddings 36 ms (§17.11) · v3 ~1,470 ms
+
+  v6 builds BOTH, so its index time is close to the sum and is dominated by
+  BM25's postings. Nothing here is new work — it is v4's build and v5's
+  build, run back to back inside one buildIndex().
+
+3. MEMORY — three numbers that must not be conflated, and v6 carries two indexes
+------------------------------------------------------------------------------
+  typed arrays, computed from the structures    56.56 MiB
+    bm25 half   16.32 MiB   postings, per-doc terms/tfs, lengths, idf, scratch
+    dense half  40.24 MiB   matrix 27325 x 384 x 4B, norms 27325 x 8B
+  retained for one handle (--expose-gc)         90.9 MiB
+    of which V8 heap      35.4 MiB   BM25's vocabulary Map and df Map, the id Maps
+    of which arrayBuffers 55.5 MiB   the dense matrix, the postings
+    (handle held live across the measurement: 27325 docs)
+
+    BOTH TERMS, because §17.11 got this wrong first and recorded it. A
+    large typed array's backing store lives OUTSIDE the V8 heap, so
+    heapUsed alone understated v5 by 20x. v6 is the rung where the trap is
+    worst, because it mixes the two: BM25's 34,928-string vocabulary Map is
+    genuinely on the heap while the 40 MiB dense matrix is not. Quoting
+    either term alone would be wrong in a different direction.
+  peak RSS for the EVAL process                 660 MiB
+    (this analysis process peaks at 740 MiB — it builds six indexes to time
+     them, so its own RSS is not the comparable quantity)
+
+  The third is dominated by the parsed corpus, which EVERY rung pays and
+  which is not part of the index. §16.12 made the same separation for v4,
+  where quoting RSS as "BM25's memory" would have been wrong by 19x.
+
+4. SEARCH — the slowest rung on the ladder, and why
+------------------------------------------------------------------------------
+  per query     mean 33.53 ms · p50 33.44 · p95 39.20 ms
+  reference     v5 20.4 ms · v4 7.9 ms · v3 8.1 ms · v2 0.87 ms · v1 1.0 ms
+
+  v6 pays BOTH component searches plus THREE large sorts where v5 pays one:
+  each component list is ordered internally (so the ranks it fuses are the
+  ranks a standalone run produces), and the interface then sorts the fused
+  list. Uncontrolled laptop figures on every rung; 6.5 owns the controlled
+  one. No performance claim is made from this number.
+
+5. THE FUSION SHAPE — where the fused top-8 comes from
+------------------------------------------------------------------------------
+  documents in v6's top-8, over 2304 queries: 18432
+    in BOTH components' top-8        5500  29.8%
+    in the DENSE top-8 only          4546  24.7%
+    in the BM25 top-8 only           4696  25.5%
+    in NEITHER — promoted by the     3690  20.0%
+      fusion from below both cut-offs
+
+  mean top-8 Jaccard  v6 vs v5  0.3960
+                      v6 vs v4  0.4037
+  reference: §17.9 measured v4 vs v5 at 0.1906, with 9.6% of queries
+  disjoint. Those are the two systems being fused.
+
+  Does the gain land where the complementarity is?
+  stratum         n      v5 nDCG@8    v6 nDCG@8    v6 - v5
+  disjoint       221    0.210643     0.152709    -0.057934
+  overlapping   2083    0.339227     0.328194    -0.011034
+
+  EXPLORATORY. The strata are defined by the two components' agreement,
+  which is not in registry.json and is not a second significance claim.
+
+6. THE ARITHMETIC, CROSS-CHECKED AGAINST TWO COMMITTED RUN FILES
+------------------------------------------------------------------------------
+  v6 at depth 10 vs a hand fusion of v4's and v5's top-10 run files, rrfK 60
+    agree     2304 of 2304 queries
+    disagree  0
+
+  At depth 10 the component lists ARE those two files, so this reproduces
+  the fusion from artifacts written by a different code path in earlier
+  sessions. It is the check that makes "read two run files" unnecessary
+  rather than merely rejected: in-index fusion computes what run-file
+  fusion would, so refusing the cheap implementation gave nothing up.
+
+  Run because the rung LOSES and clears Holm doing it. §17.6 audited a
+  surprisingly good number; a surprisingly bad one carries the mirror risk.
+
