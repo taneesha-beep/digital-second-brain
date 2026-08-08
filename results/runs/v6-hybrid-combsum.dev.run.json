@@ -1,0 +1,220 @@
+{
+  "provisional": false,
+  "metricsValidation": {
+    "reference": "pytrec-eval-terrier 0.5.10",
+    "tolerance": 0.000001,
+    "maxAbsDelta": 1.11e-16,
+    "evidence": "results/metric-validation.txt",
+    "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
+  },
+  "runId": "v6-hybrid-combsum.dev.a9d45b65",
+  "label": "v6-hybrid-combsum",
+  "site": "cooking",
+  "split": "dev",
+  "retriever": {
+    "version": "v6-hybrid",
+    "params": {
+      "rrfK": 60,
+      "fusion": "minmax-sum",
+      "depth": null,
+      "k1": 1.2,
+      "b": 0.75,
+      "idfVariant": "lucene",
+      "qtfMode": "linear",
+      "titleWeight": 2,
+      "vectors": "minilm-l6-v2-fp32-256",
+      "dim": 384,
+      "normalise": true
+    },
+    "docCount": 27325,
+    "digest": "a9d45b6501b0dd998c6ca4a81918bdfed0533b9a5faac3c1c4a1df5eec22afb0",
+    "symmetric": false
+  },
+  "retrieverSource": {
+    "files": [
+      {
+        "path": "backend/retrieval/index.js",
+        "sha256": "84f62dc700c7f68e1dfd572d1bf9dcfbd3d746f68f25f3298254a315cc368694"
+      },
+      {
+        "path": "backend/retrieval/types.js",
+        "sha256": "9d5aef1408c27ea68c3e31978c5e105602ba14ecdda5c797c8f252bee6254534"
+      },
+      {
+        "path": "backend/retrieval/v1-overlap.js",
+        "sha256": "d445f40de4c5379a89af39cfaf608a0739eb1e7d37f771cb9e56b045f301153c"
+      },
+      {
+        "path": "backend/retrieval/v4-bm25.js",
+        "sha256": "2b48c622fb5e7c49fbf08a95eb404abf5e06652a2f298a50010137243c0cab22"
+      },
+      {
+        "path": "backend/retrieval/v5-embeddings.js",
+        "sha256": "2c4dd7b0387c498de06a1b9f4c916bcafeaf98e3db474703ce1f56d27a331b68"
+      },
+      {
+        "path": "backend/retrieval/v6-hybrid.js",
+        "sha256": "ee43170a35d84bcaa25bf7f8c43312657a04945070e80f0588bcb7e5dff2316f"
+      }
+    ],
+    "digest": "cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb"
+  },
+  "vectors": {
+    "slug": "minilm-l6-v2-fp32-256",
+    "model": "Xenova/all-MiniLM-L6-v2",
+    "revision": "751bff37182d3f1213fa05d7196b954e230abad9",
+    "dim": 384,
+    "dtype": "fp32",
+    "pooling": "mean over attention mask",
+    "text": {
+      "template": "title + \"\\n\" + body",
+      "titleRepeat": 1,
+      "maxTokens": 256,
+      "truncatedDocuments": 2566,
+      "truncatedShare": 0.09390667886550777,
+      "longestDocumentTokens": 6781,
+      "meanTokensAfterTruncation": 123.51820677035681
+    },
+    "batching": {
+      "batchSize": 32,
+      "order": "corpus order — NOT sorted by length",
+      "padding": "to the batch maximum",
+      "why": "padding changes matmul shapes and therefore kernel tiling, so batchSize is load-bearing on the last ULP and is pinned here"
+    },
+    "normalisedAtRest": false,
+    "binding": {
+      "corpus": "data/corpus/cooking.jsonl",
+      "corpusSha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "idsSha256": "e1e57118cbf5282a6139658e5408a9693562d333ec126323e276169b2c0fad11",
+      "idsSha256Is": "SHA-256 over the corpus doc ids joined by \\n, with a trailing \\n, in row order",
+      "why": "run-eval.js recomputes both from the loaded corpus. Row misalignment is the dense equivalent of self-retrieval — it produces a plausible number from nonsense — so it is made impossible rather than unlikely"
+    },
+    "embedEnvironment": {
+      "node": "v25.8.1",
+      "platform": "darwin/arm64",
+      "cpus": "Apple M2",
+      "transformersJs": "4.2.0",
+      "onnxruntimeNode": "1.24.3",
+      "wallMs": 620588.376042,
+      "docsPerSecond": 44.030795701127836
+    },
+    "notReproducibleByteWise": [
+      "THIS FILE IS A PINNED INPUT, NOT A REGENERABLE OUTPUT, and that is stated",
+      "rather than discovered. Phase 1.6 proved cooking.jsonl regenerates",
+      "byte-identically across OS, libc and architecture because the corpus",
+      "scripts have zero runtime dependencies. ONNX Runtime does not have that",
+      "property: it dispatches to architecture-specific SIMD kernels whose",
+      "reduction orders differ, so these bytes are not expected to reproduce on",
+      "another architecture. Same machine, same pins, same batchSize DOES",
+      "reproduce and is measured by running twice and comparing this hash.",
+      "",
+      "Everything downstream of this file is exactly as reproducible as before:",
+      "run files, metrics and comparisons are pure functions of it."
+    ]
+  },
+  "k": 10,
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "command": "npm run eval -- --retriever v6-hybrid --split dev --param fusion=\"minmax-sum\" --label v6-hybrid-combsum",
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "matchesManifest": true
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1",
+      "matchesManifest": true
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.dev.txt",
+      "sha256": "38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf",
+      "matchesManifest": true
+    },
+    {
+      "name": "vectors",
+      "file": "data/vectors/cooking.minilm-l6-v2-fp32-256.f32",
+      "sha256": "cca439790d3ce14900b5fb50360e0ed0e883fd5fe1d51812af8b2059a0e82a33",
+      "matchesManifest": true
+    }
+  ],
+  "output": {
+    "run": "results/runs/v6-hybrid-combsum.dev.run",
+    "lines": 23040,
+    "bytes": 1318896,
+    "sha256": "6c2a1ecdbdcc07031b85e792ebaa14e3f33503e1e98b301c35e66021ccffebf2"
+  },
+  "queries": {
+    "total": 2304,
+    "scored": 2304,
+    "unjudgeable": 0,
+    "unjudgeableIds": [],
+    "zeroResult": 0,
+    "zeroResultFile": "results/runs/v6-hybrid-combsum.dev.zero.txt"
+  },
+  "metrics": {
+    "ndcg": {
+      "1": 0.22728587962962957,
+      "5": 0.29164507242755616,
+      "8": 0.311964949182284,
+      "10": 0.32042568793427445
+    },
+    "p": {
+      "1": 0.2365451388888889,
+      "5": 0.10998263888888732,
+      "8": 0.0817599826388889,
+      "10": 0.07031249999999864
+    },
+    "r": {
+      "1": 0.16131397980025886,
+      "5": 0.34944725495430884,
+      "8": 0.4075255279218555,
+      "10": 0.4328523523269421
+    },
+    "mrr": 0.33417486496913607
+  },
+  "conventions": {
+    "gain": "2^grade - 1",
+    "discount": "1 / log2(rank + 1)",
+    "idcg": "judged grades sorted descending, truncated at k",
+    "zeroResultQueries": "scored 0, included in the mean",
+    "unjudgeableQueries": "excluded from the mean, counted separately",
+    "mrr": "recip_rank@10 — the list is truncated at k before scoring"
+  },
+  "latencyMs": {
+    "note": "per-query search() only; index build reported separately",
+    "mean": 33.35794450434033,
+    "p50": 33.082458,
+    "p95": 38.511375,
+    "max": 77.513834
+  },
+  "timingsMs": {
+    "load": 90.752458,
+    "index": 1009.287458,
+    "search": 76905.945542,
+    "total": 78005.985458
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "cpus": 8,
+    "totalMemMiB": 8192,
+    "peakRssMiB": 646
+  },
+  "git": {
+    "commit": "8642f1b12aa75ac00522b894720a1215d57b4237",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
+  },
+  "generatedAt": "2026-08-08T16:48:46.783Z"
+}
