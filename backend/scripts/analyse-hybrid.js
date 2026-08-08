@@ -276,6 +276,74 @@ function main() {
     w();
   }
 
+  // --- 6. the arithmetic, cross-checked against two committed artifacts ------
+  //
+  // WHY THIS EXISTS. The rung's headline is that fusion LOSES, and it clears
+  // Holm doing it. §17.6's rule was written for the opposite case — "a
+  // surprisingly good number is the one nobody feels like auditing" — and the
+  // mirror risk is exactly as real: a surprisingly bad number can be a defect in
+  // the thing being measured rather than a finding about it.
+  //
+  // The fixture tests already check the arithmetic at 34 documents against
+  // standalone search() calls. This checks it at 27,325 against artifacts
+  // produced by a COMPLETELY DIFFERENT CODE PATH: v4's and v5's committed run
+  // files, written by run-eval.js in earlier sessions. Fusing their top-10 lists
+  // by hand must reproduce v6 at depth 10, because at that depth the component
+  // lists ARE those files.
+  //
+  // This is the check that makes reading two run files unnecessary rather than
+  // merely rejected: it shows in-index fusion computes what run-file fusion
+  // would, so nothing was given up by refusing the cheap implementation.
+  if (haveRuns) {
+    const bm25Run = loadRun(runFile('v4-bm25'));
+    const denseRun = loadRun(runFile('v5-embeddings'));
+    const d10 = retrieval.index('v6-hybrid', docs, { depth: 10 });
+
+    let agreed = 0;
+    let disagreed = 0;
+    const examples = [];
+    for (const qid of queryIds) {
+      // Fuse the two FILES, independently of retrieval/.
+      const scores = new Map();
+      for (const list of [bm25Run.get(qid) || [], denseRun.get(qid) || []]) {
+        for (let i = 0; i < Math.min(10, list.length); i += 1) {
+          scores.set(list[i], (scores.get(list[i]) || 0) + 1 / (params.rrfK + i + 1));
+        }
+      }
+      const expected = [...scores.entries()]
+        .map(([docId, score]) => ({ docId, score }))
+        .sort((x, y) => (y.score - x.score) || (x.docId < y.docId ? -1 : x.docId > y.docId ? 1 : 0))
+        .slice(0, 10)
+        .map((h) => h.docId);
+
+      const actual = retrieval.search(d10, qid, 10).map((h) => h.docId);
+      if (expected.join(' ') === actual.join(' ')) agreed += 1;
+      else {
+        disagreed += 1;
+        if (examples.length < 3) examples.push(`${qid}: file-fusion ${expected.slice(0, 3)} vs v6 ${actual.slice(0, 3)}`);
+      }
+    }
+
+    w('6. THE ARITHMETIC, CROSS-CHECKED AGAINST TWO COMMITTED RUN FILES');
+    w('-'.repeat(78));
+    w(`  v6 at depth 10 vs a hand fusion of v4's and v5's top-10 run files, rrfK ${params.rrfK}`);
+    w(`    agree     ${agreed} of ${queryIds.length} queries`);
+    w(`    disagree  ${disagreed}${examples.length ? `   ${examples.join(' | ')}` : ''}`);
+    w();
+    w('  At depth 10 the component lists ARE those two files, so this reproduces');
+    w('  the fusion from artifacts written by a different code path in earlier');
+    w('  sessions. It is the check that makes "read two run files" unnecessary');
+    w('  rather than merely rejected: in-index fusion computes what run-file');
+    w('  fusion would, so refusing the cheap implementation gave nothing up.');
+    w();
+    w('  Run because the rung LOSES and clears Holm doing it. §17.6 audited a');
+    w('  surprisingly good number; a surprisingly bad one carries the mirror risk.');
+    w();
+    if (disagreed > 0) {
+      w('  !! DISAGREEMENT. The fusion does not compute what it claims to. Stop.');
+    }
+  }
+
   const outFile = path.join(REPO_ROOT, 'results', 'v6-hybrid.analysis.txt');
   fs.writeFileSync(outFile, `${out.join('\n')}\n`);
   console.log(`written to ${path.relative(REPO_ROOT, outFile)}`);
