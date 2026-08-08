@@ -1,5 +1,5 @@
 PAIRED BOOTSTRAP — v3-tfidf  vs  v3-tfidf-noidf
-roadmap 2.5 · 2026-08-07T18:28:27Z
+roadmap 2.5 · 2026-08-08T09:24:24Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
@@ -9,7 +9,7 @@ roadmap 2.5 · 2026-08-07T18:28:27Z
   A  v3-tfidf
      runid    v3-tfidf.dev.3625fedf
      digest   3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4
-     source   56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786
+     source   8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf
      run      results/runs/v3-tfidf.dev.run
               sha256 07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v3-tfidf.dev.run.json  (committed)
@@ -18,7 +18,7 @@ roadmap 2.5 · 2026-08-07T18:28:27Z
   B  v3-tfidf-noidf
      runid    v3-tfidf-noidf.dev.1525eaf0
      digest   1525eaf045a65845923f5168049f8a8415e1bec4f45a07fde19d14510cac61e3
-     source   56152634a1582a5ceeef750c0c45970e4c4bfbbf632aa72bf364e13d693f8786
+     source   8a6290f7faa0d07e0d47bbb2da1b44565c883f4bd3da0e9bbe73470a071860bf
      run      results/runs/v3-tfidf-noidf.dev.run
               sha256 762fc57b0a3983505c7135f3d4649dfba1953bec4cb6328923f53c9f134a0000  (gitignored; regenerates in ~3 s)
      sidecar  results/runs/v3-tfidf-noidf.dev.run.json  (committed)
@@ -33,8 +33,8 @@ roadmap 2.5 · 2026-08-07T18:28:27Z
   ONE variable changed (idfCorpus). The difference below is attributable to it.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  56152634a1582a5c…  MATCHES the working tree (4 files)
-     B  56152634a1582a5c…  MATCHES the working tree (4 files)
+     A  8a6290f7faa0d07e…  MATCHES the working tree (4 files)
+     B  8a6290f7faa0d07e…  MATCHES the working tree (4 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
@@ -147,7 +147,7 @@ roadmap 2.5 · 2026-08-07T18:28:27Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           57f1bbb17fa7c4b8bc955ccc9d21805f6a071a07  (tracked files dirty)
+  git commit           e0420c19f024292c39cc3f42fd6b749b5c9b466b
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js
