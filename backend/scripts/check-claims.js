@@ -85,7 +85,16 @@ const WRITEUPS = [
   'docs/EVALUATION.md',
   'docs/ROADMAP.md',
   'docs/PRIMER.md',
-  'docs/END-STATE.md'
+  'docs/END-STATE.md',
+  // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
+  // That makes it the first document to be both a writeup and, by path, a
+  // candidate artifact — so it would justify its own figures: every decimal in
+  // it would match itself and the check would report PASS having asserted
+  // nothing. It is prose about numbers, not a computed report; the computed
+  // report beside it is results/error-analysis.dev.txt. Excluded from the
+  // artifact index below, which is the general rule and not a special case:
+  // A DOCUMENT CANNOT BE ITS OWN EVIDENCE.
+  'results/error-analysis.md'
 ];
 
 // Where a number is allowed to come from. Committed evidence only: sidecars,

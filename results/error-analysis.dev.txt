@@ -1,0 +1,257 @@
+PER-QUERY ERROR ANALYSIS — v5-embeddings on cooking.dev
+==============================================================================
+
+  roadmap 3.7. DEV ONLY — --split test is refused by this script, not by
+  discipline. §19.9: test is spent, and this analysis feeds Phase 7, which
+  feeds design. Reading test here would make it a design input without ever
+  tripping results/runs/test-openings.json, which governs producing a run.
+
+  EVERYTHING IN THIS FILE IS COMPUTED. Why a query failed is NOT computable
+  and is not attempted here — that is results/error-analysis-cases.csv, read
+  by hand under the protocol in results/error-analysis.md, against the
+  casebook this script writes beside it.
+
+1. INPUTS
+------------------------------------------------------------------------------
+  corpus     data/corpus/cooking.jsonl
+             sha256 db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd  N=27325
+  qrels      data/qrels/cooking.qrels
+             sha256 d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1
+  split      data/splits/cooking.dev.txt
+             sha256 38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf  2304 queries
+  PostLinks  data/raw/cooking/PostLinks.xml  9336 rows read
+  run        results/runs/v1-overlap.dev.run        sha256 9618f1bfb9bf313bf64c07cccefa070f89098eeb892a2344c833c8013380463e
+  run        results/runs/v2-jaccard.dev.run        sha256 0b2531b72fdfb3bc58a60c922109238b8180d7a7b27f5e020370f4a26e4dd111
+  run        results/runs/v3-tfidf.dev.run          sha256 07fa22ce07520a9f91f896ea1a86fda103b6d29eb9307b84375b25c29b6debd0
+  run        results/runs/v4-bm25.dev.run           sha256 9aa1881f581eca59afbdf31879c0a52faaa2401b379f387b7d47a10f42df142d
+  run        results/runs/v5-embeddings.dev.run     sha256 89227f28f7cd61faae77f80df9f95bf088a2f6513664a21f5dbc1db24a0fbf97
+  run        results/runs/v6-hybrid.dev.run         sha256 f730d1b10f9a04740c256094dfead7b497628a2eb7aeffc44f1b6e6655b6f823
+
+2. THE POPULATION
+------------------------------------------------------------------------------
+  v5-embeddings nDCG@8 over 2304 judgeable dev queries
+
+  band              queries    share
+  --------------------------------------
+  exactly 0           1039   45.1%
+  0 < x <= 0.1          15   0.7%
+  0.1 < x <= 0.25      117   5.1%
+  0.25 < x <= 0.5      466   20.2%
+  0.5 < x < 1          365   15.8%
+  exactly 1            302   13.1%
+
+  THE ZERO POPULATION IS 1039 QUERIES — 45.1% of the split. That is the
+  tie "the 20 worst" would have been drawn from, and it is why the selection
+  rule is stratified rather than an ordering. See the header of this script.
+
+  A ZERO IS NOT A SYNONYM FOR A RETRIEVAL FAILURE, and the rest of this file
+  is about the difference. §17.6 read ten dev queries by hand at 3.4 and found
+  every one of v5's top-5 lists topically correct with only 2 of 10 carrying a
+  judged document anywhere in the top 5.
+
+3. THE COMPUTABLE TAXONOMY — a partition of the zero population
+------------------------------------------------------------------------------
+  cat  meaning                                            queries   of zero   of split
+  ------------------------------------------------------------------------------------
+  C0   zero-result — the retriever returned nothing           0       0.0%       0.0%
+  C1   near-miss — a judged document at rank 9 or 10         60       5.8%       2.6%
+  C2   sibling-reachable — a rung found one, v5 did not     247      23.8%      10.7%
+  C3   unreachable — no rung reached the key at all         732      70.5%      31.8%
+  ------------------------------------------------------------------------------------
+  total                                                    1039     100.0%      45.1%
+
+  THE "of split" COLUMN IS THE ONE PHASE 7.1 CAN USE. It is a rate over a
+  named eval run with a SHA-256, which is what "observed frequency from a
+  named eval run" means. The hand-read categories are NOT rates and section 7
+  says why they cannot be turned into any.
+
+  WHICH RUNG REACHES A KEY v5 MISSES — over the C2 queries only:
+
+    rung            reached   share of C2
+    ----------------------------------------
+    v1-overlap          69     27.9%
+    v2-jaccard          68     27.5%
+    v3-tfidf           127     51.4%
+    v4-bm25            149     60.3%
+    v6-hybrid          142     57.5%
+
+  A rung appears here when it placed a judged document in its top 10 and v5
+  did not. Rows overlap — a query reached by three rungs is counted three
+  times — so they do not sum to C2.
+
+4. AGE — §5.3's CHECK, WITH THE BASELINE IT DEMANDS
+------------------------------------------------------------------------------
+  §5.3: a document's judged degree tracks how much corpus was created AFTER
+  it, rho = +0.181, and per-query scores are therefore NOT comparable across
+  corpus age. The decile below is §5.3's own axis, recomputed: D1 is the
+  newest tenth of the corpus, D10 the oldest.
+
+  decile   split queries   zero pop   share of decile   mean key size
+  ----------------------------------------------------------------------
+  D1                179         99            55.3%          1.391
+  D2                149         74            49.7%          1.436
+  D3                177         80            45.2%          1.446
+  D4                191         76            39.8%          1.387
+  D5                212         89            42.0%          1.514
+  D6                255        127            49.8%          1.616
+  D7                251        125            49.8%          1.701
+  D8                259        115            44.4%          2.699
+  D9                276        119            43.1%          1.989
+  D10               355        135            38.0%          2.870
+
+  mean decile — zero population 5.981, scoring population 6.333
+  mean key size — zero 1.411, scoring 2.328
+  median key size — zero 1, scoring 1
+
+  A HIGHER MEAN DECILE MEANS OLDER. If the zero population is the YOUNGER of
+  the two, §5.3 is acting exactly as it predicted and a chunk of these queries
+  are thin-key rather than badly retrieved. If it is not, that prediction fails
+  on this population and the failures are not explained by age.
+
+  BY CATEGORY:
+
+    cat   mean decile   mean key size   mean query tokens   median first-hit rank
+    ----------------------------------------------------------------------------
+    C0              —
+    C1          5.917           1.667               121.9                       9
+    C2          6.162           1.733               126.7                     n/a
+    C3          5.925           1.281               107.0                     n/a
+
+5. RANK OF THE FIRST JUDGED HIT — the partial failures, not in the taxonomy
+------------------------------------------------------------------------------
+  Over all judgeable queries, where v5 puts the first judged document. This is
+  the RANKING view the population definition deliberately excludes, reported
+  so the exclusion is visible rather than silent.
+
+    rank    queries    cumulative
+    ----------------------------------
+       1        559         24.3%
+       2        233         34.4%
+       3        148         40.8%
+       4        102         45.2%
+       5         66         48.1%
+       6         76         51.4%
+       7         41         53.2%
+       8         40         54.9%
+       9         36         56.5%
+      10         24         57.5%
+    none        979        100.0%
+
+6. §5.2's TWO ROLES — where the failures sit in the moderation workflow
+------------------------------------------------------------------------------
+  §5.2 measured the judged set as BIMODAL rather than popular: a duplicate's
+  PostId is the question that got CLOSED (median score 1) and its
+  RelatedPostId is the canonical target (median score 16). Whether failures
+  concentrate at one end is a question §5.2 raises and nothing has answered.
+
+    role             split queries   zero pop   zero rate
+    --------------------------------------------------------
+    dup-closed                 322        137       42.5%
+    dup-canonical              221         32       14.5%
+    links-out                 1500        681       45.4%
+    pointed-at                1082        411       38.0%
+
+  Roles overlap — a question can be both closed as a duplicate and pointed at
+  — so these rows do not sum to the split.
+
+6a. GRADE COMPOSITION — is a "linked" judgment a relevance judgment at all?
+------------------------------------------------------------------------------
+  ADDED AFTER THE HAND READ, AND THE PREDICTION WAS WRITTEN BEFORE IT RAN.
+  Case 52209 ("How do I pick the best fillet mignon at the supermarket?") is
+  judged against two documents about SALTING a steak, which is not what the
+  question asks. §2.1: LinkTypeId 1 records that an answer or comment
+  REFERENCED another question — a citation, not a claim that the two questions
+  are about the same thing. LinkTypeId 3, grade 2, is a duplicate closure, and
+  that one IS a same-question claim. If the distinction is real, queries whose
+  key contains a grade 2 should fail markedly less often. Predicted before
+  running: a gap of 10 to 20 points.
+
+    key composition          queries   zero pop   zero rate   mean nDCG@8
+    ------------------------------------------------------------------
+    grade 1 only (linked)       1766        872       49.4%      0.297554
+    any grade 2 (duplicate)      538        167       31.0%      0.423199
+
+6b. HUB JUDGMENTS — §5.2's concentration, landing on the failures
+------------------------------------------------------------------------------
+  ALSO ADDED AFTER THE HAND READ. Three of the twenty cases are judged against
+  a top-three corpus hub: 784 (degree 103, a US/UK/AU dialect glossary) appears
+  in two of them, and 21068 (degree 209, the food-storage reference) in a
+  third. §5.2 measured 9 documents carrying 4.5% of all judgments; whether
+  that concentration lands disproportionately on failures is computable.
+
+  Top 1% of judged documents starts at degree 9 (§5.2's 92-document band).
+
+    key contains a top-1% hub   queries   zero pop   zero rate   mean nDCG@8
+    ----------------------------------------------------------------------
+    yes                            396        243       61.4%      0.169033
+    no                            1908        796       41.7%      0.359657
+
+  mean max judged degree — zero 26.566, scoring 8.406
+  median max judged degree — zero 3, scoring 3
+
+  BOTH 6a AND 6b ARE DESCRIPTIVE AND NEITHER IS CONTROLLED. Grade composition
+  and hub degree are correlated with each other and with corpus age (§5.3), so
+  these rows do not attribute the gap to any one of the three.
+
+7. THE TWENTY, AND THE RULE THAT CHOSE THEM
+------------------------------------------------------------------------------
+  Population: nDCG@8 exactly 0. Two axes: REACHABLE (any of the six rungs
+  placed a judged document in its top 10 — a LOWER BOUND, the run files stop
+  at 10) and KEY SIZE (1, or 2 and above). Five per cell, qids sorted
+  numerically and taken evenly spaced across the range.
+
+    cell                 population   picked
+    ----------------------------------------------
+    reachable/key1              193        5
+    reachable/key2+             114        5
+    unreachable/key1            582        5
+    unreachable/key2+           150        5
+    ----------------------------------------------
+    total                      1039       20
+
+  THE 20'S OWN AGE AND KEY-SIZE DISTRIBUTION IS A PROPERTY OF THIS SAMPLING
+  AND IS NOT EVIDENCE. Even spacing over qids spreads the sample across corpus
+  age on purpose, so that §5.3 does not choose it. Section 4 is where the age
+  finding lives, over all queries.
+
+    qid       cell                 cat   key   grades   decile   year   reached by
+    ----------------------------------------------------------------------------------------------
+    1027      reachable/key1       C2      1   1        D10     2010   v4-bm25
+    29209     reachable/key1       C2      1   1        D8      2012   v1-overlap v2-jaccard v3-tfidf v4-bm25
+    57097     reachable/key1       C2      1   1        D6      2015   v6-hybrid
+    91237     reachable/key1       C2      1   1        D3      2018   v3-tfidf v4-bm25 v6-hybrid
+    127937    reachable/key1       C2      1   1        D1      2024   v4-bm25 v6-hybrid
+    17        reachable/key2+      C2      2   1,1      D10     2010   v3-tfidf v4-bm25 v6-hybrid
+    16310     reachable/key2+      C2      2   1,1      D9      2011   v3-tfidf v4-bm25 v6-hybrid
+    42567     reachable/key2+      C2      3   1,1,1    D7      2014   v1-overlap v2-jaccard
+    84278     reachable/key2+      C2      2   1,1      D4      2017   v3-tfidf v4-bm25 v6-hybrid
+    124961    reachable/key2+      C2      2   1,1      D1      2023   v3-tfidf v6-hybrid
+    316       unreachable/key1     C3      1   1        D10     2010   —
+    25663     unreachable/key1     C3      1   1        D8      2012   —
+    56520     unreachable/key1     C3      1   1        D6      2015   —
+    93293     unreachable/key1     C3      1   2        D3      2018   —
+    127891    unreachable/key1     C3      1   2        D1      2024   —
+    626       unreachable/key2+    C3      2   1,1      D10     2010   —
+    20121     unreachable/key2+    C3      3   1,1,1    D9      2012   —
+    52209     unreachable/key2+    C3      2   1,1      D6      2015   —
+    78021     unreachable/key2+    C3      2   1,1      D5      2017   —
+    125643    unreachable/key2+    C3      2   2,2      D1      2023   —
+
+8. WHAT THIS FILE CANNOT SUPPORT
+------------------------------------------------------------------------------
+  - The hand-read categories are counts out of 20 in four cells of 5. They
+    are NOT frequencies over the corpus and must never be reweighted into
+    one: at n=5 per cell the variance of any projected share is enormous, and
+    a projected percentage would be the most quotable and least defensible
+    number in the writeup. Phase 7.1 takes section 3, not section 7.
+  - REACHABLE is a lower bound. The run files stop at rank 10, so a judged
+    document a rung would have found at rank 11 counts as unreachable here.
+  - C3 is not a statement that a document is unfindable. It says the six
+    rungs on this ladder do not find it in ten slots.
+  - Nothing here measures whether an UNJUDGED retrieved document is relevant.
+    That is §5.1's open problem, its only fix is pooling and hand-labelling
+    (§5.4 option 2), and it is not done.
+  - Dev only. Nothing here is a test-set result and nothing here was checked
+    against test.
+
+==============================================================================
