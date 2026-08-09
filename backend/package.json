@@ -23,6 +23,7 @@
     "analyse:v6": "node --expose-gc scripts/analyse-hybrid.js",
     "analyse:contamination": "node scripts/analyse-contamination.js",
     "analyse:rungs": "node scripts/analyse-rungs.js",
+    "analyse:ladder": "node scripts/analyse-ladder.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
     "check:claims": "node scripts/check-claims.js",
     "embed:corpus": "node ../scripts/embed-corpus.js",

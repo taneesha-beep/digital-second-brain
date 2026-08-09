@@ -176,7 +176,11 @@ const ILLUSTRATIVE = new Map([
 // the fix is to give two analysis scripts a writer — which is its own task and
 // not the one 3.6 is doing.
 const GAPS = new Map([
-  ['1.9145', 'dev mean judgments/query, §4.3. Recomputed at 3.6 and exact; bias:analyze reports corpus-wide and writes nothing'],
+  // 1.9145 (dev mean judgments/query) WAS here on the tool's first run and is
+  // no longer: analyse-ladder.js needed the same figure for §3 of its report,
+  // so writing that report closed the gap as a side effect. Recorded because it
+  // is the mechanism working — the fix for a gap is an artifact, and the tool
+  // stops naming it the moment one exists.
   ['1.8093', 'corpus mean judgments/query, §3.3 — lives in data/qrels/cooking.manifest.json, which is gitignored'],
   ['3.73e7', 'the all-pairs edge-emission bound at top-10, §15.6. analyse:vocab is read-only and persists no artifact']
 ]);
