@@ -430,6 +430,16 @@ function main() {
     timingsMs: {
       grid: gridMs,
       total: Date.now() - t0,
+      // WITHOUT THESE TWO, `grid` IS A NUMBER THAT MEANS SOMETHING OTHER THAN
+      // WHAT IT LOOKS LIKE. A cached point costs a file read, so `grid` covers
+      // only the points that actually ran; divided by 13 it would understate
+      // the per-point cost by however many were reused. That is the same defect
+      // as the p95 column this file removed — a plausible figure in a committed
+      // artifact that a reader will interpret wrongly — so the denominator is
+      // recorded beside the numerator rather than left to be inferred.
+      pointsRunFresh: points.length - cachedCount,
+      pointsReusedFromCache: cachedCount,
+      gridCoversFreshPointsOnly: true,
       perPointP95SearchMs: Object.fromEntries(rows.map((r) => [r.label, r.p95Ms])),
       perPointP95IsNotAMeasurement:
         'Uncontrolled laptop figures recorded as provenance, not as data. No performance claim rests ' +
