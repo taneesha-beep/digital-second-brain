@@ -249,22 +249,25 @@
     }
   ],
   "timingsMs": {
-    "grid": 452572,
-    "total": 452877,
+    "grid": 991227,
+    "total": 991516,
+    "pointsRunFresh": 13,
+    "pointsReusedFromCache": 0,
+    "gridCoversFreshPointsOnly": true,
     "perPointP95SearchMs": {
-      "v6-p001": 39.849083,
-      "v6-p002": 39.515834,
-      "v6-p003": 39.649042,
-      "v6-p004": 38.055833,
-      "v6-p005": 36.778709,
-      "v6-p006": 37.101916,
-      "v6-p007": 36.894042,
-      "v6-p008": 37.151958,
-      "v6-p009": 37.632583,
-      "v6-p010": 38.039792,
-      "v6-p011": 37.04425,
-      "v6-p012": 37.416458,
-      "v6-p013": 37.363375
+      "v6-p001": 37.238709,
+      "v6-p002": 37.295667,
+      "v6-p003": 39.105083,
+      "v6-p004": 38.993375,
+      "v6-p005": 37.496833,
+      "v6-p006": 37.805959,
+      "v6-p007": 41.439666,
+      "v6-p008": 41.725209,
+      "v6-p009": 39.609459,
+      "v6-p010": 38.823875,
+      "v6-p011": 50.20875,
+      "v6-p012": 38.065708,
+      "v6-p013": 39.037625
     },
     "perPointP95IsNotAMeasurement": "Uncontrolled laptop figures recorded as provenance, not as data. No performance claim rests on any of them; a controlled figure against a published budget is 6.5's job."
   },
@@ -274,7 +277,7 @@
     "arch": "arm64",
     "cpu": "Apple M2",
     "memoryGiB": 8,
-    "peakRssMiB": 229
+    "peakRssMiB": 167
   },
-  "generatedAt": "2026-08-09T05:20:04.120Z"
+  "generatedAt": "2026-08-09T06:13:41.441Z"
 }

@@ -222,7 +222,7 @@ v5's full-depth fixture orderings at rrfK in {0, 1, 60, 1000}.
 
 6. THE SWEEP, AND WHAT TUNING BUYS — results/sweeps/v6-hybrid-params.csv
 ------------------------------------------------------------------------------
-13 points, 453 s, selection rule declared in sweep-v6.js before the grid ran.
+13 points, 991 s (76 s per point), selection rule declared in sweep-v6.js before the grid ran.
 
   rrfK       0        1        2        5       10       20       40
   nDCG@8  .327042  .326774  .326263  .326075  .322374  .316145  .313096
