@@ -102,6 +102,9 @@ const { paramsDigest } = require('../retrieval/types');
 const v1 = require('../retrieval/v1-overlap');
 const metrics = require('../eval/metrics');
 const { mulberry32 } = require('../eval/bootstrap');
+// Absorbed into scripts/lib/run-io.js at 3.7 — the deferral reason (do not
+// touch the parse path on the day test opens) expired when test closed.
+const { readLines, sha256File, loadQrels, loadRun } = require('./lib/run-io');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const SITE = 'cooking';
@@ -154,44 +157,6 @@ const SPLIT_HALF_REPEATS = 200;
 // float equality.
 // ---------------------------------------------------------------------------
 
-function readLines(file) {
-  const text = fs.readFileSync(file, 'utf8');
-  const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return trimmed === '' ? [] : trimmed.split('\n');
-}
-
-function sha256File(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-}
-
-function loadQrels(file) {
-  const byQuery = new Map();
-  for (const line of readLines(file)) {
-    if (line === '') continue;
-    const [qid, , docId, gradeText] = line.split(/\s+/);
-    let row = byQuery.get(qid);
-    if (!row) { row = new Map(); byQuery.set(qid, row); }
-    row.set(docId, Number.parseInt(gradeText, 10));
-  }
-  return byQuery;
-}
-
-/** run file -> Map<qid, docid[]>, ordered by the RANK column (§ compare-runs). */
-function loadRun(file) {
-  const byQuery = new Map();
-  for (const line of readLines(file)) {
-    if (line === '') continue;
-    const [qid, , docId, rankText] = line.split(/\s+/);
-    let rows = byQuery.get(qid);
-    if (!rows) { rows = []; byQuery.set(qid, rows); }
-    rows.push({ docId, rank: Number.parseInt(rankText, 10) });
-  }
-  for (const [qid, rows] of byQuery) {
-    rows.sort((x, y) => x.rank - y.rank);
-    byQuery.set(qid, rows.map((r) => r.docId));
-  }
-  return byQuery;
-}
 
 function fail(message) {
   const error = new Error(message);

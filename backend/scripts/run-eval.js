@@ -97,6 +97,9 @@ const { execFileSync } = require('child_process');
 const { index, search, describe, versions, resolvedParamsFor } = require('../retrieval');
 const { scoreQuery, aggregate } = require('../eval/metrics');
 const { retrieverSource } = require('../eval/source-digest');
+// The TREC loaders live in one place from 3.7. See scripts/lib/run-io.js for
+// which copies were absorbed, which two were deliberately left, and why.
+const { readLines, sha256File, loadQrelsStrict } = require('./lib/run-io');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_KS = [1, 5, 8, 10];
@@ -160,15 +163,6 @@ function parseArgs(argv) {
 // Loading
 // ---------------------------------------------------------------------------
 
-function sha256File(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-}
-
-function readLines(file) {
-  const text = fs.readFileSync(file, 'utf8');
-  const trimmed = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return trimmed === '' ? [] : trimmed.split('\n');
-}
 
 function loadCorpus(file) {
   const docs = [];
@@ -276,37 +270,6 @@ function attachVectors({ site, slug, docs }) {
   };
 }
 
-/** TREC qrels: `qid 0 docid grade`. Returns Map<qid, Map<docid, grade>>. */
-function loadQrels(file) {
-  const byQuery = new Map();
-  const lines = readLines(file);
-  let judgments = 0;
-  for (let i = 0; i < lines.length; i += 1) {
-    const fields = lines[i].split(/\s+/);
-    if (fields.length !== 4) {
-      throw new Error(`${file}:${i + 1} has ${fields.length} fields, expected 4 (qid 0 docid grade)`);
-    }
-    const [qid, iteration, docId, gradeText] = fields;
-    if (iteration !== '0') {
-      throw new Error(`${file}:${i + 1} field 2 is "${iteration}", expected the vestigial 0`);
-    }
-    const grade = Number(gradeText);
-    if (!Number.isInteger(grade)) {
-      throw new Error(`${file}:${i + 1} grade "${gradeText}" is not an integer`);
-    }
-    let row = byQuery.get(qid);
-    if (!row) { row = new Map(); byQuery.set(qid, row); }
-    if (row.has(docId)) {
-      // The exact shape of the 1.3 bug that produced 18,284 instead of 16,678:
-      // one pair kept twice puts the document in the ideal ranking twice,
-      // inflating IDCG and silently deflating every nDCG resting on it.
-      throw new Error(`${file}:${i + 1} duplicate judgment for (${qid}, ${docId})`);
-    }
-    row.set(docId, grade);
-    judgments += 1;
-  }
-  return { byQuery, judgments };
-}
 
 function readManifest(file) {
   if (!fs.existsSync(file)) return null;
@@ -654,7 +617,7 @@ function main() {
   // --- load -----------------------------------------------------------------
   const tLoad = process.hrtime.bigint();
   const docs = loadCorpus(corpusFile);
-  const { byQuery: qrels, judgments } = loadQrels(qrelsFile);
+  const { byQuery: qrels, judgments } = loadQrelsStrict(qrelsFile);
   const queryIds = readLines(splitFile);
   const loadMs = Number(process.hrtime.bigint() - tLoad) / 1e6;
 
