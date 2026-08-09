@@ -1,0 +1,111 @@
+THE LADDER ON TEST — roadmap 3.6
+==============================================================================================
+
+  Assembled from the committed run sidecars. Nothing re-run, nothing recomputed
+  except the test − dev column, which is a subtraction of two sidecar values and
+  is printed at full precision so it never has to be inferred from a display.
+
+1. EVERY RUNG, EVERY METRIC, EVERY k — TEST
+----------------------------------------------------------------------------------------------
+
+  v1-overlap   runid v1-overlap.test.93bc8d65
+    metric         @1       @5       @8      @10
+      nDCG     0.0924   0.1260   0.1361   0.1359
+         P     0.0950   0.0463   0.0351   0.0281
+         R     0.0705   0.1564   0.1843   0.1843
+    MRR@10     0.1433
+    queries 2305 scored · 9 zero-result · 0 unjudgeable
+    index() 1283 ms · search p95 1.049 ms · mean 0.539 ms
+
+  v2-jaccard   runid v2-jaccard.test.fb0bc25a
+    metric         @1       @5       @8      @10
+      nDCG     0.0892   0.1253   0.1371   0.1370
+         P     0.0915   0.0462   0.0357   0.0285
+         R     0.0682   0.1555   0.1881   0.1881
+    MRR@10     0.1428
+    queries 2305 scored · 9 zero-result · 0 unjudgeable
+    index() 1277 ms · search p95 0.833 ms · mean 0.428 ms
+
+  v3-tfidf   runid v3-tfidf.test.3625fedf
+    metric         @1       @5       @8      @10
+      nDCG     0.1367   0.1798   0.1952   0.2040
+         P     0.1427   0.0668   0.0511   0.0454
+         R     0.1013   0.2183   0.2617   0.2890
+    MRR@10     0.2082
+    queries 2305 scored · 0 zero-result · 0 unjudgeable
+    index() 1429 ms · search p95 7.758 ms · mean 4.808 ms
+
+  v4-bm25   runid v4-bm25.test.ba72e199
+    metric         @1       @5       @8      @10
+      nDCG     0.1792   0.2232   0.2391   0.2464
+         P     0.1861   0.0824   0.0617   0.0533
+         R     0.1298   0.2650   0.3103   0.3330
+    MRR@10     0.2565
+    queries 2305 scored · 0 zero-result · 0 unjudgeable
+    index() 1008 ms · search p95 7.644 ms · mean 4.662 ms
+
+  v5-embeddings   runid v5-embeddings.test.c8878adc
+    metric         @1       @5       @8      @10
+      nDCG     0.2354   0.2999   0.3197   0.3279
+         P     0.2438   0.1100   0.0811   0.0695
+         R     0.1743   0.3558   0.4115   0.4365
+    MRR@10     0.3353
+    queries 2305 scored · 0 zero-result · 0 unjudgeable
+    index() 42 ms · search p95 19.937 ms · mean 18.937 ms
+
+  v6-hybrid   runid v6-hybrid.test.ae21327b
+    metric         @1       @5       @8      @10
+      nDCG     0.2230   0.2773   0.2996   0.3081
+         P     0.2308   0.1018   0.0768   0.0661
+         R     0.1609   0.3258   0.3890   0.4158
+    MRR@10     0.3172
+    queries 2305 scored · 0 zero-result · 0 unjudgeable
+    index() 1032 ms · search p95 37.972 ms · mean 32.705 ms
+
+  v1-overlap-tuned   runid v1-overlap-tuned.test.6245ccbf
+    metric         @1       @5       @8      @10
+      nDCG     0.0924   0.1260   0.1361   0.1416
+         P     0.0950   0.0463   0.0351   0.0309
+         R     0.0705   0.1564   0.1843   0.2013
+    MRR@10     0.1455
+    queries 2305 scored · 0 zero-result · 0 unjudgeable
+    index() 1304 ms · search p95 1.616 ms · mean 0.831 ms
+
+2. nDCG@8 — DEV AND TEST SIDE BY SIDE
+----------------------------------------------------------------------------------------------
+  rung               dev                  test                 test − dev
+  ----------------------------------------------------------------------------
+  v1-overlap         0.14016693655110876  0.1360824679780947   -0.004084
+  v2-jaccard         0.14266812656887737  0.13711087130071978  -0.005557
+  v3-tfidf           0.2106600078244242   0.19520388863572963  -0.015456
+  v4-bm25            0.2457601129091911   0.23907002949388706  -0.006690
+  v5-embeddings      0.3268933101824833   0.3197143256944989   -0.007179
+  v6-hybrid          0.3113609962432663   0.2996311502510857   -0.011730
+  v1-overlap-tuned   0.14039256470838923  0.1360824679780947   -0.004310
+
+  EVERY RUNG IS LOWER ON TEST. That is a property of the two samples, not of
+  the retrievers: the splits are a uniform random partition of one query set
+  (§4.2), so a rung has no way to be systematically worse on one of them. The
+  shared component is the KEY — test's queries carry a slightly thinner answer
+  key, and §5.3 is why per-query scores are not comparable across corpus age.
+  Section 3 measures it rather than leaving it as an explanation.
+
+3. THE SHARED DROP, MEASURED
+----------------------------------------------------------------------------------------------
+  split   queries   judgments   mean/query   median   with exactly 1   max
+  ------------------------------------------------------------------------
+  dev        2304        4411       1.9145        1     1443 (62.6%)   245
+  test       2305        4236       1.8377        1     1504 (65.2%)   209
+
+  The direction is consistent with the drop and the SIZE of the effect is not
+  established here — this is a description of the two keys, not a decomposition
+  of the gap. What it rules out is the reading that would matter: a rung being
+  genuinely worse on unseen data, which cannot be what a random partition of
+  one query set produces.
+
+4. THE ORDERING
+----------------------------------------------------------------------------------------------
+  dev   v1-overlap 0.1402  <  v2-jaccard 0.1427  <  v3-tfidf 0.2107  <  v4-bm25 0.2458  <  v6-hybrid 0.3114  <  v5-embeddings 0.3269
+  test  v1-overlap 0.1361  <  v2-jaccard 0.1371  <  v3-tfidf 0.1952  <  v4-bm25 0.2391  <  v6-hybrid 0.2996  <  v5-embeddings 0.3197
+
+==============================================================================================

@@ -1,0 +1,74 @@
+HOLM-BONFERRONI OVER THE PRE-REGISTERED FAMILY — roadmap 3.6
+==============================================================================
+
+  family               7 comparisons, registered in results/comparisons/registry.json
+  method               holm-bonferroni, family-wise alpha 0.05
+  smallest threshold   alpha/7 = 0.00714
+  assembled from       the COMMITTED comparison reports, parsed. Nothing re-run.
+
+  Six members are registered on dev and one on test. Holm is applied to the
+  family AS REGISTERED. Its step-down controls FWER under ARBITRARY dependence,
+  so members computed on disjoint splits are the most benign case, not a
+  problem — but "survives Holm" is a statement about the split each member was
+  registered on, and the five ladder steps run on test at 3.6 carry intervals
+  and NO p-value, and do not enter this family. See the header of this script
+  for the two rejected alternatives.
+
+1. THE FAMILY, AS REGISTERED
+------------------------------------------------------------------------------
+  id                        A vs B                                split   metric      raw p
+  ------------------------------------------------------------------------------------------
+  cap-ablation              v1-overlap-uncapped vs v1-overlap     dev     NDCG@10     <0.0001  (metric overridden, declared in advance)
+  ladder-v1-v2              v2-jaccard vs v1-overlap              dev     NDCG@8       0.0482
+  ladder-v2-v3              v3-tfidf vs v2-jaccard                dev     NDCG@8      <0.0001
+  ladder-v3-v4              v4-bm25 vs v3-tfidf                   dev     NDCG@8      <0.0001
+  ladder-v4-v5              v5-embeddings vs v4-bm25              dev     NDCG@8      <0.0001
+  ladder-v5-v6              v6-hybrid vs v5-embeddings            dev     NDCG@8       0.0015
+  sweep-tuned-vs-shipped    v1-overlap-tuned vs v1-overlap        test    NDCG@8       1.0000
+
+  cap-ablation: at the bootstrap floor
+  ladder-v2-v3: at the bootstrap floor
+  ladder-v3-v4: at the bootstrap floor
+  ladder-v4-v5: at the bootstrap floor
+  sweep-tuned-vs-shipped: identical runs — ASL is exactly 1 by construction
+
+2. THE STEP-DOWN
+------------------------------------------------------------------------------
+  Sorted ascending. The i-th smallest is tested against alpha/(m-i+1), and the
+  procedure HALTS at the first failure — everything after it is retained
+  regardless of its own p. That halt is the whole difference from Bonferroni.
+
+  step  id                        raw p     threshold   verdict
+  ------------------------------------------------------------------------
+     1  cap-ablation               <0.0001    0.00714   REJECT H0 — survives
+     2  ladder-v2-v3               <0.0001    0.00833   REJECT H0 — survives
+     3  ladder-v3-v4               <0.0001    0.01000   REJECT H0 — survives
+     4  ladder-v4-v5               <0.0001    0.01250   REJECT H0 — survives
+     5  ladder-v5-v6                0.0015    0.01667   REJECT H0 — survives
+     6  ladder-v1-v2                0.0482    0.02500   RETAIN H0 — HALTS HERE
+     7  sweep-tuned-vs-shipped      1.0000    0.05000   RETAIN H0 — after the halt
+
+3. WHAT SURVIVES
+------------------------------------------------------------------------------
+  5 of 7 survive Holm at family-wise alpha 0.05.
+
+  [survives]  cap-ablation              results/comparisons/v1-overlap-uncapped-vs-v1-overlap.dev.txt
+  [survives]  ladder-v2-v3              results/comparisons/v3-tfidf-vs-v2-jaccard.dev.txt
+  [survives]  ladder-v3-v4              results/comparisons/v4-bm25-vs-v3-tfidf.dev.txt
+  [survives]  ladder-v4-v5              results/comparisons/v5-embeddings-vs-v4-bm25.dev.txt
+  [survives]  ladder-v5-v6              results/comparisons/v6-hybrid-vs-v5-embeddings.dev.txt
+  [retained]  ladder-v1-v2              results/comparisons/v2-jaccard-vs-v1-overlap.dev.txt
+  [retained]  sweep-tuned-vs-shipped    results/comparisons/v1-overlap-tuned-vs-v1-overlap.test.txt
+
+  A survivor is a DIFFERENCE that is real, in either direction. It is not a
+  claim that the difference is large, and it is not a claim about the absolute
+  levels, which remain lower bounds (§5.1) because the key is positive-only.
+
+4. ENVIRONMENT
+------------------------------------------------------------------------------
+  This script does no arithmetic on run files and no resampling. Every p above
+  was produced by backend/eval/bootstrap.js at seed 20260804, B = 10000, and
+  written into a committed report; the only computation here is the sort and
+  the step-down comparison.
+
+==============================================================================

@@ -1,59 +1,54 @@
-PAIRED BOOTSTRAP — v6-hybrid-tuned  vs  v5-embeddings
-roadmap 2.5 · 2026-08-09T07:09:49Z
+PAIRED BOOTSTRAP — v5-embeddings  vs  v4-bm25
+roadmap 2.5 · 2026-08-09T07:10:32Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
 
 1. THE TWO RUNS
 ------------------------------------------------------------------------------
-  A  v6-hybrid-tuned
-     runid    v6-hybrid-tuned.dev.3fa5a423
-     digest   3fa5a4237a041d5ef79aa7533b60b36194e7f8d1ab84422e40aecf1d9819abd8
-     source   cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb
-     run      results/runs/v6-hybrid-tuned.dev.run
-              sha256 653643d975addfc1e62ab8e7ce277ee0d16c700fe09731b469fe274f94ec50ba  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v6-hybrid-tuned.dev.run.json  (committed)
-     command  npm run eval -- --retriever v6-hybrid --split dev --param rrfK=0 --label v6-hybrid-tuned
-
-  B  v5-embeddings
-     runid    v5-embeddings.dev.c8878adc
+  A  v5-embeddings
+     runid    v5-embeddings.test.c8878adc
      digest   c8878adce503e2a8e6b7992390392b3a62713485f70a64850245dcc139d1822e
-     source   2a82bef5ed1e0b7be356c9b675a82e41b4c9997e7b3608b842e244e1022a0870
-     run      results/runs/v5-embeddings.dev.run
-              sha256 89227f28f7cd61faae77f80df9f95bf088a2f6513664a21f5dbc1db24a0fbf97  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v5-embeddings.dev.run.json  (committed)
-     command  npm run eval -- --retriever v5-embeddings --split dev
+     source   04de625357a4f4fdee61782f8ad8efb8e748b4fa10311a0330427abfe6671ee0
+     run      results/runs/v5-embeddings.test.run
+              sha256 c45b967d906989de6ccf90b0ef93ef4498738cbd0c1416548e832d6201dc8128  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v5-embeddings.test.run.json  (committed)
+     command  npm run eval -- --retriever v5-embeddings --split test
+
+  B  v4-bm25
+     runid    v4-bm25.test.ba72e199
+     digest   ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c
+     source   74bc43cc748d30ec7439d3574ef82cd3edb985d2acf2027dc6092d1ee46e794f
+     run      results/runs/v4-bm25.test.run
+              sha256 a09a8cf419fb8e07efc3e83fe88427caeb2af0108c603aee5b971906170ac0c3  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v4-bm25.test.run.json  (committed)
+     command  npm run eval -- --retriever v4-bm25 --split test
 
   parameters, and how many of them moved:
-     version          A "v6-hybrid"      B "v5-embeddings"   <-- differs
-     b                A 0.75             B undefined         <-- differs
-     depth            A null             B undefined         <-- differs
-     dim              A 384              B 384             
-     fusion           A "rrf"            B undefined         <-- differs
-     idfVariant       A "lucene"         B undefined         <-- differs
-     k1               A 1.2              B undefined         <-- differs
-     normalise        A true             B true            
-     qtfMode          A "linear"         B undefined         <-- differs
-     rrfK             A 0                B undefined         <-- differs
-     titleWeight      A 2                B undefined         <-- differs
-     vectors          A "minilm-l6-v2-fp32-256" B "minilm-l6-v2-fp32-256"
+     version          A "v5-embeddings"  B "v4-bm25"         <-- differs
+     b                A undefined        B 0.75              <-- differs
+     dim              A 384              B undefined         <-- differs
+     idfVariant       A undefined        B "lucene"          <-- differs
+     k1               A undefined        B 1.2               <-- differs
+     normalise        A true             B undefined         <-- differs
+     qtfMode          A undefined        B "linear"          <-- differs
+     titleWeight      A undefined        B 2                 <-- differs
+     vectors          A "minilm-l6-v2-fp32-256" B undefined         <-- differs
 
-  !! 9 variables changed at once: version, b, depth, fusion, idfVariant, k1, qtfMode, rrfK, titleWeight.
+  !! 9 variables changed at once: version, b, dim, idfVariant, k1, normalise, qtfMode, titleWeight, vectors.
      CLAUDE.md: never change two variables at once — an unattributable result is
      worthless. Printed rather than refused, because a rung comparison changes
      `version` legitimately; but if `version` is not the only entry above, the
      difference below cannot be assigned to any one cause.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  cbfdfe516ada9eb5…  MATCHES the working tree (6 files)
-     B  2a82bef5ed1e0b7b…  DIFFERS from the working tree
-         backend/retrieval/index.js
-         backend/retrieval/types.js
+     A  04de625357a4f4fd…  MATCHES the working tree (3 files)
+     B  74bc43cc748d30ec…  MATCHES the working tree (4 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
-  split                cooking.dev — 2304 queries
-  scored               A 2304   B 2304   (unjudgeable and excluded: A 0, B 0)
+  split                cooking.test — 2305 queries
+  scored               A 2305   B 2305   (unjudgeable and excluded: A 0, B 0)
   identical qid set    ASSERTED — both sides scored over the split file, in split order.
                        This is the only thing pairing requires, and it is a hard
                        failure if it does not hold.
@@ -72,34 +67,36 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 
 3. PRE-REGISTRATION
 ------------------------------------------------------------------------------
-  status               EXPLORATORY — this pair is not in the registry.
+  status               OFF-SPLIT — registered as "ladder-v4-v5", but on dev, not test.
   registry             results/comparisons/registry.json
-  family               7 registered comparisons, none matching
-                       (v6-hybrid-tuned vs v5-embeddings on dev)
+  family               7 registered comparisons; this pair is one of
+                       them, registered on dev
 
-  Differences and intervals below are printed in full. p-values are SUPPRESSED.
-  Six rungs is 15 pairwise comparisons; times 13 metrics is 195 p-values, about
-  10 of which come up significant at 0.05 on pure noise. To make this comparison
-  testable, add it to the registry and commit — which puts the decision in git
-  history, dated, which is the only thing that makes a pre-registration credible.
+  Differences and intervals below are printed in full. The p-value is SUPPRESSED,
+  and the reason is not that nobody thought about this comparison — it is that the
+  experiment was registered on dev and a p computed here would be a second,
+  unregistered test of the same hypothesis on fresh data. §11.5: the family is
+  CONSTRAINED first and corrected second, and the constraint includes the split.
+  Read the interval. If it excludes zero, that is a real statement about this
+  split; it is just not the pre-registered one, and it does not enter Holm.
 
 4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
 ------------------------------------------------------------------------------
   metric        mean A     mean B        A − B    95% CI              differ   p
   ----------------------------------------------------------------------------
-   nDCG@1      0.2361    0.2331     +0.0030   [-0.0098, +0.0161]    244      -
-   nDCG@5      0.3029    0.3042     -0.0013   [-0.0090, +0.0064]    797      -
-  *nDCG@8      0.3270    0.3269     +0.0001   [-0.0068, +0.0071]    958      -
-   nDCG@10     0.3361    0.3356     +0.0006   [-0.0062, +0.0073]   1018      -
-   P@1         0.2457    0.2426     +0.0030   [-0.0100, +0.0165]    241      -
-   P@5         0.1136    0.1132     +0.0004   [-0.0028, +0.0036]    314      -
-   P@8         0.0859    0.0854     +0.0005   [-0.0015, +0.0025]    322      -
-   P@10        0.0742    0.0731     +0.0011   [-0.0005, +0.0027]    321      -
-   R@1         0.1689    0.1684     +0.0006   [-0.0095, +0.0107]    241      -
-   R@5         0.3667    0.3660     +0.0007   [-0.0103, +0.0117]    314      -
-   R@8         0.4336    0.4285     +0.0051   [-0.0057, +0.0158]    322      -
-   R@10        0.4614    0.4556     +0.0057   [-0.0050, +0.0166]    321      -
-   MRR@10      0.3455    0.3444     +0.0011   [-0.0075, +0.0098]    881      -
+   nDCG@1      0.2354    0.1792     +0.0563   [+0.0392, +0.0729]    425      -
+   nDCG@5      0.2999    0.2232     +0.0767   [+0.0633, +0.0904]    956      -
+  *nDCG@8      0.3197    0.2391     +0.0806   [+0.0675, +0.0939]   1100      -
+   nDCG@10     0.3279    0.2464     +0.0815   [+0.0686, +0.0945]   1165      -
+   P@1         0.2438    0.1861     +0.0577   [+0.0403, +0.0746]    417      -
+   P@5         0.1100    0.0824     +0.0276   [+0.0229, +0.0323]    664      -
+   P@8         0.0811    0.0617     +0.0194   [+0.0163, +0.0226]    728      -
+   P@10        0.0695    0.0533     +0.0162   [+0.0136, +0.0189]    726      -
+   R@1         0.1743    0.1298     +0.0444   [+0.0306, +0.0583]    417      -
+   R@5         0.3558    0.2650     +0.0907   [+0.0742, +0.1074]    664      -
+   R@8         0.4115    0.3103     +0.1012   [+0.0840, +0.1184]    728      -
+   R@10        0.4365    0.3330     +0.1035   [+0.0857, +0.1210]    726      -
+   MRR@10      0.3353    0.2565     +0.0789   [+0.0642, +0.0934]   1054      -
 
   * = the pre-registered primary metric. p is reported for that metric only.
   . = computed but not reported: one pre-registered metric per comparison is what
@@ -108,26 +105,22 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 
 5. PRIMARY RESULT — nDCG@8
 ------------------------------------------------------------------------------
-  mean difference      +0.000149
-  95% CI               [-0.006823, +0.007067]
+  mean difference      +0.080644
+  95% CI               [+0.067537, +0.093911]
   p                    suppressed (exploratory — see §3)
 
-  queries differing    958 of 2304 (41.6%)
-                       v6-hybrid-tuned ahead on 371, v5-embeddings ahead on 587
-  effective n          958 — the CLT here runs on the queries that moved,
-                       not on all 2304. This is why the test is a bootstrap and
+  queries differing    1100 of 2305 (47.7%)
+                       v5-embeddings ahead on 746, v4-bm25 ahead on 354
+  effective n          1100 — the CLT here runs on the queries that moved,
+                       not on all 2305. This is why the test is a bootstrap and
                        not a paired t-test: a point mass at zero with a thin slab
                        is where the normal approximation to the mean is worst.
-  mean over those      +0.000358 — the overall mean is this number
-                       diluted by the 1346 queries at exactly zero
+  mean over those      +0.168986 — the overall mean is this number
+                       diluted by the 1205 queries at exactly zero
 
   THE SENTENCE:
-    v6-hybrid-tuned beats v5-embeddings by 0.0001 nDCG@8,
-    95% CI [-0.0068, +0.0071] (p not reported).
-
-    The interval STRADDLES ZERO. Whatever the p-value says, the data is
-    consistent with no difference at all, and the sentence above should not
-    be written anywhere without this line beside it.
+    v5-embeddings beats v4-bm25 by 0.0806 nDCG@8,
+    95% CI [+0.0675, +0.0939] (p not reported).
 
 6. HOW THE RANDOMNESS IS PINNED
 ------------------------------------------------------------------------------
@@ -155,7 +148,7 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
                        the (1+r)/(B+1) convention. Smucker, Allan & Carterette
                        (2007). NOT the interval inversion PRIMER §5.5 describes;
                        that reading is the raw count below.
-  resamples favouring  A 5169   B 4831   tied 0
+  resamples favouring  A 10000   B 0   tied 0
                        PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
                        its own name. Deliberately not labelled a second p-value:
                        two p-values in one report is an invitation to quote the
@@ -165,7 +158,7 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           8d6334d272632146799da4770426eb522391dcbe  (tracked files dirty)
+  git commit           f48e5678b76157e867952df46a4009ee1346f8ea
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js

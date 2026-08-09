@@ -1,65 +1,58 @@
-PAIRED BOOTSTRAP — v6-hybrid-tuned  vs  v5-embeddings
-roadmap 2.5 · 2026-08-09T07:09:49Z
+PAIRED BOOTSTRAP — v1-overlap-tuned  vs  v1-overlap
+roadmap 2.5 · 2026-08-09T07:10:49Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
 
 1. THE TWO RUNS
 ------------------------------------------------------------------------------
-  A  v6-hybrid-tuned
-     runid    v6-hybrid-tuned.dev.3fa5a423
-     digest   3fa5a4237a041d5ef79aa7533b60b36194e7f8d1ab84422e40aecf1d9819abd8
-     source   cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb
-     run      results/runs/v6-hybrid-tuned.dev.run
-              sha256 653643d975addfc1e62ab8e7ce277ee0d16c700fe09731b469fe274f94ec50ba  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v6-hybrid-tuned.dev.run.json  (committed)
-     command  npm run eval -- --retriever v6-hybrid --split dev --param rrfK=0 --label v6-hybrid-tuned
+  A  v1-overlap-tuned
+     runid    v1-overlap-tuned.test.6245ccbf
+     digest   6245ccbf7e0b8e120bf7fdc9406af9d6f0ab2d13350c15ce58be6977372aa83c
+     source   8c30c03645f1c9a95e707fa4d3f5b23d293c60aa8d7ac5b29bf4744ad6c9ec94
+     run      results/runs/v1-overlap-tuned.test.run
+              sha256 61caf582040565adda0ed5c2999b449afe10a29473d2b499fd5390be65d640a3  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v1-overlap-tuned.test.run.json  (committed)
+     command  npm run eval -- --retriever v1-overlap --split test --param threshold=0 --param cap=10 --label v1-overlap-tuned
 
-  B  v5-embeddings
-     runid    v5-embeddings.dev.c8878adc
-     digest   c8878adce503e2a8e6b7992390392b3a62713485f70a64850245dcc139d1822e
-     source   2a82bef5ed1e0b7be356c9b675a82e41b4c9997e7b3608b842e244e1022a0870
-     run      results/runs/v5-embeddings.dev.run
-              sha256 89227f28f7cd61faae77f80df9f95bf088a2f6513664a21f5dbc1db24a0fbf97  (gitignored; regenerates in ~3 s)
-     sidecar  results/runs/v5-embeddings.dev.run.json  (committed)
-     command  npm run eval -- --retriever v5-embeddings --split dev
+  B  v1-overlap
+     runid    v1-overlap.test.93bc8d65
+     digest   93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
+     source   8c30c03645f1c9a95e707fa4d3f5b23d293c60aa8d7ac5b29bf4744ad6c9ec94
+     run      results/runs/v1-overlap.test.run
+              sha256 9676d8b2ca5184d946b8310bccbe09890f98f90cf6ad4a766e8ea82c1e705103  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v1-overlap.test.run.json  (committed)
+     command  npm run eval -- --retriever v1-overlap --split test
 
   parameters, and how many of them moved:
-     version          A "v6-hybrid"      B "v5-embeddings"   <-- differs
-     b                A 0.75             B undefined         <-- differs
-     depth            A null             B undefined         <-- differs
-     dim              A 384              B 384             
-     fusion           A "rrf"            B undefined         <-- differs
-     idfVariant       A "lucene"         B undefined         <-- differs
-     k1               A 1.2              B undefined         <-- differs
-     normalise        A true             B true            
-     qtfMode          A "linear"         B undefined         <-- differs
-     rrfK             A 0                B undefined         <-- differs
-     titleWeight      A 2                B undefined         <-- differs
-     vectors          A "minilm-l6-v2-fp32-256" B "minilm-l6-v2-fp32-256"
+     cap              A 10               B 8                 <-- differs
+     idfCorpus        A "leave-one-out"  B "leave-one-out" 
+     lengthBonus      A true             B true            
+     scorePrecision   A 4                B 4               
+     threshold        A 0                B 0.15              <-- differs
+     topN             A 10               B 10              
 
-  !! 9 variables changed at once: version, b, depth, fusion, idfVariant, k1, qtfMode, rrfK, titleWeight.
+  !! 2 variables changed at once: cap, threshold.
      CLAUDE.md: never change two variables at once — an unattributable result is
      worthless. Printed rather than refused, because a rung comparison changes
      `version` legitimately; but if `version` is not the only entry above, the
      difference below cannot be assigned to any one cause.
 
   the SOURCE each run was produced from, re-hashed now and compared:
-     A  cbfdfe516ada9eb5…  MATCHES the working tree (6 files)
-     B  2a82bef5ed1e0b7b…  DIFFERS from the working tree
-         backend/retrieval/index.js
-         backend/retrieval/types.js
+     A  8c30c03645f1c9a9…  MATCHES the working tree (3 files)
+     B  8c30c03645f1c9a9…  MATCHES the working tree (3 files)
 
 2. THE PAIRED POPULATION
 ------------------------------------------------------------------------------
-  split                cooking.dev — 2304 queries
-  scored               A 2304   B 2304   (unjudgeable and excluded: A 0, B 0)
+  split                cooking.test — 2305 queries
+  scored               A 2305   B 2305   (unjudgeable and excluded: A 0, B 0)
   identical qid set    ASSERTED — both sides scored over the split file, in split order.
                        This is the only thing pairing requires, and it is a hard
                        failure if it does not hold.
 
-  zero-result queries  A 0   B 0   both 0
-                       The two sets are IDENTICAL.
+  zero-result queries  A 0   B 9   both 0
+                       only A: 0
+                       only B: 9 (54864, 109169, 8415, 86292, 20568, …)
                        Reported, never gated. A retriever that returns results
                        where the other returned none is a better retriever, not an
                        unpairable one — that query is exactly the difference the
@@ -72,34 +65,40 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 
 3. PRE-REGISTRATION
 ------------------------------------------------------------------------------
-  status               EXPLORATORY — this pair is not in the registry.
+  status               PRE-REGISTERED — "sweep-tuned-vs-shipped"
   registry             results/comparisons/registry.json
-  family               7 registered comparisons, none matching
-                       (v6-hybrid-tuned vs v5-embeddings on dev)
+  primary metric       NDCG@8
+  family               7 registered comparisons
+  correction           holm-bonferroni, family-wise alpha 0.05
+                       NOT applied here. Holm needs every p in the family at once,
+                       and the family fills up one rung per session across Phase 3.
+                       The p below is RAW. Adjust when the family is complete.
 
-  Differences and intervals below are printed in full. p-values are SUPPRESSED.
-  Six rungs is 15 pairwise comparisons; times 13 metrics is 195 p-values, about
-  10 of which come up significant at 0.05 on pure noise. To make this comparison
-  testable, add it to the registry and commit — which puts the decision in git
-  history, dated, which is the only thing that makes a pre-registration credible.
+                       SPLIT IS test, DELIBERATELY. 2.7 selects the threshold and k by sweeping
+                       dev, so testing the winner against the shipped defaults ON dev would be
+                       testing a configuration against the data that chose it. The comparison is
+                       only meaningful on test, which is opened once, at 3.6.
+                       
+                       Named now rather than discovered at 2.7, because the moment to notice a
+                       circularity is before the sweep, not after it has produced a number.
 
 4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
 ------------------------------------------------------------------------------
   metric        mean A     mean B        A − B    95% CI              differ   p
   ----------------------------------------------------------------------------
-   nDCG@1      0.2361    0.2331     +0.0030   [-0.0098, +0.0161]    244      -
-   nDCG@5      0.3029    0.3042     -0.0013   [-0.0090, +0.0064]    797      -
-  *nDCG@8      0.3270    0.3269     +0.0001   [-0.0068, +0.0071]    958      -
-   nDCG@10     0.3361    0.3356     +0.0006   [-0.0062, +0.0073]   1018      -
-   P@1         0.2457    0.2426     +0.0030   [-0.0100, +0.0165]    241      -
-   P@5         0.1136    0.1132     +0.0004   [-0.0028, +0.0036]    314      -
-   P@8         0.0859    0.0854     +0.0005   [-0.0015, +0.0025]    322      -
-   P@10        0.0742    0.0731     +0.0011   [-0.0005, +0.0027]    321      -
-   R@1         0.1689    0.1684     +0.0006   [-0.0095, +0.0107]    241      -
-   R@5         0.3667    0.3660     +0.0007   [-0.0103, +0.0117]    314      -
-   R@8         0.4336    0.4285     +0.0051   [-0.0057, +0.0158]    322      -
-   R@10        0.4614    0.4556     +0.0057   [-0.0050, +0.0166]    321      -
-   MRR@10      0.3455    0.3444     +0.0011   [-0.0075, +0.0098]    881      -
+   nDCG@1      0.0924    0.0924     +0.0000   [+0.0000, +0.0000]      0      .
+   nDCG@5      0.1260    0.1260     +0.0000   [+0.0000, +0.0000]      0      .
+  *nDCG@8      0.1361    0.1361     +0.0000   [+0.0000, +0.0000]      0   1.0000
+   nDCG@10     0.1416    0.1359     +0.0057   [+0.0042, +0.0073]     64      .
+   P@1         0.0950    0.0950     +0.0000   [+0.0000, +0.0000]      0      .
+   P@5         0.0463    0.0463     +0.0000   [+0.0000, +0.0000]      0      .
+   P@8         0.0351    0.0351     +0.0000   [+0.0000, +0.0000]      0      .
+   P@10        0.0309    0.0281     +0.0028   [+0.0021, +0.0035]     64      .
+   R@1         0.0705    0.0705     +0.0000   [+0.0000, +0.0000]      0      .
+   R@5         0.1564    0.1564     +0.0000   [+0.0000, +0.0000]      0      .
+   R@8         0.1843    0.1843     +0.0000   [+0.0000, +0.0000]      0      .
+   R@10        0.2013    0.1843     +0.0170   [+0.0125, +0.0220]     64      .
+   MRR@10      0.1455    0.1433     +0.0023   [+0.0016, +0.0029]     49      .
 
   * = the pre-registered primary metric. p is reported for that metric only.
   . = computed but not reported: one pre-registered metric per comparison is what
@@ -108,26 +107,21 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 
 5. PRIMARY RESULT — nDCG@8
 ------------------------------------------------------------------------------
-  mean difference      +0.000149
-  95% CI               [-0.006823, +0.007067]
-  p                    suppressed (exploratory — see §3)
+  IDENTICAL — 0 of 2305 queries differ at nDCG@8.
 
-  queries differing    958 of 2304 (41.6%)
-                       v6-hybrid-tuned ahead on 371, v5-embeddings ahead on 587
-  effective n          958 — the CLT here runs on the queries that moved,
-                       not on all 2304. This is why the test is a bootstrap and
-                       not a paired t-test: a point mass at zero with a thin slab
-                       is where the normal approximation to the mean is worst.
-  mean over those      +0.000358 — the overall mean is this number
-                       diluted by the 1346 queries at exactly zero
+  mean difference      0.000000
+  95% CI               [0.000000, 0.000000]    zero-width BY CONSTRUCTION,
+                                               not by resampling agreement
+  p                    1.0000      every centred resample mean is exactly
+                                     0, so |mean*| >= |observed| holds for all
+                                     B. This falls out of the ASL definition;
+                                     it is not a special case in the code.
 
-  THE SENTENCE:
-    v6-hybrid-tuned beats v5-embeddings by 0.0001 nDCG@8,
-    95% CI [-0.0068, +0.0071] (p not reported).
-
-    The interval STRADDLES ZERO. Whatever the p-value says, the data is
-    consistent with no difference at all, and the sentence above should not
-    be written anywhere without this line beside it.
+  What this says: the two runs rank identically at k=8. It is NOT evidence
+  that the two retrievers are equivalent — look at the same pair at a larger k
+  before concluding anything. No bootstrap can distinguish two vectors that are
+  the same vector, and reporting a p-value here as though it had resolved
+  something would be the failure this case was chosen to catch.
 
 6. HOW THE RANDOMNESS IS PINNED
 ------------------------------------------------------------------------------
@@ -155,7 +149,7 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
                        the (1+r)/(B+1) convention. Smucker, Allan & Carterette
                        (2007). NOT the interval inversion PRIMER §5.5 describes;
                        that reading is the raw count below.
-  resamples favouring  A 5169   B 4831   tied 0
+  resamples favouring  A 0   B 0   tied 10000
                        PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
                        its own name. Deliberately not labelled a second p-value:
                        two p-values in one report is an invitation to quote the
@@ -165,7 +159,7 @@ roadmap 2.5 · 2026-08-09T07:09:49Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           8d6334d272632146799da4770426eb522391dcbe  (tracked files dirty)
+  git commit           f48e5678b76157e867952df46a4009ee1346f8ea
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js

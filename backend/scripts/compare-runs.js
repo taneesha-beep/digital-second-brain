@@ -370,10 +370,21 @@ function lookUpRegistration(a, b, split) {
   const reversed = registry.comparisons.find(
     (c) => c.a === b && c.b === a && c.split === split
   );
+  // 3.6. The registry keys on (a, b, split), and until now the report collapsed
+  // two different situations into one word. "This pair is not in the registry"
+  // is true of v6-vs-v4 — a comparison nobody registered — and equally true of
+  // v6-vs-v5 ON TEST, which is the fifth ladder step, pre-registered at 2.5, run
+  // on the split it was not registered for. Both correctly get their p-value
+  // suppressed; they are not the same fact about the experiment, and a reader
+  // of the test reports has to be able to tell which one they are holding.
+  const otherSplit = (entry || reversed) ? null : registry.comparisons.find(
+    (c) => (c.a === a && c.b === b) || (c.a === b && c.b === a)
+  );
   return {
     registry,
     entry: entry || reversed || null,
     reversed: !entry && Boolean(reversed),
+    otherSplit: otherSplit || null,
     primary: (entry || reversed)?.primaryMetric || registry.primaryMetric
   };
 }
@@ -388,6 +399,34 @@ function fmt(value, digits = 4) {
 }
 
 /** ASCII '+' / '-' rather than a typographic minus, so the report greps. */
+/**
+ * The interval as the generated sentence must express it.
+ *
+ * The sentence names the winner first, so a negative difference swaps A and B —
+ * and the interval has to be re-expressed in that same swapped direction. That
+ * is a NEGATION AND A SWAP OF THE ENDPOINTS, [lo, hi] -> [-hi, -lo]. §11.2
+ * proved the bootstrap interval mirrors exactly under the swap, which is the
+ * property that lets registry.json accept a registered pair in either
+ * direction; this is that same mirror applied to one printed line.
+ *
+ * FIXED AT 3.6, AFTER IT HAD REACHED TWO COMMITTED ARTIFACTS. The old
+ * expression was [min(|lo|,|hi|), max(|lo|,|hi|)] inline in the writer. It
+ * agrees with the mirror above whenever the endpoints share a sign, and is
+ * nonsense the moment the interval STRADDLES ZERO: it drops the minus sign and
+ * turns a true [-0.004541, +0.005812] into [0.0045, 0.0058], an interval that
+ * appears to exclude zero. So the corruption struck nulls only, in the one line
+ * of the report most likely to be quoted, while the grid and the §5 header
+ * directly above it stayed correct throughout — which is why no prose in
+ * EVALUATION.md was ever wrong, and also why nobody noticed for two rungs.
+ *
+ * Extracted from the writer for one reason: it was untestable inline, and a
+ * formatter that can silently invert a conclusion is exactly what a test should
+ * hold. tests/compare-sentence.test.js is that test.
+ */
+function sentenceInterval(meanDifference, ci) {
+  return meanDifference > 0 ? [ci[0], ci[1]] : [-ci[1], -ci[0]];
+}
+
 function signed(value, digits = 4) {
   if (value === null || value === undefined) return '-';
   return `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(digits)}`;
@@ -608,6 +647,20 @@ function buildReport(ctx) {
       w();
       for (const line of registration.entry.caveat) w(`                       ${line}`);
     }
+  } else if (registration.otherSplit) {
+    w(`  status               OFF-SPLIT — registered as "${registration.otherSplit.id}", but on ` +
+      `${registration.otherSplit.split}, not ${args.split}.`);
+    w(`  registry             ${path.relative(REPO_ROOT, REGISTRY_FILE)}`);
+    w(`  family               ${registration.registry.comparisons.length} registered comparisons; this pair is one of`);
+    w(`                       them, registered on ${registration.otherSplit.split}`);
+    w();
+    w('  Differences and intervals below are printed in full. The p-value is SUPPRESSED,');
+    w('  and the reason is not that nobody thought about this comparison — it is that the');
+    w(`  experiment was registered on ${registration.otherSplit.split} and a p computed here would be a second,`);
+    w('  unregistered test of the same hypothesis on fresh data. §11.5: the family is');
+    w('  CONSTRAINED first and corrected second, and the constraint includes the split.');
+    w('  Read the interval. If it excludes zero, that is a real statement about this');
+    w('  split; it is just not the pre-registered one, and it does not enter Holm.');
   } else {
     w('  status               EXPLORATORY — this pair is not in the registry.');
     w(`  registry             ${path.relative(REPO_ROOT, REGISTRY_FILE)}`);
@@ -708,9 +761,26 @@ function buildReport(ctx) {
     w(`  mean over those      ${signed(boot.meanOverDiffering, 6)} — the overall mean is this number`);
     w(`                       diluted by the ${boot.n - boot.differing} queries at exactly zero`);
     w();
+    // The sentence names the winner first, so when the difference is negative
+    // it swaps A and B — and the interval has to be re-expressed in that same
+    // swapped direction, which is a NEGATION AND A SWAP OF THE ENDPOINTS,
+    // [lo, hi] -> [-hi, -lo]. §11.2 proved that mirrors exactly, which is the
+    // property that lets the registry accept a pair in either direction.
+    //
+    // FIXED AT 3.6, AND IT HAD REACHED TWO COMMITTED ARTIFACTS. This line used
+    // to build the interval as [min(|lo|,|hi|), max(|lo|,|hi|)]. That agrees
+    // with the negate-and-swap above whenever both endpoints share a sign, and
+    // is nonsense the moment the interval STRADDLES ZERO: it drops the minus
+    // and reports [0.0045, 0.0058] for a true [-0.004541, +0.005812]. The
+    // corruption therefore struck only nulls, and only in the one line most
+    // likely to be quoted, while the grid and the §5 header above it stayed
+    // correct. §18.5a's fusion ablation and §18.6's tuned-vs-v5 comparison are
+    // the two committed reports it reached; both are regenerated, and the prose
+    // that cites them was never wrong because it quoted the §5 header.
+    const [sentLo, sentHi] = sentenceInterval(boot.observedMeanDifference, boot.ci);
     w('  THE SENTENCE:');
     w(`    ${better} beats ${worse} by ${magnitude.toFixed(4)} ${primary.name},`);
-    w(`    ${Math.round(boot.ciLevel * 100)}% CI [${fmt(Math.min(Math.abs(boot.ci[0]), Math.abs(boot.ci[1])), 4)}, ${fmt(Math.max(Math.abs(boot.ci[0]), Math.abs(boot.ci[1])), 4)}]` +
+    w(`    ${Math.round(boot.ciLevel * 100)}% CI [${signed(sentLo, 4)}, ${signed(sentHi, 4)}]` +
       (registration.entry && reportP ? `, p = ${formatP(boot)}.` : ' (p not reported).'));
     if (boot.ci[0] <= 0 && boot.ci[1] >= 0) {
       w();
@@ -907,10 +977,18 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (err) {
-  console.error(`\ncompare failed: ${err.message}`);
-  if (!err.assertion) console.error(err.stack);
-  process.exit(1);
+// Guarded so tests/compare-sentence.test.js can require this file for the one
+// pure function it exports without running a comparison as a side effect. The
+// CLI behaviour is unchanged: `node scripts/compare-runs.js ...` is still the
+// main module and still runs.
+if (require.main === module) {
+  try {
+    main();
+  } catch (err) {
+    console.error(`\ncompare failed: ${err.message}`);
+    if (!err.assertion) console.error(err.stack);
+    process.exit(1);
+  }
 }
+
+module.exports = { sentenceInterval };

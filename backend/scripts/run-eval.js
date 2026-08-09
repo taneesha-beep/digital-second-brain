@@ -13,6 +13,14 @@
  *   npm run eval -- --retriever v1-overlap --split dev \
  *                   --param threshold=0 --label t0 --outdir results/sweeps/runs
  *
+ * TEST IS OPENED ONCE PER LABEL, AND THAT IS NOW ENFORCED RATHER THAN PROMISED
+ * (3.6). A --split test run appends to results/runs/test-openings.json and is
+ * REFUSED if the label is already there; --reopen-test "<reason>" is the only
+ * route through and it appends a second row. --split test also refuses any
+ * --outdir but the default, because a grid point on test is not a test run.
+ * See guardTestSplit() for the policy this implements, decided before test
+ * was opened.
+ *
  * ============================================================================
  * VALIDATED AT ROADMAP 2.4. eval/metrics.js agrees with pytrec_eval to within
  * 1e-6 — max |delta| 1.11e-16 over 29,952 per-query comparisons on each of two
@@ -115,6 +123,17 @@ function parseArgs(argv) {
     // lands in the ignored results/sweeps/runs/. Nothing about scoring,
     // indexing or the written run file's contents depends on this flag.
     else if (flag === '--outdir' && value) { args.outDir = value; i += 1; }
+    // 3.6. The escape hatch on the test ledger, and it takes a MANDATORY
+    // reason. Matched on the flag alone, so `--reopen-test` with nothing after
+    // it reports the missing reason rather than falling through to the generic
+    // unknown-flag error. See openTestSplit() for why the hatch exists at all.
+    else if (flag === '--reopen-test') {
+      if (!value || value.startsWith('--')) {
+        throw new Error('--reopen-test requires a reason, quoted: --reopen-test "why this test run is being repeated"');
+      }
+      args.reopenTest = value;
+      i += 1;
+    }
     else if (flag === '--param' && value) {
       const eq = value.indexOf('=');
       if (eq < 1) throw new Error(`--param expects key=value (got ${value})`);
@@ -428,6 +447,125 @@ function writeAtomic(file, contents) {
   fs.renameSync(temp, file);
 }
 
+// ---------------------------------------------------------------------------
+// The test-split ledger (3.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * §4.4 says test is opened once per retriever version and §8.5 says the test
+ * sidecar is the evidence that it was. That was not true: this script writes
+ * <label>.<split>.run.json in place, so a second test run OVERWRITES the
+ * evidence of the first and the protocol violation leaves a diff that looks
+ * like any other regenerated sidecar. A promise nothing enforces is a promise.
+ *
+ * So the unit of evidence moves out of the overwritable file and into an
+ * APPEND-ONLY ledger, committed, keyed on (site, label):
+ *
+ *   - a first test run for a label APPENDS a row and proceeds;
+ *   - a second one FAILS, naming the row that already exists;
+ *   - --reopen-test "<reason>" appends a SECOND row carrying the reason
+ *     verbatim, and the run proceeds.
+ *
+ * THE HATCH IS THE POINT, NOT A WEAKNESS. A rule with no legal exception gets
+ * routed around invisibly — by deleting the ledger, by renaming the label, by
+ * running the eval by hand. The hatch makes the only available route through a
+ * committed row that says, in the operator's own words, why the split was
+ * opened twice. A violation becomes legible in git history instead of absent
+ * from it.
+ *
+ * THE POLICY THE HATCH IS FOR, decided at 3.6 BEFORE test was opened, because
+ * deciding it afterwards is deciding it with the answer visible:
+ *
+ *   A re-run is permitted only when the fix cannot have been CHOSEN because of
+ *   the test number.
+ *
+ *   - HARNESS bug (a parse, an assert, a metric, this runner) — it moves every
+ *     rung the same way and cannot be used to pick a winner. Fix, reopen with
+ *     the reason, proceed.
+ *   - RETRIEVER bug — a fix changes one rung's source digest, i.e. changes
+ *     which system wins, and re-running is then selection on test. Not
+ *     permitted. §4.4 applies as written: the split is BURNED, recut under a
+ *     new seed, and every Phase 3 number re-measured. That is expensive on
+ *     purpose; the expense is what makes the once-only claim worth anything.
+ */
+const TEST_LEDGER = path.join(REPO_ROOT, 'results', 'runs', 'test-openings.json');
+
+function readTestLedger() {
+  if (!fs.existsSync(TEST_LEDGER)) {
+    return {
+      _: 'APPEND-ONLY LEDGER OF TEST-SPLIT OPENINGS — roadmap 3.6, docs/EVALUATION.md §4.4 and §8.5.',
+      _why: [
+        'The tuning protocol (§4.4) says test is opened ONCE per retriever version.',
+        'Until 3.6 that was enforced by nobody: run-eval.js overwrites the sidecar,',
+        'so a second test run replaced the evidence of the first. This file is the',
+        'evidence instead, because it is APPENDED to and committed — a second',
+        'opening is a second row and a visible diff, not a silent overwrite.',
+        '',
+        'run-eval.js refuses a second run for a (site, label) already listed here.',
+        '--reopen-test "<reason>" appends another row carrying the reason, which is',
+        'the only route through, and it leaves the operator words in git history.',
+        '',
+        'DO NOT EDIT BY HAND. A row deleted here is a test opening that happened',
+        'and is no longer recorded, which is the exact failure the file exists for.'
+      ],
+      openings: []
+    };
+  }
+  return JSON.parse(fs.readFileSync(TEST_LEDGER, 'utf8'));
+}
+
+/**
+ * Called BEFORE the corpus is loaded, so a refusal costs nothing. Returns the
+ * ledger for appendTestOpening() to add to once the run has actually produced
+ * bytes — a run that fails halfway must not leave a row claiming it opened the
+ * split.
+ */
+function guardTestSplit({ split, site, label, outDir, reopenTest }) {
+  if (split !== 'test') {
+    if (reopenTest) fail('--reopen-test is only meaningful with --split test');
+    return null;
+  }
+
+  // A grid point on test is the thing §11.5 forbids in its own words — sweeps
+  // SELECT, they do not test — and it is also how a test run would slip past
+  // this ledger, since results/sweeps/runs/ is ignored wholesale. Refused here
+  // rather than trusted to discipline.
+  if (outDir !== 'results/runs') {
+    fail(
+      `--split test may only write to results/runs/ (got ${outDir}).\n` +
+      '  A grid point on test is not a test run. §11.5: sweeps select; they do not test.\n' +
+      '  Sweep on dev, then open test once for the configuration the sweep chose.'
+    );
+  }
+
+  const ledger = readTestLedger();
+  const prior = ledger.openings.filter((o) => o.site === site && o.label === label);
+  if (prior.length > 0 && !reopenTest) {
+    const first = prior[0];
+    fail(
+      `test is already open for ${site}.${label} — ${prior.length} row(s) in ` +
+      `${path.relative(REPO_ROOT, TEST_LEDGER)}.\n` +
+      `  first opened ${first.generatedAt} at commit ${String(first.gitCommit).slice(0, 8)}, runid ${first.runId}\n` +
+      '\n' +
+      '  §4.4: test is opened ONCE per retriever version and is never used to choose\n' +
+      '  anything. If a test run exposed a bug, 3.6 decided the policy in advance:\n' +
+      '    HARNESS bug   -> it moves every rung alike and cannot pick a winner.\n' +
+      '                     Re-run with --reopen-test "<reason>", which appends a row.\n' +
+      '    RETRIEVER bug -> a fix changes which system wins, so re-running is selection\n' +
+      '                     on test. The split is BURNED: recut under a new seed and\n' +
+      '                     re-measure Phase 3. Do not reopen.'
+    );
+  }
+  return ledger;
+}
+
+/** Appended only after the run file and sidecar are on disk. */
+function appendTestOpening(ledger, row) {
+  if (ledger === null) return;
+  ledger.openings.push(row);
+  writeAtomic(TEST_LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+}
+
 /**
  * The question `dirty` answers is "does the code at `commit` reproduce this
  * run?", so it counts modifications to TRACKED files only. Untracked files are
@@ -497,6 +635,9 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const { site, split, retriever, ks } = args;
   const label = args.label || retriever;
+
+  // Before anything is loaded, so a refusal is instant. Returns null off test.
+  const testLedger = guardTestSplit({ split, site, label, outDir: args.outDir, reopenTest: args.reopenTest });
 
   const corpusFile = path.join(REPO_ROOT, 'data', 'corpus', `${site}.jsonl`);
   const qrelsFile = path.join(REPO_ROOT, 'data', 'qrels', `${site}.qrels`);
@@ -727,6 +868,25 @@ function main() {
     generatedAt: new Date().toISOString()
   };
   writeAtomic(`${runFile}.json`, `${JSON.stringify(sidecar, null, 2)}\n`);
+
+  // Last, and only once both artifacts exist: a row here asserts that the split
+  // was opened and that there is something to show for it. The sidecar's own
+  // SHA-256 is recorded because the sidecar is the overwritable half — if it is
+  // ever regenerated, this row is what says the bytes moved.
+  appendTestOpening(testLedger, {
+    site,
+    label,
+    runId,
+    paramDigest: provenance.digest,
+    sourceDigest: sidecar.retrieverSource.digest,
+    runSha256: sidecar.output.sha256,
+    sidecarSha256: sha256File(`${runFile}.json`),
+    ndcg8: summary.ndcg[8],
+    gitCommit: sidecar.git.commit,
+    gitDirty: sidecar.git.dirty,
+    generatedAt: sidecar.generatedAt,
+    reopenReason: args.reopenTest || null
+  });
 
   // --- report ---------------------------------------------------------------
   printTable(summary, ks);

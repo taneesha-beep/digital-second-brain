@@ -1,0 +1,148 @@
+{
+  "provisional": false,
+  "metricsValidation": {
+    "reference": "pytrec-eval-terrier 0.5.10",
+    "tolerance": 0.000001,
+    "maxAbsDelta": 1.11e-16,
+    "evidence": "results/metric-validation.txt",
+    "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
+  },
+  "runId": "v4-bm25.test.ba72e199",
+  "label": "v4-bm25",
+  "site": "cooking",
+  "split": "test",
+  "retriever": {
+    "version": "v4-bm25",
+    "params": {
+      "k1": 1.2,
+      "b": 0.75,
+      "idfVariant": "lucene",
+      "qtfMode": "linear",
+      "titleWeight": 2
+    },
+    "docCount": 27325,
+    "digest": "ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c",
+    "symmetric": false
+  },
+  "retrieverSource": {
+    "files": [
+      {
+        "path": "backend/retrieval/index.js",
+        "sha256": "84f62dc700c7f68e1dfd572d1bf9dcfbd3d746f68f25f3298254a315cc368694"
+      },
+      {
+        "path": "backend/retrieval/types.js",
+        "sha256": "9d5aef1408c27ea68c3e31978c5e105602ba14ecdda5c797c8f252bee6254534"
+      },
+      {
+        "path": "backend/retrieval/v1-overlap.js",
+        "sha256": "d445f40de4c5379a89af39cfaf608a0739eb1e7d37f771cb9e56b045f301153c"
+      },
+      {
+        "path": "backend/retrieval/v4-bm25.js",
+        "sha256": "2b48c622fb5e7c49fbf08a95eb404abf5e06652a2f298a50010137243c0cab22"
+      }
+    ],
+    "digest": "74bc43cc748d30ec7439d3574ef82cd3edb985d2acf2027dc6092d1ee46e794f"
+  },
+  "vectors": null,
+  "k": 10,
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "command": "npm run eval -- --retriever v4-bm25 --split test",
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "matchesManifest": true
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1",
+      "matchesManifest": true
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.test.txt",
+      "sha256": "95d3f5a7b5d6bcec009ea3c55792b30bcef3c223ea81250288677ee8c9a50518",
+      "matchesManifest": true
+    }
+  ],
+  "output": {
+    "run": "results/runs/v4-bm25.test.run",
+    "lines": 23050,
+    "bytes": 1141283,
+    "sha256": "a09a8cf419fb8e07efc3e83fe88427caeb2af0108c603aee5b971906170ac0c3"
+  },
+  "queries": {
+    "total": 2305,
+    "scored": 2305,
+    "unjudgeable": 0,
+    "unjudgeableIds": [],
+    "zeroResult": 0,
+    "zeroResultFile": "results/runs/v4-bm25.test.zero.txt"
+  },
+  "metrics": {
+    "ndcg": {
+      "1": 0.17917570498915394,
+      "5": 0.22324688548342952,
+      "8": 0.23907002949388706,
+      "10": 0.24642083321693395
+    },
+    "p": {
+      "1": 0.18611713665943602,
+      "5": 0.08242950108459815,
+      "8": 0.061659436008676786,
+      "10": 0.05327548806941359
+    },
+    "r": {
+      "1": 0.12981917962794773,
+      "5": 0.26504008927532946,
+      "8": 0.3102671329940088,
+      "10": 0.3330411545858179
+    },
+    "mrr": 0.25645456736563044
+  },
+  "conventions": {
+    "gain": "2^grade - 1",
+    "discount": "1 / log2(rank + 1)",
+    "idcg": "judged grades sorted descending, truncated at k",
+    "zeroResultQueries": "scored 0, included in the mean",
+    "unjudgeableQueries": "excluded from the mean, counted separately",
+    "mrr": "recip_rank@10 — the list is truncated at k before scoring"
+  },
+  "latencyMs": {
+    "note": "per-query search() only; index build reported separately",
+    "mean": 4.66220559479392,
+    "p50": 4.68075,
+    "p95": 7.644292,
+    "max": 10.92
+  },
+  "timingsMs": {
+    "load": 82.528041,
+    "index": 1008.117584,
+    "search": 10764.555791,
+    "total": 11855.201416
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "cpus": 8,
+    "totalMemMiB": 8192,
+    "peakRssMiB": 430
+  },
+  "git": {
+    "commit": "8d6334d272632146799da4770426eb522391dcbe",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
+  },
+  "generatedAt": "2026-08-09T07:01:48.297Z"
+}

@@ -1,0 +1,145 @@
+{
+  "provisional": false,
+  "metricsValidation": {
+    "reference": "pytrec-eval-terrier 0.5.10",
+    "tolerance": 0.000001,
+    "maxAbsDelta": 1.11e-16,
+    "evidence": "results/metric-validation.txt",
+    "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
+  },
+  "runId": "v1-overlap.test.93bc8d65",
+  "label": "v1-overlap",
+  "site": "cooking",
+  "split": "test",
+  "retriever": {
+    "version": "v1-overlap",
+    "params": {
+      "idfCorpus": "leave-one-out",
+      "topN": 10,
+      "threshold": 0.15,
+      "cap": 8,
+      "scorePrecision": 4,
+      "lengthBonus": true
+    },
+    "docCount": 27325,
+    "digest": "93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30",
+    "symmetric": false
+  },
+  "retrieverSource": {
+    "files": [
+      {
+        "path": "backend/retrieval/index.js",
+        "sha256": "84f62dc700c7f68e1dfd572d1bf9dcfbd3d746f68f25f3298254a315cc368694"
+      },
+      {
+        "path": "backend/retrieval/types.js",
+        "sha256": "9d5aef1408c27ea68c3e31978c5e105602ba14ecdda5c797c8f252bee6254534"
+      },
+      {
+        "path": "backend/retrieval/v1-overlap.js",
+        "sha256": "d445f40de4c5379a89af39cfaf608a0739eb1e7d37f771cb9e56b045f301153c"
+      }
+    ],
+    "digest": "8c30c03645f1c9a95e707fa4d3f5b23d293c60aa8d7ac5b29bf4744ad6c9ec94"
+  },
+  "vectors": null,
+  "k": 10,
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "command": "npm run eval -- --retriever v1-overlap --split test",
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "matchesManifest": true
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1",
+      "matchesManifest": true
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.test.txt",
+      "sha256": "95d3f5a7b5d6bcec009ea3c55792b30bcef3c223ea81250288677ee8c9a50518",
+      "matchesManifest": true
+    }
+  ],
+  "output": {
+    "run": "results/runs/v1-overlap.test.run",
+    "lines": 17837,
+    "bytes": 918621,
+    "sha256": "9676d8b2ca5184d946b8310bccbe09890f98f90cf6ad4a766e8ea82c1e705103"
+  },
+  "queries": {
+    "total": 2305,
+    "scored": 2305,
+    "unjudgeable": 0,
+    "unjudgeableIds": [],
+    "zeroResult": 9,
+    "zeroResultFile": "results/runs/v1-overlap.test.zero.txt"
+  },
+  "metrics": {
+    "ndcg": {
+      "1": 0.0924078091106291,
+      "5": 0.12603373625966532,
+      "8": 0.1360824679780947,
+      "10": 0.13593091306453794
+    },
+    "p": {
+      "1": 0.09501084598698481,
+      "5": 0.04633405639913271,
+      "8": 0.0351409978308026,
+      "10": 0.028112798264642316
+    },
+    "r": {
+      "1": 0.0705001865543292,
+      "5": 0.15640684848850564,
+      "8": 0.1843104657196716,
+      "10": 0.1843104657196716
+    },
+    "mrr": 0.1432630926557174
+  },
+  "conventions": {
+    "gain": "2^grade - 1",
+    "discount": "1 / log2(rank + 1)",
+    "idcg": "judged grades sorted descending, truncated at k",
+    "zeroResultQueries": "scored 0, included in the mean",
+    "unjudgeableQueries": "excluded from the mean, counted separately",
+    "mrr": "recip_rank@10 — the list is truncated at k before scoring"
+  },
+  "latencyMs": {
+    "note": "per-query search() only; index build reported separately",
+    "mean": 0.5393324676789583,
+    "p50": 0.503625,
+    "p95": 1.049125,
+    "max": 2.881792
+  },
+  "timingsMs": {
+    "load": 92.967291,
+    "index": 1283.429875,
+    "search": 1256.161083,
+    "total": 2632.5582489999997
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "cpus": 8,
+    "totalMemMiB": 8192,
+    "peakRssMiB": 385
+  },
+  "git": {
+    "commit": "8d6334d272632146799da4770426eb522391dcbe",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
+  },
+  "generatedAt": "2026-08-09T07:01:11.135Z"
+}
