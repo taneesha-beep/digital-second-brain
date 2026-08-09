@@ -1,0 +1,173 @@
+PAIRED BOOTSTRAP — v1-overlap-tuned  vs  v1-overlap
+roadmap 2.5 · 2026-08-09T07:10:49Z
+==============================================================================
+
+  Direction is A − B throughout. A is the first label on the command line.
+
+1. THE TWO RUNS
+------------------------------------------------------------------------------
+  A  v1-overlap-tuned
+     runid    v1-overlap-tuned.test.6245ccbf
+     digest   6245ccbf7e0b8e120bf7fdc9406af9d6f0ab2d13350c15ce58be6977372aa83c
+     source   8c30c03645f1c9a95e707fa4d3f5b23d293c60aa8d7ac5b29bf4744ad6c9ec94
+     run      results/runs/v1-overlap-tuned.test.run
+              sha256 61caf582040565adda0ed5c2999b449afe10a29473d2b499fd5390be65d640a3  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v1-overlap-tuned.test.run.json  (committed)
+     command  npm run eval -- --retriever v1-overlap --split test --param threshold=0 --param cap=10 --label v1-overlap-tuned
+
+  B  v1-overlap
+     runid    v1-overlap.test.93bc8d65
+     digest   93bc8d65e472ba96c27b3aaff3504b623533076114d9b127e1282de902579e30
+     source   8c30c03645f1c9a95e707fa4d3f5b23d293c60aa8d7ac5b29bf4744ad6c9ec94
+     run      results/runs/v1-overlap.test.run
+              sha256 9676d8b2ca5184d946b8310bccbe09890f98f90cf6ad4a766e8ea82c1e705103  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v1-overlap.test.run.json  (committed)
+     command  npm run eval -- --retriever v1-overlap --split test
+
+  parameters, and how many of them moved:
+     cap              A 10               B 8                 <-- differs
+     idfCorpus        A "leave-one-out"  B "leave-one-out" 
+     lengthBonus      A true             B true            
+     scorePrecision   A 4                B 4               
+     threshold        A 0                B 0.15              <-- differs
+     topN             A 10               B 10              
+
+  !! 2 variables changed at once: cap, threshold.
+     CLAUDE.md: never change two variables at once — an unattributable result is
+     worthless. Printed rather than refused, because a rung comparison changes
+     `version` legitimately; but if `version` is not the only entry above, the
+     difference below cannot be assigned to any one cause.
+
+  the SOURCE each run was produced from, re-hashed now and compared:
+     A  8c30c03645f1c9a9…  MATCHES the working tree (3 files)
+     B  8c30c03645f1c9a9…  MATCHES the working tree (3 files)
+
+2. THE PAIRED POPULATION
+------------------------------------------------------------------------------
+  split                cooking.test — 2305 queries
+  scored               A 2305   B 2305   (unjudgeable and excluded: A 0, B 0)
+  identical qid set    ASSERTED — both sides scored over the split file, in split order.
+                       This is the only thing pairing requires, and it is a hard
+                       failure if it does not hold.
+
+  zero-result queries  A 0   B 9   both 0
+                       only A: 0
+                       only B: 9 (54864, 109169, 8415, 86292, 20568, …)
+                       Reported, never gated. A retriever that returns results
+                       where the other returned none is a better retriever, not an
+                       unpairable one — that query is exactly the difference the
+                       test exists to measure.
+
+  re-derivation        both sides re-scored from the WRITTEN run file through
+                       backend/eval/metrics.js (validated at 2.4), and each
+                       aggregate asserted against its committed sidecar at EXACT
+                       float equality. Passed.
+
+3. PRE-REGISTRATION
+------------------------------------------------------------------------------
+  status               PRE-REGISTERED — "sweep-tuned-vs-shipped"
+  registry             results/comparisons/registry.json
+  primary metric       NDCG@8
+  family               7 registered comparisons
+  correction           holm-bonferroni, family-wise alpha 0.05
+                       NOT applied here. Holm needs every p in the family at once,
+                       and the family fills up one rung per session across Phase 3.
+                       The p below is RAW. Adjust when the family is complete.
+
+                       SPLIT IS test, DELIBERATELY. 2.7 selects the threshold and k by sweeping
+                       dev, so testing the winner against the shipped defaults ON dev would be
+                       testing a configuration against the data that chose it. The comparison is
+                       only meaningful on test, which is opened once, at 3.6.
+                       
+                       Named now rather than discovered at 2.7, because the moment to notice a
+                       circularity is before the sweep, not after it has produced a number.
+
+4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
+------------------------------------------------------------------------------
+  metric        mean A     mean B        A − B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.0924    0.0924     +0.0000   [+0.0000, +0.0000]      0      .
+   nDCG@5      0.1260    0.1260     +0.0000   [+0.0000, +0.0000]      0      .
+  *nDCG@8      0.1361    0.1361     +0.0000   [+0.0000, +0.0000]      0   1.0000
+   nDCG@10     0.1416    0.1359     +0.0057   [+0.0042, +0.0073]     64      .
+   P@1         0.0950    0.0950     +0.0000   [+0.0000, +0.0000]      0      .
+   P@5         0.0463    0.0463     +0.0000   [+0.0000, +0.0000]      0      .
+   P@8         0.0351    0.0351     +0.0000   [+0.0000, +0.0000]      0      .
+   P@10        0.0309    0.0281     +0.0028   [+0.0021, +0.0035]     64      .
+   R@1         0.0705    0.0705     +0.0000   [+0.0000, +0.0000]      0      .
+   R@5         0.1564    0.1564     +0.0000   [+0.0000, +0.0000]      0      .
+   R@8         0.1843    0.1843     +0.0000   [+0.0000, +0.0000]      0      .
+   R@10        0.2013    0.1843     +0.0170   [+0.0125, +0.0220]     64      .
+   MRR@10      0.1455    0.1433     +0.0023   [+0.0016, +0.0029]     49      .
+
+  * = the pre-registered primary metric. p is reported for that metric only.
+  . = computed but not reported: one pre-registered metric per comparison is what
+      keeps a p-value from being read thirteen times. The CI is the honest summary
+      for every other row, and it is printed for all of them.
+
+5. PRIMARY RESULT — nDCG@8
+------------------------------------------------------------------------------
+  IDENTICAL — 0 of 2305 queries differ at nDCG@8.
+
+  mean difference      0.000000
+  95% CI               [0.000000, 0.000000]    zero-width BY CONSTRUCTION,
+                                               not by resampling agreement
+  p                    1.0000      every centred resample mean is exactly
+                                     0, so |mean*| >= |observed| holds for all
+                                     B. This falls out of the ASL definition;
+                                     it is not a special case in the code.
+
+  What this says: the two runs rank identically at k=8. It is NOT evidence
+  that the two retrievers are equivalent — look at the same pair at a larger k
+  before concluding anything. No bootstrap can distinguish two vectors that are
+  the same vector, and reporting a p-value here as though it had resolved
+  something would be the failure this case was chosen to catch.
+
+6. HOW THE RANDOMNESS IS PINNED
+------------------------------------------------------------------------------
+  prng                 mulberry32, seeded — the same generator build-splits.js
+                       uses at 1.4. Math.random() cannot be seeded in Node, and a
+                       p-value that changes between runs is not a result.
+  seed                 20260804
+  resamples            10000
+                       chosen against the sampling error it estimates, not by
+                       convention: at p ~= 0.05 the Monte Carlo standard error is
+                       sqrt(0.05 * 0.95 / B) = 0.0022 here, which resolves the 0.05
+                       threshold to about ± 0.004 — enough to decide significance,
+                       not enough to justify a third decimal. The se is printed
+                       above so that is visible rather than trusted.
+  interval             percentile, over the 10000 resampled means, as a pair of
+                       order statistics at index floor(alpha/2 * B) and its mirror
+                       B-1-that. Symmetric by construction, so comparing A against
+                       B and B against A give exactly mirrored intervals — the
+                       registry accepts a registered pair in either direction, so
+                       both orders will be run. The obvious nearest-rank convention
+                       is off by one order statistic under that swap; a mirror test
+                       caught it, worth ~2e-4 on real dev data.
+  p-value              centred (shifted) bootstrap ASL — differences shifted to
+                       mean zero under H0, then |mean*| >= |observed| counted, with
+                       the (1+r)/(B+1) convention. Smucker, Allan & Carterette
+                       (2007). NOT the interval inversion PRIMER §5.5 describes;
+                       that reading is the raw count below.
+  resamples favouring  A 0   B 0   tied 10000
+                       PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
+                       its own name. Deliberately not labelled a second p-value:
+                       two p-values in one report is an invitation to quote the
+                       smaller one.
+
+7. ENVIRONMENT
+------------------------------------------------------------------------------
+  node                 v25.8.1
+  platform             darwin 25.6.0 arm64
+  git commit           f48e5678b76157e867952df46a4009ee1346f8ea
+  scorer               backend/eval/metrics.js — validated against pytrec_eval at
+                       2.4, max |delta| 1.11e-16. results/metric-validation.txt
+  bootstrap            backend/eval/bootstrap.js
+
+  Absolute figures remain LOWER BOUNDS (EVALUATION.md §5.1): the judgments are
+  positive-only and incomplete, so an unjudged relevant document scores as a miss.
+  The DIFFERENCE above is the number that survives that, because both runs face the
+  identical incomplete key. Validation and incompleteness are two separate
+  qualifiers and neither one retires the other.
+
+==============================================================================

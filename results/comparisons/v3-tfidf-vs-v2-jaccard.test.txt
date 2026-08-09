@@ -1,0 +1,172 @@
+PAIRED BOOTSTRAP — v3-tfidf  vs  v2-jaccard
+roadmap 2.5 · 2026-08-09T07:10:29Z
+==============================================================================
+
+  Direction is A − B throughout. A is the first label on the command line.
+
+1. THE TWO RUNS
+------------------------------------------------------------------------------
+  A  v3-tfidf
+     runid    v3-tfidf.test.3625fedf
+     digest   3625fedf12b9e7c10466fa2a49e30ef7f6de72a05926f43d3c51c14aa4ba84e4
+     source   f57630fc3b866846da0c4bea98250bd8f0bdaa9fe2721866e4c540e111342397
+     run      results/runs/v3-tfidf.test.run
+              sha256 e75821398a380af997c46c0267ae168ede6412b09b35c4ddcb93fc97f492294c  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v3-tfidf.test.run.json  (committed)
+     command  npm run eval -- --retriever v3-tfidf --split test
+
+  B  v2-jaccard
+     runid    v2-jaccard.test.fb0bc25a
+     digest   fb0bc25ae7241f19797701560e7a56b1c1c071edd4ce46599e1f7b0ba1a7fe06
+     source   6680916d89a0551020e2a5e31a38159d2668138b57b4a27add76df13b7fdc1b6
+     run      results/runs/v2-jaccard.test.run
+              sha256 92e615572c09e62225f74755fe7d03dc0de8cf33e2d4c8c6af82132539efdc73  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v2-jaccard.test.run.json  (committed)
+     command  npm run eval -- --retriever v2-jaccard --split test
+
+  parameters, and how many of them moved:
+     version          A "v3-tfidf"       B "v2-jaccard"      <-- differs
+     cap              A undefined        B 8                 <-- differs
+     idfCorpus        A "leave-one-out"  B "leave-one-out" 
+     lengthBonus      A true             B true            
+     minShared        A 1                B 2                 <-- differs
+     scorePrecision   A undefined        B 4                 <-- differs
+     threshold        A undefined        B 0                 <-- differs
+     topN             A null             B 10                <-- differs
+
+  !! 6 variables changed at once: version, cap, minShared, scorePrecision, threshold, topN.
+     CLAUDE.md: never change two variables at once — an unattributable result is
+     worthless. Printed rather than refused, because a rung comparison changes
+     `version` legitimately; but if `version` is not the only entry above, the
+     difference below cannot be assigned to any one cause.
+
+  the SOURCE each run was produced from, re-hashed now and compared:
+     A  f57630fc3b866846…  MATCHES the working tree (4 files)
+     B  6680916d89a05510…  MATCHES the working tree (4 files)
+
+2. THE PAIRED POPULATION
+------------------------------------------------------------------------------
+  split                cooking.test — 2305 queries
+  scored               A 2305   B 2305   (unjudgeable and excluded: A 0, B 0)
+  identical qid set    ASSERTED — both sides scored over the split file, in split order.
+                       This is the only thing pairing requires, and it is a hard
+                       failure if it does not hold.
+
+  zero-result queries  A 0   B 9   both 0
+                       only A: 0
+                       only B: 9 (54864, 109169, 8415, 86292, 20568, …)
+                       Reported, never gated. A retriever that returns results
+                       where the other returned none is a better retriever, not an
+                       unpairable one — that query is exactly the difference the
+                       test exists to measure.
+
+  re-derivation        both sides re-scored from the WRITTEN run file through
+                       backend/eval/metrics.js (validated at 2.4), and each
+                       aggregate asserted against its committed sidecar at EXACT
+                       float equality. Passed.
+
+3. PRE-REGISTRATION
+------------------------------------------------------------------------------
+  status               OFF-SPLIT — registered as "ladder-v2-v3", but on dev, not test.
+  registry             results/comparisons/registry.json
+  family               7 registered comparisons; this pair is one of
+                       them, registered on dev
+
+  Differences and intervals below are printed in full. The p-value is SUPPRESSED,
+  and the reason is not that nobody thought about this comparison — it is that the
+  experiment was registered on dev and a p computed here would be a second,
+  unregistered test of the same hypothesis on fresh data. §11.5: the family is
+  CONSTRAINED first and corrected second, and the constraint includes the split.
+  Read the interval. If it excludes zero, that is a real statement about this
+  split; it is just not the pre-registered one, and it does not enter Holm.
+
+4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
+------------------------------------------------------------------------------
+  metric        mean A     mean B        A − B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.1367    0.0892     +0.0474   [+0.0338, +0.0615]    290      -
+   nDCG@5      0.1798    0.1253     +0.0545   [+0.0434, +0.0660]    677      -
+  *nDCG@8      0.1952    0.1371     +0.0581   [+0.0472, +0.0694]    803      -
+   nDCG@10     0.2040    0.1370     +0.0670   [+0.0560, +0.0784]    860      -
+   P@1         0.1427    0.0915     +0.0512   [+0.0373, +0.0659]    290      -
+   P@5         0.0668    0.0462     +0.0207   [+0.0166, +0.0249]    493      -
+   P@8         0.0511    0.0357     +0.0154   [+0.0126, +0.0182]    546      -
+   P@10        0.0454    0.0285     +0.0168   [+0.0144, +0.0192]    603      -
+   R@1         0.1013    0.0682     +0.0331   [+0.0224, +0.0443]    290      -
+   R@5         0.2183    0.1555     +0.0628   [+0.0483, +0.0775]    493      -
+   R@8         0.2617    0.1881     +0.0736   [+0.0581, +0.0891]    546      -
+   R@10        0.2890    0.1881     +0.1010   [+0.0849, +0.1169]    603      -
+   MRR@10      0.2082    0.1428     +0.0655   [+0.0532, +0.0784]    828      -
+
+  * = the pre-registered primary metric. p is reported for that metric only.
+  . = computed but not reported: one pre-registered metric per comparison is what
+      keeps a p-value from being read thirteen times. The CI is the honest summary
+      for every other row, and it is printed for all of them.
+
+5. PRIMARY RESULT — nDCG@8
+------------------------------------------------------------------------------
+  mean difference      +0.058093
+  95% CI               [+0.047177, +0.069367]
+  p                    suppressed (exploratory — see §3)
+
+  queries differing    803 of 2305 (34.8%)
+                       v3-tfidf ahead on 547, v2-jaccard ahead on 256
+  effective n          803 — the CLT here runs on the queries that moved,
+                       not on all 2305. This is why the test is a bootstrap and
+                       not a paired t-test: a point mass at zero with a thin slab
+                       is where the normal approximation to the mean is worst.
+  mean over those      +0.166755 — the overall mean is this number
+                       diluted by the 1502 queries at exactly zero
+
+  THE SENTENCE:
+    v3-tfidf beats v2-jaccard by 0.0581 nDCG@8,
+    95% CI [+0.0472, +0.0694] (p not reported).
+
+6. HOW THE RANDOMNESS IS PINNED
+------------------------------------------------------------------------------
+  prng                 mulberry32, seeded — the same generator build-splits.js
+                       uses at 1.4. Math.random() cannot be seeded in Node, and a
+                       p-value that changes between runs is not a result.
+  seed                 20260804
+  resamples            10000
+                       chosen against the sampling error it estimates, not by
+                       convention: at p ~= 0.05 the Monte Carlo standard error is
+                       sqrt(0.05 * 0.95 / B) = 0.0022 here, which resolves the 0.05
+                       threshold to about ± 0.004 — enough to decide significance,
+                       not enough to justify a third decimal. The se is printed
+                       above so that is visible rather than trusted.
+  interval             percentile, over the 10000 resampled means, as a pair of
+                       order statistics at index floor(alpha/2 * B) and its mirror
+                       B-1-that. Symmetric by construction, so comparing A against
+                       B and B against A give exactly mirrored intervals — the
+                       registry accepts a registered pair in either direction, so
+                       both orders will be run. The obvious nearest-rank convention
+                       is off by one order statistic under that swap; a mirror test
+                       caught it, worth ~2e-4 on real dev data.
+  p-value              centred (shifted) bootstrap ASL — differences shifted to
+                       mean zero under H0, then |mean*| >= |observed| counted, with
+                       the (1+r)/(B+1) convention. Smucker, Allan & Carterette
+                       (2007). NOT the interval inversion PRIMER §5.5 describes;
+                       that reading is the raw count below.
+  resamples favouring  A 10000   B 0   tied 0
+                       PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
+                       its own name. Deliberately not labelled a second p-value:
+                       two p-values in one report is an invitation to quote the
+                       smaller one.
+
+7. ENVIRONMENT
+------------------------------------------------------------------------------
+  node                 v25.8.1
+  platform             darwin 25.6.0 arm64
+  git commit           f48e5678b76157e867952df46a4009ee1346f8ea
+  scorer               backend/eval/metrics.js — validated against pytrec_eval at
+                       2.4, max |delta| 1.11e-16. results/metric-validation.txt
+  bootstrap            backend/eval/bootstrap.js
+
+  Absolute figures remain LOWER BOUNDS (EVALUATION.md §5.1): the judgments are
+  positive-only and incomplete, so an unjudged relevant document scores as a miss.
+  The DIFFERENCE above is the number that survives that, because both runs face the
+  identical incomplete key. Validation and incompleteness are two separate
+  qualifiers and neither one retires the other.
+
+==============================================================================
