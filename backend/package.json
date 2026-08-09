@@ -26,6 +26,7 @@
     "analyse:ladder": "node scripts/analyse-ladder.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
     "check:claims": "node scripts/check-claims.js",
+    "check:blocks": "node scripts/check-blocks.js",
     "embed:corpus": "node ../scripts/embed-corpus.js",
     "analyse:vocab": "node scripts/analyse-vocabulary.js"
   },
