@@ -22,11 +22,20 @@
  * would be exactly the claim the rule forbids. So this prints Σ_t df_t², the
  * postings count and the candidate-pool distribution for both vocabularies.
  *
- * READ-ONLY, on the same reasoning as analyze-ground-truth.js at 1.5 and
- * analyse-rungs.js at 3.1: it writes nothing and is in no number's provenance
- * chain. It builds the same index the runner builds, through the same
- * retrieval/ entry point, so it cannot describe a configuration the harness
- * would not produce.
+ * IT NOW WRITES ITS REPORT — changed at 3.7, and the reason is a mechanism
+ * rather than a preference. This script was read-only on 1.5's reasoning: a
+ * script that only reads cannot invalidate the artifact it describes. That
+ * argument is still true and it stopped being sufficient at 3.6, when
+ * `check:claims` began requiring every 4+ decimal quoted in a writeup to be the
+ * correct rounding of one in a COMMITTED artifact. `3.73e7` — the Σ_t df_t²
+ * figure this script computes, quoted twice in ROADMAP.md — has no committed
+ * artifact, so it is a permanent reported gap: a correct number the mechanism
+ * can never confirm. A standing exception is exactly how a check stops being
+ * believed. The read-only property is preserved where it matters: this writes
+ * only its own report, under its own name, and touches no input.
+ *
+ * It builds the same index the runner builds, through the same retrieval/ entry
+ * point, so it cannot describe a configuration the harness would not produce.
  *
  * TWO COSTS THAT ARE ROUTINELY CONFLATED, and the point of the output is to
  * keep them apart:
@@ -46,12 +55,18 @@ const retrieval = require('../retrieval');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
+// The report, accumulated rather than printed straight out, so the same bytes
+// go to stdout and to the file. Two formatters would drift.
+const OUT = [];
+const w = (line = '') => OUT.push(line);
+
 function parseArgs(argv) {
-  const args = { site: 'cooking', split: 'dev' };
+  const args = { site: 'cooking', split: 'dev', write: true };
   for (let i = 0; i < argv.length; i += 1) {
     const [flag, value] = [argv[i], argv[i + 1]];
     if (flag === '--site' && value) { args.site = value; i += 1; }
     else if (flag === '--split' && value) { args.split = value; i += 1; }
+    else if (flag === '--no-write') args.write = false;
     else if (flag.startsWith('--')) {
       console.error(`analyse-vocabulary: unknown flag ${flag}`);
       process.exit(1);
@@ -84,12 +99,12 @@ function main() {
   const docs = readLines(corpusFile).map((line) => JSON.parse(line));
   const queryIds = readLines(splitFile);
 
-  console.log(`ANALYSE VOCABULARY — ${args.site}, N=${docs.length}, ${args.split} ${queryIds.length} queries`);
-  console.log('='.repeat(78));
-  console.log();
-  console.log('  Both arms are v3-tfidf; only topN moves, so the two rows are one');
-  console.log('  variable apart and the ratio between them is what truncation buys.');
-  console.log();
+  w(`ANALYSE VOCABULARY — ${args.site}, N=${docs.length}, ${args.split} ${queryIds.length} queries`);
+  w('='.repeat(78));
+  w();
+  w('  Both arms are v3-tfidf; only topN moves, so the two rows are one');
+  w('  variable apart and the ratio between them is what truncation buys.');
+  w();
 
   const rows = [];
   for (const topN of [null, 10]) {
@@ -137,56 +152,65 @@ function main() {
   const [full, top10] = rows;
   const fmt = (n) => n.toLocaleString('en-US');
 
-  console.log('  INDEX AND THE EDGE-EMISSION BOUND');
-  console.log('  ' + '-'.repeat(76));
-  console.log('                                 full vocabulary        top-10        ratio');
+  w('  INDEX AND THE EDGE-EMISSION BOUND');
+  w('  ' + '-'.repeat(76));
+  w('                                 full vocabulary        top-10        ratio');
   const line = (label, a, b, exp) => {
     const s = (v) => (exp ? v.toExponential(4) : fmt(v));
-    console.log(`  ${label.padEnd(28)} ${s(a).padStart(16)} ${s(b).padStart(13)}   ${(a / b).toFixed(2)}x`);
+    w(`  ${label.padEnd(28)} ${s(a).padStart(16)} ${s(b).padStart(13)}   ${(a / b).toFixed(2)}x`);
   };
   line('|V| (terms with postings)', full.vocabulary, top10.vocabulary);
   line('postings  Sigma_t df_t', full.postings, top10.postings);
   line('Sigma_t df_t^2', full.sumSq, top10.sumSq, true);
   line('max df', full.maxDf, top10.maxDf);
-  console.log();
-  console.log('  Sigma_t df_t^2 is the ALL-PAIRS edge-emission cost — what Phase 4 pays when');
-  console.log('  the app rebuilds a graph over N documents. The eval never pays it: it runs');
-  console.log(`  ${queryIds.length} queries, not ${fmt(docs.length)}^2. Reporting one as though it bounded the other`);
-  console.log('  is the error CLAUDE.md names.');
-  console.log();
+  w();
+  w('  Sigma_t df_t^2 is the ALL-PAIRS edge-emission cost — what Phase 4 pays when');
+  w('  the app rebuilds a graph over N documents. The eval never pays it: it runs');
+  w(`  ${queryIds.length} queries, not ${fmt(docs.length)}^2. Reporting one as though it bounded the other`);
+  w('  is the error CLAUDE.md names.');
+  w();
 
-  console.log('  PER-DOCUMENT AND PER-QUERY COST');
-  console.log('  ' + '-'.repeat(76));
+  w('  PER-DOCUMENT AND PER-QUERY COST');
+  w('  ' + '-'.repeat(76));
   for (const r of rows) {
     const label = r.topN === null ? 'full vocabulary' : `topN ${r.topN}`;
-    console.log(`  ${label}`);
-    console.log(
+    w(`  ${label}`);
+    w(
       `    terms/doc          mean ${r.mean(r.termsPerDoc).toFixed(1).padStart(8)}  p50 ${String(quantile(r.termsPerDoc, 0.5)).padStart(6)}` +
       `  p95 ${String(quantile(r.termsPerDoc, 0.95)).padStart(6)}  max ${String(r.termsPerDoc[r.termsPerDoc.length - 1]).padStart(6)}`
     );
-    console.log(
+    w(
       `    candidate pool     mean ${r.mean(r.pool).toFixed(0).padStart(8)}  p50 ${String(quantile(r.pool, 0.5)).padStart(6)}` +
       `  p95 ${String(quantile(r.pool, 0.95)).padStart(6)}  max ${String(r.pool[r.pool.length - 1]).padStart(6)}`
     );
-    console.log(
+    w(
       `    postings visited   mean ${r.mean(r.work).toFixed(0).padStart(8)}  p50 ${String(quantile(r.work, 0.5)).padStart(6)}` +
       `  p95 ${String(quantile(r.work, 0.95)).padStart(6)}  max ${String(r.work[r.work.length - 1]).padStart(6)}`
     );
     const share = (100 * r.mean(r.pool)) / docs.length;
-    console.log(`    mean pool is ${share.toFixed(1)}% of the corpus`);
-    console.log();
+    w(`    mean pool is ${share.toFixed(1)}% of the corpus`);
+    w();
   }
 
-  console.log(`  Total postings visited over the whole ${args.split} run:`);
+  w(`  Total postings visited over the whole ${args.split} run:`);
   for (const r of rows) {
     const label = r.topN === null ? 'full vocabulary' : `topN ${r.topN}`;
-    console.log(`    ${label.padEnd(18)} ${fmt(Math.round(r.mean(r.work) * queryIds.length))}`);
+    w(`    ${label.padEnd(18)} ${fmt(Math.round(r.mean(r.work) * queryIds.length))}`);
   }
-  console.log();
-  console.log('  There is NO document-frequency cutoff. If one ever becomes necessary it');
-  console.log('  will be a retriever PARAM that lands in describe(handle).digest, never a');
-  console.log('  silent constant — a silent cutoff is the "run that lies about itself" of');
-  console.log('  EVALUATION.md §13.10.');
+  w();
+  w('  There is NO document-frequency cutoff. If one ever becomes necessary it');
+  w('  will be a retriever PARAM that lands in describe(handle).digest, never a');
+  w('  silent constant — a silent cutoff is the "run that lies about itself" of');
+  w('  EVALUATION.md §13.10.');
+  w();
+
+  const text = `${OUT.join('\n')}\n`;
+  process.stdout.write(text);
+  if (args.write) {
+    const out = path.join(REPO_ROOT, 'results', `vocabulary.${args.split}.txt`);
+    fs.writeFileSync(out, text);
+    process.stdout.write(`  written to ${path.relative(REPO_ROOT, out)}\n`);
+  }
 }
 
 main();

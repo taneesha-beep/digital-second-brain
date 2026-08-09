@@ -1,0 +1,42 @@
+ANALYSE VOCABULARY — cooking, N=27325, dev 2304 queries
+==============================================================================
+
+  Both arms are v3-tfidf; only topN moves, so the two rows are one
+  variable apart and the ratio between them is what truncation buys.
+
+  INDEX AND THE EDGE-EMISSION BOUND
+  ----------------------------------------------------------------------------
+                                 full vocabulary        top-10        ratio
+  |V| (terms with postings)              34,928        29,129   1.20x
+  postings  Sigma_t df_t                997,749       270,718   3.69x
+  Sigma_t df_t^2                      8.1202e+8     3.7279e+7   21.78x
+  max df                                  5,150         1,090   4.72x
+
+  Sigma_t df_t^2 is the ALL-PAIRS edge-emission cost — what Phase 4 pays when
+  the app rebuilds a graph over N documents. The eval never pays it: it runs
+  2304 queries, not 27,325^2. Reporting one as though it bounded the other
+  is the error CLAUDE.md names.
+
+  PER-DOCUMENT AND PER-QUERY COST
+  ----------------------------------------------------------------------------
+  full vocabulary
+    terms/doc          mean     36.5  p50     30  p95     86  max   1021
+    candidate pool     mean    15067  p50  15267  p95  22898  max  26355
+    postings visited   mean    30997  p50  26294  p95  71918  max 163180
+    mean pool is 55.1% of the corpus
+
+  topN 10
+    terms/doc          mean      9.9  p50     10  p95     10  max     10
+    candidate pool     mean     1333  p50   1262  p95   2498  max   4054
+    postings visited   mean     1444  p50   1344  p95   2745  max   4875
+    mean pool is 4.9% of the corpus
+
+  Total postings visited over the whole dev run:
+    full vocabulary    71,416,175
+    topN 10            3,326,019
+
+  There is NO document-frequency cutoff. If one ever becomes necessary it
+  will be a retriever PARAM that lands in describe(handle).digest, never a
+  silent constant — a silent cutoff is the "run that lies about itself" of
+  EVALUATION.md §13.10.
+

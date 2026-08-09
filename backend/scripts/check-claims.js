@@ -181,8 +181,27 @@ const GAPS = new Map([
   // so writing that report closed the gap as a side effect. Recorded because it
   // is the mechanism working — the fix for a gap is an artifact, and the tool
   // stops naming it the moment one exists.
+  //
+  // 3.73e7 AND 8.12e8 WERE HERE AND ARE NO LONGER, closed at 3.7 by giving
+  // analyse:vocab a writer — results/vocabulary.dev.txt. Closing it exposed a
+  // real inconsistency in this tool rather than merely satisfying it, and that
+  // is recorded at the exponent branch in main() rather than here.
   ['1.8093', 'corpus mean judgments/query, §3.3 — lives in data/qrels/cooking.manifest.json, which is gitignored'],
-  ['3.73e7', 'the all-pairs edge-emission bound at top-10, §15.6. analyse:vocab is read-only and persists no artifact']
+  // FOUND AT 3.7 BY THE EXPONENT BRANCH GETTING STRICTER, and they were never
+  // justified — the OLD branch passed them by matching 1.12e-4 against any
+  // artifact value that rounds to 0.0001 at four places, which on 15,000
+  // indexed decimals is a near-certainty. Six figures that looked checked and
+  // were not. They are §11.3's five-seed bootstrap stability table: measured
+  // at 2.5, correct, and produced by an experiment that wrote no file. Same
+  // class as 1.8093 and NOT a licence to keep them — the fix is the one that
+  // closed 3.73e7, a writer on the script that computes them, and that is
+  // 6.5's, which owns controlled measurement.
+  ['1.12e-4', '§11.3 CI-spread at B=1,000, five-seed stability table — measured at 2.5, no artifact'],
+  ['1.25e-4', '§11.3, same table, upper bound at B=1,000'],
+  ['5.50e-5', '§11.3, same table, B=10,000'],
+  ['5.77e-5', '§11.3, same table, upper bound at B=10,000'],
+  ['1.20e-5', '§11.3, same table, B=100,000'],
+  ['5.85e-6', '§11.3, same table, upper bound at B=100,000']
 ]);
 
 function parseArgs(argv) {
@@ -237,13 +256,18 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
 
   // --- build the index of what artifacts contain ---------------------------
+  const writeupSet = new Set(WRITEUPS.map((r) => path.join(REPO_ROOT, r)));
   const artifactFiles = [
     ...ARTIFACT_ROOTS.flatMap((r) => trackedUnder(r)),
     ...EXTRA_ARTIFACTS.map((r) => path.join(REPO_ROOT, r)).filter((f) => fs.existsSync(f))
-  ];
+  ].filter((f) => !writeupSet.has(f));
   // roundedIndex[d] = Set of every artifact value rounded to d places.
+  // expIndex[p]     = the same values in exponential form with p mantissa
+  //                   places, which is what the exponent branch below needs.
   const roundedIndex = new Map();
+  const expIndex = new Map();
   for (let d = MIN_PLACES; d <= MAX_PLACES; d += 1) roundedIndex.set(d, new Set());
+  for (let p = 0; p <= MAX_PLACES; p += 1) expIndex.set(p, new Set());
   let artifactValues = 0;
 
   for (const file of artifactFiles) {
@@ -253,6 +277,7 @@ function main() {
       if (!Number.isFinite(value)) continue;
       artifactValues += 1;
       for (let d = MIN_PLACES; d <= MAX_PLACES; d += 1) roundedIndex.get(d).add(value.toFixed(d));
+      for (let p = 0; p <= MAX_PLACES; p += 1) expIndex.get(p).add(value.toExponential(p));
     }
   }
 
@@ -298,11 +323,24 @@ function main() {
 
       let ok = false;
       if (places === null) {
-        // Exponent form: accept if the value appears at any precision.
-        const value = Number(dec.token);
-        for (let d = MIN_PLACES; d <= MAX_PLACES && !ok; d += 1) {
-          if (roundedIndex.get(d).has(value.toFixed(d))) ok = true;
-        }
+        // EXPONENT FORM. This branch used to accept only if the value appeared
+        // in an artifact at some precision — an EXACT-VALUE test — while this
+        // file's whole stated rule is that a d-place claim must be the correct
+        // ROUNDING to d places of an artifact value. The two disagree, and the
+        // disagreement was invisible because the only exponent claims in the
+        // writeups were on the GAPS list and never reached here.
+        //
+        // Found at 3.7 while closing 3.73e7: the artifact analyse:vocab now
+        // writes says 3.7279e+7, of which 3.73e7 is the correct rounding to two
+        // mantissa places — and the old branch rejected it, so the gap would
+        // have survived the very artifact written to close it. A tool stricter
+        // than its own documented rule fails claims that obey the rule, which
+        // is the failure mode that gets a check switched off.
+        //
+        // The mantissa's place count is the claim's precision, so the test is
+        // the same test the decimal branch runs, in exponential space.
+        const p = dec.frac.length;
+        if (p <= MAX_PLACES) ok = expIndex.get(p).has(Number(dec.token).toExponential(p));
       } else {
         ok = roundedIndex.get(places).has(Number(dec.token).toFixed(places));
       }
