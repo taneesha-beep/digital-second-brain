@@ -86,7 +86,7 @@ requires identical orderings; checks fused scores against hand-computed
 reciprocals; and covers the depth and minmax-sum semantics. 227 tests across 12
 suites, up from 196 across 11.
 
-Four consecutive eval runs emitted BYTE-IDENTICAL output (cmp-verified against
+Four eval runs emitted BYTE-IDENTICAL output (cmp-verified against
 f730d1b1…), so the metrics cannot move and only the wall time does.
 
 
@@ -301,7 +301,7 @@ Node v25.8.1. npm run analyse:v6.
                 (v4 982 · v5 36 · v3 ~1470) — v4's build and v5's build back
                 to back, dominated by BM25's postings. Nothing new.
 
-  search        four consecutive eval runs, all emitting f730d1b1…
+  search        four eval runs (three back to back), all emitting f730d1b1…
                 p95   37.271  37.862  37.988  38.870   -> median 37.9 ms
                 mean  31.491  31.796  32.080  32.771
                 range [37.27, 38.87], spread 4.2%
