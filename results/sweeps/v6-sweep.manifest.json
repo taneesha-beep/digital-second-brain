@@ -1,0 +1,280 @@
+{
+  "phase": "3.5",
+  "what": "Sweep of v6-hybrid rrfK on the dev split. One row per grid point in v6-hybrid-params.csv.",
+  "gridIsASample": "rrfK is CONTINUOUS with a genuine interior optimum, so unlike 2.7 (§13.2) this grid is a SAMPLE of the axis rather than an exhaustive enumeration of its behaviours, and unlike §13.4 there is no per-query monotonicity to make the argmax forced. The split-half optimism estimate below is therefore the evidence about selection bias, not a confirmation of a structural argument.",
+  "noP95Column": "3.3's noticed-list, closed for new tools. The per-point p95 is an UNCONTROLLED laptop figure quoted nowhere that sits in a results CSV looking like data, so this CSV does not carry it; the per-point wall time is in timingsMs instead. sweep-v4.js is deliberately NOT retrofitted — that would desynchronise the committed v4-bm25-params.csv unless a 1,327 s grid is re-run for a cosmetic change. The defect stops propagating; removing it from the banked artifact is 3.6's.",
+  "gitignoreNote": "Per-point run files and sidecars live in results/sweeps/runs/ and are gitignored, per §13.9: a named configuration gets a sidecar, a grid point gets a CSV row.",
+  "site": "cooking",
+  "split": "dev",
+  "retriever": "v6-hybrid",
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "heldFixed": {
+    "fusion": "rrf",
+    "depth": null,
+    "k1": 1.2,
+    "b": 0.75,
+    "idfVariant": "lucene",
+    "qtfMode": "linear",
+    "titleWeight": 2,
+    "vectors": "minilm-l6-v2-fp32-256",
+    "dim": 384,
+    "normalise": true
+  },
+  "grid": {
+    "rrfK": [
+      0,
+      1,
+      2,
+      5,
+      10,
+      20,
+      40,
+      60,
+      100,
+      200,
+      400,
+      700,
+      1000
+    ],
+    "points": 13
+  },
+  "rrfKIsScoringTime": {
+    "claim": "rrfK does not reach either component index, so a grid point is a re-score.",
+    "verified": true
+  },
+  "selectionRule": {
+    "primary": {
+      "metric": "ndcg",
+      "k": 8
+    },
+    "tieBreak": {
+      "metric": "ndcg",
+      "k": 10
+    },
+    "thenPrefer": "the published default",
+    "default": {
+      "rrfK": 60
+    },
+    "selectedDoesNotShip": "The selected point ships as v6-hybrid-tuned, EXPLORATORY. v6-hybrid is RRF at the published rrfK = 60 and is what registry.json ladder-v5-v6 names. Declared before the grid ran."
+  },
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd"
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1"
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.dev.txt",
+      "sha256": "38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf"
+    }
+  ],
+  "default": {
+    "rrfK": 60,
+    "label": "v6-p008",
+    "metrics": {
+      "ndcg": {
+        "1": 0.2232349537037036,
+        "5": 0.2899899743768206,
+        "8": 0.3113609962432663,
+        "10": 0.3216872533187959
+      },
+      "p": {
+        "1": 0.2322048611111111,
+        "5": 0.11041666666666501,
+        "8": 0.08241102430555555,
+        "10": 0.07152777777777636
+      },
+      "r": {
+        "1": 0.15911393748809538,
+        "5": 0.35075110170649326,
+        "8": 0.4109305635209016,
+        "10": 0.4428208453776523
+      },
+      "mrr": 0.33251815338403934
+    }
+  },
+  "selected": {
+    "rrfK": 0,
+    "label": "v6-p001",
+    "digest": "3fa5a4237a041d5ef79aa7533b60b36194e7f8d1ab84422e40aecf1d9819abd8",
+    "metrics": {
+      "ndcg": {
+        "1": 0.23611111111111102,
+        "5": 0.30290004515662394,
+        "8": 0.32704217931801816,
+        "10": 0.3361058375230221
+      },
+      "p": {
+        "1": 0.2456597222222222,
+        "5": 0.1136284722222205,
+        "8": 0.08588324652777778,
+        "10": 0.0742187499999985
+      },
+      "r": {
+        "1": 0.16893355425525683,
+        "5": 0.3666916746866379,
+        "8": 0.4336439488685336,
+        "10": 0.46136298426986094
+      },
+      "mrr": 0.3454563147597005
+    }
+  },
+  "plateauSize": {
+    "atPrimary": 1,
+    "afterTieBreak": 1,
+    "ofPoints": 13
+  },
+  "margin": {
+    "ndcg@8": 0.01568118307475186,
+    "ndcg@10": 0.014418584204226204,
+    "note": "A SELECTION margin on dev, not a result. The rung ships at the published default; the tuned point is EXPLORATORY."
+  },
+  "optimism": {
+    "repeats": 200,
+    "seed": 20260809,
+    "baseline": "v6-p008",
+    "mean": 0.0016949652036387164,
+    "p5": -0.007823916254291685,
+    "p95": 0.014503174459578494,
+    "max": 0.02366867633939257,
+    "distinctChosen": 4,
+    "chosen": [
+      [
+        "rrfK=0",
+        99
+      ],
+      [
+        "rrfK=5",
+        50
+      ],
+      [
+        "rrfK=1",
+        33
+      ],
+      [
+        "rrfK=2",
+        18
+      ]
+    ]
+  },
+  "perPointDigests": [
+    {
+      "label": "v6-p001",
+      "rrfK": 0,
+      "digest": "3fa5a4237a041d5ef79aa7533b60b36194e7f8d1ab84422e40aecf1d9819abd8",
+      "runSha256": "9bbfb23aadb7bd90866cebf2d3fc246b487c1f42a356e34c99d73330b94539ce"
+    },
+    {
+      "label": "v6-p002",
+      "rrfK": 1,
+      "digest": "52a79d54f7be51e6f5843986c9e33d8afbb09220c36e97c9aba337a4302f3500",
+      "runSha256": "42e5979358b52c32522c71cb87ac4de45e569cb708242770e93c32d8a6c38222"
+    },
+    {
+      "label": "v6-p003",
+      "rrfK": 2,
+      "digest": "0ec9d6a34399cf5b18c7ffd762b4cfc6d751768724cb97fef32b02f1138c04b4",
+      "runSha256": "1333255a812f70932f66adcd22b1ed7e15c47ce9a25490a2f258ea34aeda8f2e"
+    },
+    {
+      "label": "v6-p004",
+      "rrfK": 5,
+      "digest": "566292fe7d7fed03b6cbc1f1e3391617fd1918ff43f702064da91e6ad521d306",
+      "runSha256": "c132f2e5cdba02edd5ed754575040a1cdd85d0b05dae2c077a91070d56a3b0cd"
+    },
+    {
+      "label": "v6-p005",
+      "rrfK": 10,
+      "digest": "1a65b7ef62a637cac55977b53d0cd84077eeda0d49049476b7796450d7976e7c",
+      "runSha256": "c89bb03db3857a768479813beb922aaab0576142bb0062e50e8928b7897a8231"
+    },
+    {
+      "label": "v6-p006",
+      "rrfK": 20,
+      "digest": "223be9a9742a59c069ba8018d056ca2672991f75f6ca076beb1f3a88f97b6681",
+      "runSha256": "316a3d1c049dae96aef007d3a7f1530eebc26c2eabc057b0aee3bbf970308214"
+    },
+    {
+      "label": "v6-p007",
+      "rrfK": 40,
+      "digest": "3f4245728adf41854723df2dc8bf2f59db22a4ff5bfc8a1204f9163eb0ea103a",
+      "runSha256": "494f2e7e74542d0a1882a693f870f8f50671c55ebb38ee689c9bf6bd55d0a057"
+    },
+    {
+      "label": "v6-p008",
+      "rrfK": 60,
+      "digest": "ae21327b5719071e48546696918a1634532e49a5eac1d633214424196656c5bb",
+      "runSha256": "64a94125ec6c129250490a181316ba46c8d301fa62090e97b3d459b76d63a432"
+    },
+    {
+      "label": "v6-p009",
+      "rrfK": 100,
+      "digest": "1802aa0e8c48534e482f6be6fa320ace1eea2da135e2fc48b918109e73ddd700",
+      "runSha256": "592d8a5452aa84ee14ad4c20bcf65776a7ac64e7ddff41bd71db13fcb8d97eca"
+    },
+    {
+      "label": "v6-p010",
+      "rrfK": 200,
+      "digest": "d30443b244e083da055a211257e020d839f7eeb9a727eeb55499008b4b6c1871",
+      "runSha256": "e44ab6bb70ccd6aa63f8153ff525e83abae52d92d82b93ed7eafbd835431e3c5"
+    },
+    {
+      "label": "v6-p011",
+      "rrfK": 400,
+      "digest": "249356be67541ea92366adc2d30c6b986c6b21b82ea8406fcaadaa8ecffb060e",
+      "runSha256": "07ad461e4e9bf2ebba96ae8814019d4d2cbf88a13d61f30f1d1170ef6b56bc28"
+    },
+    {
+      "label": "v6-p012",
+      "rrfK": 700,
+      "digest": "20333b7650240b040a6b9453f5521eab750a7bab0241078a33dc177cb87bb6b1",
+      "runSha256": "666d9d6673f8d4c945bd0d7a49db43f62572206828ce5ee0f98ff64d87340218"
+    },
+    {
+      "label": "v6-p013",
+      "rrfK": 1000,
+      "digest": "96bdfb0f197afbe897e5b939e9e094d31ad80bfa4a1eb80765f0eb0d331bf834",
+      "runSha256": "9e9658ca591973d7d74b991536d9c657c12d960423be6023847e9934c3747305"
+    }
+  ],
+  "timingsMs": {
+    "grid": 452572,
+    "total": 452877,
+    "perPointP95SearchMs": {
+      "v6-p001": 39.849083,
+      "v6-p002": 39.515834,
+      "v6-p003": 39.649042,
+      "v6-p004": 38.055833,
+      "v6-p005": 36.778709,
+      "v6-p006": 37.101916,
+      "v6-p007": 36.894042,
+      "v6-p008": 37.151958,
+      "v6-p009": 37.632583,
+      "v6-p010": 38.039792,
+      "v6-p011": 37.04425,
+      "v6-p012": 37.416458,
+      "v6-p013": 37.363375
+    },
+    "perPointP95IsNotAMeasurement": "Uncontrolled laptop figures recorded as provenance, not as data. No performance claim rests on any of them; a controlled figure against a published budget is 6.5's job."
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "memoryGiB": 8,
+    "peakRssMiB": 229
+  },
+  "generatedAt": "2026-08-09T05:20:04.120Z"
+}
