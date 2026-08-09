@@ -1,0 +1,417 @@
+RUNG v6 — HYBRID BM25 + DENSE VIA RECIPROCAL RANK FUSION (roadmap 3.5)
+runs generated from a clean tree at 8642f1b and aba26ea · sidecars at 1d08b2e, 5e46911
+==============================================================================
+
+RRF over v4-bm25's and v5-embeddings' rankings, at the published constant
+rrfK = 60. The first rung that is a function of two other rungs.
+
+  IT LOSES, AND IT IS THE FIRST RUNG ON THIS LADDER TO CLEAR HOLM DOING SO.
+  v6-hybrid scores 0.311361 against v5-embeddings' 0.326893: -0.015532
+  nDCG@8, 95% CI [-0.025316, -0.005800], p = 0.0015 raw against the family's
+  alpha/7 = 0.00714. Nine of thirteen metrics have intervals entirely below
+  zero.
+
+  SAID PLAINLY, BECAUSE THE ROADMAP ASKS FOR IT PLAINLY: fusing BM25 into
+  dense retrieval does not help on this corpus. It measurably hurts. RRF
+  failing when one component dominates is a common and well-known outcome and
+  this is what it looks like when it is measured rather than assumed away.
+
+THE PREDICTION, RECORDED BEFORE THE RUN AND WRONG AGAIN. I expected ~0.335 — a
+small win of about +0.008 — with a stated band of 0.31 to 0.35 and a loss named
+as plausible but not chosen. The outcome landed inside the band on the side I
+did not pick. For a win: the complementarity 3.4 measured (mean top-8 Jaccard
+0.1906, 9.6% of queries disjoint) and RRF's reputation. Against: one component
+dominates by 0.0811, RRF discards magnitude, and reciprocal rank is convex on a
+key with a median of one judgment, so demoting the single relevant document
+costs more than promoting one gains. THE AGAINST-ARGUMENTS WERE RIGHT AND THE
+THIRD WAS RIGHT FOR EXACTLY THE REASON GIVEN — see §3. Two rungs running now
+where writing the prediction down first was worth more than being right.
+
+THE FOUR BUG-TRIGGERS, ALSO WRITTEN BEFORE THE RUN. A surprisingly BAD number
+carries the mirror of §17.6's risk: it can be a defect in the thing being
+measured rather than a finding about it. Declared in advance: suspect a bug if
+nDCG@8 exceeds 0.42, falls below v4's 0.2458, equals either component at full
+float precision, or exceeds PRIMER §5.4's 0.7. NONE FIRED — 0.3114 sits between
+the two components, and there are 0 zero-result queries as predicted. §2 is the
+audit that was run anyway.
+
+
+1. THE ROW
+------------------------------------------------------------------------------
+
+  metric       @1       @5       @8      @10
+  --------------------------------------------
+      nDCG   0.2232   0.2900   0.3114   0.3217
+         P   0.2322   0.1104   0.0824   0.0715
+         R   0.1591   0.3508   0.4109   0.4428
+    MRR@10   0.3325
+
+  nDCG@8 at full precision   0.3113609962432663
+  digest    ae21327b5719071e48546696918a1634532e49a5eac1d633214424196656c5bb
+  source    cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb
+            (6 files: v6-hybrid, v5-embeddings, v4-bm25, v1-overlap, types, index)
+  run file  results/runs/v6-hybrid.dev.run  sha256 f730d1b1…  23,040 lines
+  queries   2304 scored, 0 unjudgeable, 0 zero-result
+
+  THE LADDER, dev, nDCG@8:
+    v1-overlap      0.1402
+    v2-jaccard      0.1427
+    v3-tfidf        0.2107
+    v4-bm25         0.2458
+    v5-embeddings   0.3269   <- still the top of the ladder
+    v6-hybrid       0.3114
+
+
+2. THE ARITHMETIC, AUDITED BECAUSE THE RUNG LOSES
+------------------------------------------------------------------------------
+
+§17.6 audited a surprisingly good number on the principle that it is the one
+nobody feels like checking. A surprisingly bad one is the same risk mirrored, so
+the fusion was cross-checked at corpus scale against artifacts written by a
+different code path in earlier sessions:
+
+  v6 at depth 10  vs  a hand fusion of v4's and v5's top-10 committed run files
+    agree     2304 of 2304 queries
+    disagree  0
+
+At depth 10 the component lists ARE those two files, so this reproduces v6 out
+of results/runs/v4-bm25.dev.run and results/runs/v5-embeddings.dev.run. It is
+also what makes "just read two run files" unnecessary rather than merely
+rejected: in-index fusion computes what run-file fusion would, so refusing the
+cheap implementation gave nothing up.
+
+At fixture scale, tests/retrieval.v6-hybrid.test.js ranks each component INSIDE
+v6 and against a standalone handle over all 34 documents at full depth and
+requires identical orderings; checks fused scores against hand-computed
+reciprocals; and covers the depth and minmax-sum semantics. 227 tests across 12
+suites, up from 196 across 11.
+
+Four consecutive eval runs emitted BYTE-IDENTICAL output (cmp-verified against
+f730d1b1…), so the metrics cannot move and only the wall time does.
+
+
+3. THE REGISTERED COMPARISON — and the shape is the finding
+------------------------------------------------------------------------------
+results/comparisons/v6-hybrid-vs-v5-embeddings.dev.txt, id "ladder-v5-v6"
+
+  nDCG@8    A 0.3114   B 0.3269   A-B  -0.015532  [-0.025316, -0.005800]  p 0.0015
+
+  1044 of 2304 queries moved
+    v6 ahead on   534   mean gain  +0.248333
+    v5 ahead on   510   mean loss  -0.330188
+
+V6 WINS ON MORE QUERIES THAN V5 AND STILL LOSES, because v5's wins are 33%
+larger. That is the convexity argument from the prediction, measured: with a
+median of one judgment per query, nDCG@8 is largely "where did the single right
+answer land", and 1/log2(r+1) is convex.
+
+Concretely at rrfK = 60, a document v4 ranks 1st and v5 ranks 20th scores
+1/61 + 1/80 = 0.0289, beating one v5 ranks 1st and v4 never reaches at
+1/61 = 0.0164. The better system loses that exchange by construction.
+
+ALSO REPORTED, p SUPPRESSED because only adjacent rungs are registered (§11.5):
+
+  v6-hybrid vs v4-bm25   +0.065601  [+0.057013, +0.074101]  723 up / 215 down
+
+So v6 sits between its two components. Roadmap 3.5 asks for "significance vs
+both v4 and v5"; this is what that can honestly mean — full difference and
+interval, no p-value, because that comparison was not the experiment.
+
+
+4. THE PREMISE INVERTED — where the loss actually comes from
+------------------------------------------------------------------------------
+
+3.4 handed 3.5 a number and an instruction: v4 and v5 agree on nothing on 221
+of 2304 queries, and "RRF pays exactly when systems fail on different queries,
+so 3.5 designs against a number". Split dev on exactly that partition:
+
+  stratum          n      v5 nDCG@8    v6 nDCG@8     v6 - v5
+  disjoint       221       0.210643     0.152709    -0.057934
+  overlapping   2083       0.339227     0.328194    -0.011034
+
+ON THE 221 QUERIES RRF IS SUPPOSED TO BE FOR, FUSION DOES FIVE TIMES THE DAMAGE
+IT DOES EVERYWHERE ELSE. The premise is not merely unmet, it is backwards.
+
+Complementarity is NECESSARY for fusion to pay and nowhere near SUFFICIENT. The
+other condition is that neither component dominates, and v5 beats v4 by 0.0811.
+When two systems of unequal strength disagree completely, the better one is
+usually the one that is right, and unweighted RRF hands the worse one half the
+slots.
+
+Where the fused top-8 comes from, 18,432 documents over 2304 queries:
+
+  in BOTH components' top-8      5500   29.8%
+  in the DENSE top-8 only        4546   24.7%
+  in the BM25 top-8 only         4696   25.5%
+  promoted from below BOTH       3690   20.0%
+
+A quarter of every fused list is BM25's alone, on a rung where BM25 scores
+0.0811 below the alternative. The 20% promoted from below both cut-offs is
+fusion doing the thing fusion is for, and it does not pay for the rest.
+
+AND THE LENGTH DISTRIBUTION CLOSES A LOOP §17.9 OPENED. Term length of retrieved
+documents, top 8 over the whole dev run:
+
+  d          <=9    10-19    20-49      50+
+  v5         675     3943     9019     4795
+  v6         488     3435     9378     5131
+
+§17.9 measured v5 retrieving 1.50x as many very short documents as v4 and named
+that as the mechanism of v5's win: a short question whose few words miss the
+query is INVISIBLE to BM25 — no postings reach it — while its embedding sits
+wherever its meaning sits. v6 retrieves 0.72x as many as v5. It gives back
+roughly a third of exactly the advantage that made v5 the best rung.
+
+
+5. THE ABLATIONS — each ONE variable, both EXPLORATORY
+------------------------------------------------------------------------------
+
+(a) THE FUSION FUNCTION — fusion, and the question §16.11 asked a rung ahead.
+
+  nDCG@8   0.311971 vs 0.311361   +0.000604   CI [-0.004541, +0.005812]
+  667 of 2304 moved; minmax-sum ahead on 298, rrf on 369
+
+A NULL, AND THE LOAD-BEARING ABLATION OF THE RUNG. 3.3's noticed-list warned
+that RRF discards score magnitude — the class qtfMode priced at +0.045597,
+larger than the entire v3->v4 rung — so a score-preserving fusion was the
+obvious rescue. CombSUM over per-query min-max normalised component scores
+rescues nothing: the interval straddles zero, and v6 loses to v5 by ~0.0155
+under BOTH fusion functions.
+
+So THE LOSS IS NOT CAUSED BY FUSING ON RANK RATHER THAN ON SCORE. The warning
+was reasonable and about the wrong thing. Why it was wrong is worth more than
+the warning: qtfMode's magnitude lives INSIDE one scorer's arithmetic, where it
+decides which document wins; a fusion's magnitude only decides how two
+already-decided orderings interleave.
+
+Under minmax-sum the rrfK param is inert. It stays in the digest anyway — a
+param that silently vanishes from a configuration is §13.10's "run that lies
+about itself" in another costume.
+
+(b) FUSION DEPTH — depth, the one arbitrary choice in the design.
+
+  nDCG@8   0.310689 vs 0.311361   -0.000646   CI [-0.001381, -0.000048]
+  6 of 2304 moved; full ahead on 5, depth-100 on 1
+
+SIX QUERIES. The tail of each component list is worth essentially nothing at
+k=10, which the arithmetic predicts — a document at rank 200 in both lists
+scores 2/260, under a single rank-8 contribution of 1/68 — but it was a param
+and an assumption, so it was measured rather than argued. Measurably nonzero,
+practically nil. It also buys back 27% of the latency, which is the only place
+in this rung where a knob does something useful.
+
+NOT RUN, AND NAMED RATHER THAN LEFT SILENT: per-component weights. Unweighted
+RRF is what 3.5 and the literature name, and given §4 a weight favouring the
+dense half is the obvious next move — but it is a second continuous knob with
+its own selection-bias bill. On the noticed-list for 3.6.
+
+WHY THERE IS NO CHAIN, AND IT IS A DECISION MADE BEFORE THE RUN. §16.7 built a
+telescoping chain for v3->v4; §17.5 declined one for v4->v5 because the
+intermediate retrievers HAVE NO DEFINITION. v6 is a third case: the
+intermediates exist and ARE ALREADY RUNGS.
+
+  RRF over one list is that list. 1/(rrfK + rank) is strictly decreasing in
+  rank and ranks within one list are distinct, so the induced order IS the
+  rank order. RRF(dense alone) === v5. RRF(bm25 alone) === v4.
+
+A chain would be one step that is identically zero by construction followed by
+one step that is the whole registered margin. Unlike §17.5's decision, this
+premise is testable and was tested: single-component RRF reproduces v4's and
+v5's full-depth fixture orderings at rrfK in {0, 1, 60, 1000}.
+
+
+6. THE SWEEP, AND WHAT TUNING BUYS — results/sweeps/v6-hybrid-params.csv
+------------------------------------------------------------------------------
+13 points, 453 s, selection rule declared in sweep-v6.js before the grid ran.
+
+  rrfK       0        1        2        5       10       20       40
+  nDCG@8  .327042  .326774  .326263  .326075  .322374  .316145  .313096
+
+  rrfK      60      100      200      400      700     1000
+  nDCG@8  .311361  .310330  .310144  .309787  .309745  .309735
+              ^ published default, and what ships
+
+THE CURVE IS MONOTONE DECREASING ACROSS ALL 13 POINTS. rrfK -> 0 is 1/rank, the
+most top-heavy setting available, where a component's rank-1 document is nearly
+impossible to displace; rrfK -> infinity flattens toward Borda. THE WHOLE USEFUL
+RANGE OF THE KNOB IS SPENT UNDOING THE FUSION, and the best attainable point
+recovers v5 rather than exceeding it:
+
+  v6-hybrid-tuned (rrfK 0) vs v5   +0.000149  CI [-0.006823, +0.007067]
+  958 moved; v5 ahead on 587, tuned-v6 on 371
+
+A clean null with v5 ahead on MORE queries. There is no configuration on this
+grid where RRF beats dense retrieval on this pair.
+
+SELECTION BIAS, §13.7's estimator, 200 halves, seed 20260809:
+
+  mean margin(A) - margin(B)   +0.001695   [p5 -0.007824, p95 +0.014503]
+  full-dev selection margin    +0.015681
+  distinct configurations chosen across the 200 halves    4
+    rrfK=0 x99 · rrfK=5 x50 · rrfK=1 x33 · rrfK=2 x18
+
+11% OPTIMISM, against 2.7's 6% and 3.3's 44%, with a negative 5th percentile.
+The middle position has a legible cause: the measured curve is monotone, as
+2.7's axes were, so the argmax is not plucked out of noise — but 2.7's
+monotonicity was forced PER QUERY by a structural argument holding on every
+subset, while this is an observed property of one grid on one split. De-biased,
+the tuned point lands near 0.3254, slightly BELOW v5.
+
+THE TUNED POINT DOES NOT SHIP. §16.3's rule, settled at 3.3 and applied here
+without re-litigation. registry.json was NOT edited: an eighth entry would
+retroactively tighten Holm from alpha/7 = 0.00714 to alpha/8 = 0.00625 for every
+comparison already run.
+
+
+7. SYMMETRY — RANK IS A PROPERTY OF A LIST
+------------------------------------------------------------------------------
+
+  v1 false · v2 true · v3 true · v4 false · v5 true · v6 FALSE
+
+Declared in the module before the test was written, and measured by
+tests/retrieval.symmetry.test.js in both directions.
+
+§17.10 predicted this and attributed it to BM25's half. True, and it understates
+the case in a way that matters, because the understatement suggests a fix that
+does not exist:
+
+  score_v6(A->B) reads B's position in the two lists ranked against A.
+  score_v6(B->A) reads A's position in two DIFFERENT lists.
+
+So a rank fusion of two PERFECTLY SCORE-SYMMETRIC retrievers is still
+asymmetric. Measured on v5 alone, in the same file that proves v5's scores
+symmetric at exact float equality: its RANKS disagree in both directions across
+the fixture. B is A's nearest neighbour while A is not B's.
+
+Symmetrising RRF would mean scoring f(A,B) + f(B,A), ranking the corpus from
+both endpoints at n× the per-query cost. A different retriever, not a setting.
+
+THE DECLARATION EARNED ITS KEEP THE FIRST TIME IT WAS INHERITED. It was added at
+3.4 so the next rung would read a field instead of remembering a paragraph. 3.5
+read v4 false · v5 true, worked out that neither value predicts the fused one,
+and wrote false before running anything.
+
+
+8. COST — the slowest rung on the ladder
+------------------------------------------------------------------------------
+MacBook Pro (Mac14,7), Apple M2, arm64, 8 GB, macOS 26.6 (darwin 25.6.0),
+Node v25.8.1. npm run analyse:v6.
+
+  index build   five builds  1079 1032 1030 980 1012 ms  -> median 1030 ms
+                (v4 982 · v5 36 · v3 ~1470) — v4's build and v5's build back
+                to back, dominated by BM25's postings. Nothing new.
+
+  search        four consecutive eval runs, all emitting f730d1b1…
+                p95   37.271  37.862  37.988  38.870   -> median 37.9 ms
+                mean  31.491  31.796  32.080  32.771
+                range [37.27, 38.87], spread 4.2%
+                (v5 20.4 · v4 7.9 · v3 8.1 · v2 0.87 · v1 1.0)
+
+v6 pays both component searches plus THREE large sorts where v5 pays one: each
+component list is ordered internally so the ranks it fuses are the ranks a
+standalone run produces, and the interface then sorts the fused list.
+depth: 100 cuts the third sort's input from 27,324 entries to <=200 and takes
+the mean to 23.93 ms — 27% — for -0.000646 nDCG@8.
+
+Uncontrolled laptop figures throughout. 6.5 owns the controlled one and NO
+PERFORMANCE CLAIM IS MADE HERE.
+
+MEMORY — THREE NUMBERS, AND THE §17.11 TRAP CAUGHT THIS SCRIPT TOO.
+
+  typed arrays, computed from the structures    56.56 MiB
+    bm25 half   16.32 MiB   postings, per-doc terms/tfs, lengths, idf, scratch
+    dense half  40.24 MiB   matrix 27325 x 384 x 4B, norms
+  retained for one handle (--expose-gc)         90.9 MiB
+    of which V8 heap        35.4 MiB   BM25's 34,928-string vocabulary Map,
+                                       the df Map, the id Maps
+    of which arrayBuffers   55.5 MiB   the dense matrix, the postings
+  peak RSS for the EVAL process                 660 MiB
+
+THE MIDDLE ROW WAS WRONG THE FIRST TIME AND THE CORRECTION IS RECORDED RATHER
+THAN QUIETLY APPLIED — the third time this repo has had to separate heap from
+arrayBuffers. Measured with the five timing handles still pending collection, it
+reported 1.4 MiB of arrayBuffers for a structure containing a 40 MiB matrix: V8
+releases external backing stores a collection LATER than the objects pointing at
+them, so the "before" snapshot was inflated by garbage the "after" snapshot had
+already released and the delta came out near zero. Dropping the timing handle
+and collecting twice gives 55.5 MiB, which agrees with the 56.56 MiB computed
+independently from the structures. The two numbers now check each other, which
+is why both are printed.
+
+v6 is the rung where the trap is worst because it MIXES the two: v4's retained
+figure (§16.12, 34.8 MiB) is genuinely heap and v5's (§17.11, 40.2 MiB) is
+genuinely not, so either term alone would be wrong in a different direction.
+
+The RSS row comes from the RUN's sidecar, not from the analysis process, which
+builds six indexes to time them and peaks at 740 MiB — a different quantity, not
+comparable to §16.12's 650 or §17.11's 325.
+
+
+9. WHAT THE RUNG EXPOSED
+------------------------------------------------------------------------------
+
+- REGISTRY.JSON'S FIRST UNFAVOURABLE PAYOFF. Pre-registration was written at 2.5
+  to stop a favourable result being manufactured, and until now every registered
+  comparison it constrained went the way the project hoped. This one did not,
+  and the machinery produced the uncomfortable number with no discretion
+  available at the point it mattered. That is the only kind of evidence that a
+  pre-registration is real.
+
+- A FORWARD WARNING CAN BE RIGHT ABOUT THE MECHANISM AND WRONG ABOUT THE EFFECT.
+  §16.11 flagged RRF's magnitude loss a rung in advance; §5a measured it at a
+  null. The value was in making the question cheap to answer.
+
+- COMPLEMENTARITY IS NECESSARY, NOT SUFFICIENT, and 3.4 handed 3.5 the number
+  with the wrong inference attached. §4. The missing condition — neither
+  component dominating — is not exotic and is not in the sentence everyone
+  repeats about hybrid retrieval.
+
+- THE INTERFACE NEEDED ONE THING AND IT WAS A NAME, NOT A FEATURE. v6 is the
+  first rung whose INPUT is a rank, so it is the first that has to know the
+  tie-break. compareHits moved from a private expression in index.js to
+  types.js; index.js still owns the ordering, and there is still one definition.
+  Nothing else moved — no new signature, no runner change. run-eval.js was not
+  touched at all, which is the §7.1 boundary and the flat-params decision paying
+  off together.
+
+- A THIRD PLACE SELF-RETRIEVAL HAS TO BE EXCLUDED, this time INSIDE one rank().
+  v6 cannot hand the real ctx to both components, so each gets a private
+  collector that sits outside index.js's mechanism 1 and has to replicate its
+  contract. Tested at fixture scale, cross-checked at corpus scale.
+
+- THE RUNNER, THE METRICS AND THE BOOTSTRAP: NOTHING. No new flag, no new
+  convention. Every named run re-scored from its written run file and asserted
+  against its committed sidecar at exact float equality.
+
+- THE SWEEP CSV NO LONGER CARRIES p95SearchMs — 3.3's noticed-list item, closed
+  for new tools. sweep-v4.js deliberately still carries it, since removing it
+  there desynchronises a banked CSV unless a 1,327 s grid is re-run for a
+  cosmetic change. The defect stops propagating; removing it from the committed
+  artifact is 3.6's.
+
+
+10. WHAT THIS RUNG DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+
+- NOT A TEST-SET RESULT. Dev only, until 3.6.
+
+- NOT HOLM-ADJUSTED. The p is raw; six of the family's seven now exist. 0.0015
+  clears alpha/7 = 0.00714 by a factor of 4.8 — far less headroom than the three
+  rungs sitting at the bootstrap floor, so this is the FIRST rung whose Holm
+  outcome is worth re-checking when the family closes at 3.6.
+
+- NOT "HYBRID RETRIEVAL DOES NOT WORK". It is one fusion (RRF, plus one CombSUM
+  ablation), over one pair of components whose strengths differ by 0.0811, on
+  one positive-only key with a median of one judgment per query. §4 names the
+  condition that failed; a pair of comparable strength is a different experiment
+  and this says nothing about it.
+
+- NOT A VERDICT ON WEIGHTED FUSION. Unweighted RRF is what was measured.
+
+- NOT A CLAIM THAT CONVEXITY IS THE WHOLE STORY. §3's win/loss asymmetry is
+  consistent with that argument and is not a proof of it; §4's length
+  distribution is a second, independent mechanism.
+
+- ABSOLUTES REMAIN LOWER BOUNDS (§5.1), and §17.6's amendment applies with more
+  force here rather than less: v6's lists are half dense, so they inherit the
+  dense rung's extra ways of being right that this key cannot see.
