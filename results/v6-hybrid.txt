@@ -168,7 +168,7 @@ roughly a third of exactly the advantage that made v5 the best rung.
 
 (a) THE FUSION FUNCTION — fusion, and the question §16.11 asked a rung ahead.
 
-  nDCG@8   0.311971 vs 0.311361   +0.000604   CI [-0.004541, +0.005812]
+  nDCG@8   0.311965 vs 0.311361   +0.000604   CI [-0.004541, +0.005812]
   667 of 2304 moved; minmax-sum ahead on 298, rrf on 369
 
 A NULL, AND THE LOAD-BEARING ABLATION OF THE RUNG. 3.3's noticed-list warned
@@ -190,7 +190,7 @@ about itself" in another costume.
 
 (b) FUSION DEPTH — depth, the one arbitrary choice in the design.
 
-  nDCG@8   0.310689 vs 0.311361   -0.000646   CI [-0.001381, -0.000048]
+  nDCG@8   0.310715 vs 0.311361   -0.000646   CI [-0.001381, -0.000048]
   6 of 2304 moved; full ahead on 5, depth-100 on 1
 
 SIX QUERIES. The tail of each component list is worth essentially nothing at
@@ -382,6 +382,18 @@ comparable to §16.12's 650 or §17.11's 325.
 - THE RUNNER, THE METRICS AND THE BOOTSTRAP: NOTHING. No new flag, no new
   convention. Every named run re-scored from its written run file and asserted
   against its committed sidecar at exact float equality.
+
+- ONE PROCESS FAILURE, THE SAME ONE 3.4 RECORDED, CAUGHT BY THE SAME HABIT. The
+  two ablation ABSOLUTES in §5 were first written as 0.311971 and 0.310689 —
+  derived by adding the report's delta to a four-decimal display rather than
+  read from the sidecar. The true values are 0.311965 and 0.310715. The deltas
+  and intervals were always correct because they came from the reports; only
+  the levels were extrapolated. Nothing downstream rests on them and no
+  conclusion moves, which is exactly why it is the kind of error that survives:
+  §17's note that 3.4 quoted "digits past the fourth extrapolated from a rounded
+  display" describes this precisely, one rung later. Caught by re-deriving every
+  quoted figure from the JSON before the writeup was pushed. The check is worth
+  more than the fix — it should be a script, and it is not one yet.
 
 - THE SWEEP CSV NO LONGER CARRIES p95SearchMs — 3.3's noticed-list item, closed
   for new tools. sweep-v4.js deliberately still carries it, since removing it
