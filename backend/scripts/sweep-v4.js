@@ -431,6 +431,21 @@ function main() {
   // --- write ----------------------------------------------------------------
   fs.mkdirSync(SWEEP_DIR, { recursive: true });
   const csvFile = path.join(SWEEP_DIR, 'v4-bm25-params.csv');
+  // `p95SearchMs` STAYS, and at 3.6 that stopped being a deferral and became a
+  // decision. 3.3 noticed it: an uncontrolled laptop figure sitting in a
+  // results CSV, looking like data, quoted nowhere. 3.4 left it because v5 had
+  // no sweep; 3.5 dropped it from sweep-v6.js so the defect stopped
+  // propagating, and left "remove it from the banked artifact" to 3.6.
+  //
+  // 3.6 does not remove it. Removing it desynchronises the committed
+  // v4-bm25-params.csv unless the 1,327 s grid is re-run for a cosmetic change,
+  // and hand-editing the CSV produces a file this script cannot reproduce —
+  // worse than the defect. What the column actually needed was a label, and it
+  // has had one since 3.3, in the writeup that sits beside it:
+  // results/sweeps/v4-sweep.txt §8 says the per-point p95 "is in the CSV and is
+  // quoted nowhere: it is an uncontrolled laptop measurement (§12.4)".
+  //
+  // So the item is CLOSED rather than passed on again. Labelled, not removed.
   const header = ['k1', 'b', 'label', 'digest8',
     ...KS.map((k) => `ndcg@${k}`), ...KS.map((k) => `p@${k}`), ...KS.map((k) => `r@${k}`),
     'mrr@10', 'runLines', 'zeroResultQueries', 'p95SearchMs'];
