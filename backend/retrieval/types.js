@@ -136,6 +136,36 @@ const crypto = require('crypto');
  * @property {function(string, number, Object=): void} collect
  */
 
+/**
+ * THE LADDER'S ONE ORDERING. Descending score; ties broken lexicographically on
+ * the id string.
+ *
+ * index.js has owned this since 2.1 and its header says so — "ORDERING IS OWNED
+ * HERE, NOT BY EACH RETRIEVER" — because a tie-break reimplemented six times is
+ * a tie-break that differs somewhere. It moves here at 3.5 for one reason, and
+ * it is a reason no earlier rung had:
+ *
+ *   v6-hybrid's INPUT IS A RANK. RRF scores a document by its POSITION in each
+ *   component's ranked list, so v6 has to order two component lists internally
+ *   before it can score anything. If it ordered them by any comparator other
+ *   than this one, the ranks it fuses would not be the ranks v4 and v5 produce
+ *   standalone, and the rung would silently be a fusion of two rankings that
+ *   appear nowhere else in this repo.
+ *
+ * So there is still exactly ONE definition; index.js and v6-hybrid.js now both
+ * call it instead of index.js owning a private copy. Behaviour is unchanged —
+ * this is the same expression that stood in index.js, moved — and
+ * tests/retrieval.v6-hybrid.test.js asserts v6's internal component ranking is
+ * bit-identical to a standalone search() over the same rung.
+ *
+ * Any total order would do. What matters is that it is FIXED, so a rerun cannot
+ * reshuffle a tie group and move a document across the k boundary — and ties are
+ * the normal case, not an edge case (§7.2).
+ */
+function compareHits(a, b) {
+  return (b.score - a.score) || (a.docId < b.docId ? -1 : a.docId > b.docId ? 1 : 0);
+}
+
 /** Deep-sorted JSON, so a digest over the same params is the same string. */
 function canonicalJson(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -262,6 +292,7 @@ function assertHits(hits, { k, excludeId }) {
 }
 
 module.exports = {
+  compareHits,
   canonicalJson,
   paramsDigest,
   resolveParams,

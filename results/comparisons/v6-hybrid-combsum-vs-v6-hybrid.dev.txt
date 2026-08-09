@@ -1,0 +1,172 @@
+PAIRED BOOTSTRAP — v6-hybrid-combsum  vs  v6-hybrid
+roadmap 2.5 · 2026-08-08T16:55:39Z
+==============================================================================
+
+  Direction is A − B throughout. A is the first label on the command line.
+
+1. THE TWO RUNS
+------------------------------------------------------------------------------
+  A  v6-hybrid-combsum
+     runid    v6-hybrid-combsum.dev.a9d45b65
+     digest   a9d45b6501b0dd998c6ca4a81918bdfed0533b9a5faac3c1c4a1df5eec22afb0
+     source   cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb
+     run      results/runs/v6-hybrid-combsum.dev.run
+              sha256 6c2a1ecdbdcc07031b85e792ebaa14e3f33503e1e98b301c35e66021ccffebf2  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v6-hybrid-combsum.dev.run.json  (committed)
+     command  npm run eval -- --retriever v6-hybrid --split dev --param fusion="minmax-sum" --label v6-hybrid-combsum
+
+  B  v6-hybrid
+     runid    v6-hybrid.dev.ae21327b
+     digest   ae21327b5719071e48546696918a1634532e49a5eac1d633214424196656c5bb
+     source   cbfdfe516ada9eb584760fd0858406dc0bc2e2fce45021fee484908acf5d0bdb
+     run      results/runs/v6-hybrid.dev.run
+              sha256 f730d1b10f9a04740c256094dfead7b497628a2eb7aeffc44f1b6e6655b6f823  (gitignored; regenerates in ~3 s)
+     sidecar  results/runs/v6-hybrid.dev.run.json  (committed)
+     command  npm run eval -- --retriever v6-hybrid --split dev
+
+  parameters, and how many of them moved:
+     b                A 0.75             B 0.75            
+     depth            A null             B null            
+     dim              A 384              B 384             
+     fusion           A "minmax-sum"     B "rrf"             <-- differs
+     idfVariant       A "lucene"         B "lucene"        
+     k1               A 1.2              B 1.2             
+     normalise        A true             B true            
+     qtfMode          A "linear"         B "linear"        
+     rrfK             A 60               B 60              
+     titleWeight      A 2                B 2               
+     vectors          A "minilm-l6-v2-fp32-256" B "minilm-l6-v2-fp32-256"
+
+  ONE variable changed (fusion). The difference below is attributable to it.
+
+  the SOURCE each run was produced from, re-hashed now and compared:
+     A  cbfdfe516ada9eb5…  MATCHES the working tree (6 files)
+     B  cbfdfe516ada9eb5…  MATCHES the working tree (6 files)
+
+2. THE PAIRED POPULATION
+------------------------------------------------------------------------------
+  split                cooking.dev — 2304 queries
+  scored               A 2304   B 2304   (unjudgeable and excluded: A 0, B 0)
+  identical qid set    ASSERTED — both sides scored over the split file, in split order.
+                       This is the only thing pairing requires, and it is a hard
+                       failure if it does not hold.
+
+  zero-result queries  A 0   B 0   both 0
+                       The two sets are IDENTICAL.
+                       Reported, never gated. A retriever that returns results
+                       where the other returned none is a better retriever, not an
+                       unpairable one — that query is exactly the difference the
+                       test exists to measure.
+
+  re-derivation        both sides re-scored from the WRITTEN run file through
+                       backend/eval/metrics.js (validated at 2.4), and each
+                       aggregate asserted against its committed sidecar at EXACT
+                       float equality. Passed.
+
+3. PRE-REGISTRATION
+------------------------------------------------------------------------------
+  status               EXPLORATORY — this pair is not in the registry.
+  registry             results/comparisons/registry.json
+  family               7 registered comparisons, none matching
+                       (v6-hybrid-combsum vs v6-hybrid on dev)
+
+  Differences and intervals below are printed in full. p-values are SUPPRESSED.
+  Six rungs is 15 pairwise comparisons; times 13 metrics is 195 p-values, about
+  10 of which come up significant at 0.05 on pure noise. To make this comparison
+  testable, add it to the registry and commit — which puts the decision in git
+  history, dated, which is the only thing that makes a pre-registration credible.
+
+4. DIFFERENCES AND 95% INTERVALS, EVERY METRIC
+------------------------------------------------------------------------------
+  metric        mean A     mean B        A − B    95% CI              differ   p
+  ----------------------------------------------------------------------------
+   nDCG@1      0.2273    0.2232     +0.0041   [-0.0056, +0.0140]    145      -
+   nDCG@5      0.2916    0.2900     +0.0017   [-0.0041, +0.0074]    520      -
+  *nDCG@8      0.3120    0.3114     +0.0006   [-0.0045, +0.0058]    667      -
+   nDCG@10     0.3204    0.3217     -0.0013   [-0.0062, +0.0037]    735      -
+   P@1         0.2365    0.2322     +0.0043   [-0.0056, +0.0148]    140      -
+   P@5         0.1100    0.1104     -0.0004   [-0.0028, +0.0019]    185      -
+   P@8         0.0818    0.0824     -0.0007   [-0.0021, +0.0008]    173      -
+   P@10        0.0703    0.0715     -0.0012   [-0.0023, -0.0001]    165      -
+   R@1         0.1613    0.1591     +0.0022   [-0.0058, +0.0103]    140      -
+   R@5         0.3494    0.3508     -0.0013   [-0.0095, +0.0068]    185      -
+   R@8         0.4075    0.4109     -0.0034   [-0.0118, +0.0051]    173      -
+   R@10        0.4329    0.4428     -0.0100   [-0.0178, -0.0023]    165      -
+   MRR@10      0.3342    0.3325     +0.0017   [-0.0048, +0.0082]    599      -
+
+  * = the pre-registered primary metric. p is reported for that metric only.
+  . = computed but not reported: one pre-registered metric per comparison is what
+      keeps a p-value from being read thirteen times. The CI is the honest summary
+      for every other row, and it is printed for all of them.
+
+5. PRIMARY RESULT — nDCG@8
+------------------------------------------------------------------------------
+  mean difference      +0.000604
+  95% CI               [-0.004541, +0.005812]
+  p                    suppressed (exploratory — see §3)
+
+  queries differing    667 of 2304 (28.9%)
+                       v6-hybrid-combsum ahead on 298, v6-hybrid ahead on 369
+  effective n          667 — the CLT here runs on the queries that moved,
+                       not on all 2304. This is why the test is a bootstrap and
+                       not a paired t-test: a point mass at zero with a thin slab
+                       is where the normal approximation to the mean is worst.
+  mean over those      +0.002086 — the overall mean is this number
+                       diluted by the 1637 queries at exactly zero
+
+  THE SENTENCE:
+    v6-hybrid-combsum beats v6-hybrid by 0.0006 nDCG@8,
+    95% CI [0.0045, 0.0058] (p not reported).
+
+    The interval STRADDLES ZERO. Whatever the p-value says, the data is
+    consistent with no difference at all, and the sentence above should not
+    be written anywhere without this line beside it.
+
+6. HOW THE RANDOMNESS IS PINNED
+------------------------------------------------------------------------------
+  prng                 mulberry32, seeded — the same generator build-splits.js
+                       uses at 1.4. Math.random() cannot be seeded in Node, and a
+                       p-value that changes between runs is not a result.
+  seed                 20260804
+  resamples            10000
+                       chosen against the sampling error it estimates, not by
+                       convention: at p ~= 0.05 the Monte Carlo standard error is
+                       sqrt(0.05 * 0.95 / B) = 0.0022 here, which resolves the 0.05
+                       threshold to about ± 0.004 — enough to decide significance,
+                       not enough to justify a third decimal. The se is printed
+                       above so that is visible rather than trusted.
+  interval             percentile, over the 10000 resampled means, as a pair of
+                       order statistics at index floor(alpha/2 * B) and its mirror
+                       B-1-that. Symmetric by construction, so comparing A against
+                       B and B against A give exactly mirrored intervals — the
+                       registry accepts a registered pair in either direction, so
+                       both orders will be run. The obvious nearest-rank convention
+                       is off by one order statistic under that swap; a mirror test
+                       caught it, worth ~2e-4 on real dev data.
+  p-value              centred (shifted) bootstrap ASL — differences shifted to
+                       mean zero under H0, then |mean*| >= |observed| counted, with
+                       the (1+r)/(B+1) convention. Smucker, Allan & Carterette
+                       (2007). NOT the interval inversion PRIMER §5.5 describes;
+                       that reading is the raw count below.
+  resamples favouring  A 5945   B 4055   tied 0
+                       PRIMER §5.5's "9,800 of 10,000 still ahead" reading, under
+                       its own name. Deliberately not labelled a second p-value:
+                       two p-values in one report is an invitation to quote the
+                       smaller one.
+
+7. ENVIRONMENT
+------------------------------------------------------------------------------
+  node                 v25.8.1
+  platform             darwin 25.6.0 arm64
+  git commit           1d08b2ea5f715ad206c3c6d3181a920430336169
+  scorer               backend/eval/metrics.js — validated against pytrec_eval at
+                       2.4, max |delta| 1.11e-16. results/metric-validation.txt
+  bootstrap            backend/eval/bootstrap.js
+
+  Absolute figures remain LOWER BOUNDS (EVALUATION.md §5.1): the judgments are
+  positive-only and incomplete, so an unjudged relevant document scores as a miss.
+  The DIFFERENCE above is the number that survives that, because both runs face the
+  identical incomplete key. Validation and incompleteness are two separate
+  qualifiers and neither one retires the other.
+
+==============================================================================
