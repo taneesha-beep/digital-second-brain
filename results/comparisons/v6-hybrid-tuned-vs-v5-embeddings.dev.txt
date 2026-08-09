@@ -1,5 +1,5 @@
 PAIRED BOOTSTRAP — v6-hybrid-tuned  vs  v5-embeddings
-roadmap 2.5 · 2026-08-09T05:23:53Z
+roadmap 2.5 · 2026-08-09T07:09:49Z
 ==============================================================================
 
   Direction is A − B throughout. A is the first label on the command line.
@@ -123,7 +123,7 @@ roadmap 2.5 · 2026-08-09T05:23:53Z
 
   THE SENTENCE:
     v6-hybrid-tuned beats v5-embeddings by 0.0001 nDCG@8,
-    95% CI [0.0068, 0.0071] (p not reported).
+    95% CI [-0.0068, +0.0071] (p not reported).
 
     The interval STRADDLES ZERO. Whatever the p-value says, the data is
     consistent with no difference at all, and the sentence above should not
@@ -165,7 +165,7 @@ roadmap 2.5 · 2026-08-09T05:23:53Z
 ------------------------------------------------------------------------------
   node                 v25.8.1
   platform             darwin 25.6.0 arm64
-  git commit           5e46911c2d56fff1511122347672d84473cc9b30
+  git commit           8d6334d272632146799da4770426eb522391dcbe  (tracked files dirty)
   scorer               backend/eval/metrics.js — validated against pytrec_eval at
                        2.4, max |delta| 1.11e-16. results/metric-validation.txt
   bootstrap            backend/eval/bootstrap.js
