@@ -1,0 +1,150 @@
+{
+  "provisional": false,
+  "metricsValidation": {
+    "reference": "pytrec-eval-terrier 0.5.10",
+    "tolerance": 0.000001,
+    "maxAbsDelta": 1.11e-16,
+    "evidence": "results/metric-validation.txt",
+    "recheck": "scripts/.venv/bin/python scripts/validate_metrics.py"
+  },
+  "runId": "v2-jaccard.test.fb0bc25a",
+  "label": "v2-jaccard",
+  "site": "cooking",
+  "split": "test",
+  "retriever": {
+    "version": "v2-jaccard",
+    "params": {
+      "idfCorpus": "leave-one-out",
+      "topN": 10,
+      "lengthBonus": true,
+      "scorePrecision": 4,
+      "cap": 8,
+      "threshold": 0,
+      "minShared": 2
+    },
+    "docCount": 27325,
+    "digest": "fb0bc25ae7241f19797701560e7a56b1c1c071edd4ce46599e1f7b0ba1a7fe06",
+    "symmetric": true
+  },
+  "retrieverSource": {
+    "files": [
+      {
+        "path": "backend/retrieval/index.js",
+        "sha256": "84f62dc700c7f68e1dfd572d1bf9dcfbd3d746f68f25f3298254a315cc368694"
+      },
+      {
+        "path": "backend/retrieval/types.js",
+        "sha256": "9d5aef1408c27ea68c3e31978c5e105602ba14ecdda5c797c8f252bee6254534"
+      },
+      {
+        "path": "backend/retrieval/v1-overlap.js",
+        "sha256": "d445f40de4c5379a89af39cfaf608a0739eb1e7d37f771cb9e56b045f301153c"
+      },
+      {
+        "path": "backend/retrieval/v2-jaccard.js",
+        "sha256": "0c2dd2177ae0b48e6b3353c9b202ed969531d745f5c3359306d9a8e25d7701ca"
+      }
+    ],
+    "digest": "6680916d89a0551020e2a5e31a38159d2668138b57b4a27add76df13b7fdc1b6"
+  },
+  "vectors": null,
+  "k": 10,
+  "ksReported": [
+    1,
+    5,
+    8,
+    10
+  ],
+  "command": "npm run eval -- --retriever v2-jaccard --split test",
+  "inputs": [
+    {
+      "name": "corpus",
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "matchesManifest": true
+    },
+    {
+      "name": "qrels",
+      "file": "data/qrels/cooking.qrels",
+      "sha256": "d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1",
+      "matchesManifest": true
+    },
+    {
+      "name": "split",
+      "file": "data/splits/cooking.test.txt",
+      "sha256": "95d3f5a7b5d6bcec009ea3c55792b30bcef3c223ea81250288677ee8c9a50518",
+      "matchesManifest": true
+    }
+  ],
+  "output": {
+    "run": "results/runs/v2-jaccard.test.run",
+    "lines": 17830,
+    "bytes": 915933,
+    "sha256": "92e615572c09e62225f74755fe7d03dc0de8cf33e2d4c8c6af82132539efdc73"
+  },
+  "queries": {
+    "total": 2305,
+    "scored": 2305,
+    "unjudgeable": 0,
+    "unjudgeableIds": [],
+    "zeroResult": 9,
+    "zeroResultFile": "results/runs/v2-jaccard.test.zero.txt"
+  },
+  "metrics": {
+    "ndcg": {
+      "1": 0.08922631959508318,
+      "5": 0.12527511307646702,
+      "8": 0.13711087130071978,
+      "10": 0.13696930425092482
+    },
+    "p": {
+      "1": 0.09154013015184381,
+      "5": 0.04616052060737565,
+      "8": 0.035683297180043386,
+      "10": 0.028546637744034917
+    },
+    "r": {
+      "1": 0.06816825721589227,
+      "5": 0.15553439631547525,
+      "8": 0.18808252596487204,
+      "10": 0.18808252596487204
+    },
+    "mrr": 0.14277295733911788
+  },
+  "conventions": {
+    "gain": "2^grade - 1",
+    "discount": "1 / log2(rank + 1)",
+    "idcg": "judged grades sorted descending, truncated at k",
+    "zeroResultQueries": "scored 0, included in the mean",
+    "unjudgeableQueries": "excluded from the mean, counted separately",
+    "mrr": "recip_rank@10 — the list is truncated at k before scoring"
+  },
+  "latencyMs": {
+    "note": "per-query search() only; index build reported separately",
+    "mean": 0.4275512859002164,
+    "p50": 0.398167,
+    "p95": 0.833458,
+    "max": 2.863667
+  },
+  "timingsMs": {
+    "load": 83.243125,
+    "index": 1276.731458,
+    "search": 998.398417,
+    "total": 2358.373
+  },
+  "environment": {
+    "node": "v25.8.1",
+    "platform": "darwin 25.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "cpus": 8,
+    "totalMemMiB": 8192,
+    "peakRssMiB": 385
+  },
+  "git": {
+    "commit": "8d6334d272632146799da4770426eb522391dcbe",
+    "dirty": false,
+    "dirtyMeans": "uncommitted changes to tracked files outside results/runs/; untracked output is not counted. This run's own sidecar lives there and is tracked, so counting it would set the flag on every run."
+  },
+  "generatedAt": "2026-08-09T07:01:13.773Z"
+}
