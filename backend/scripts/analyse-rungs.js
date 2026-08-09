@@ -71,6 +71,8 @@ const path = require('path');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const metrics = require('../eval/metrics');
 const retrieval = require('../retrieval');
+// Absorbed into scripts/lib/run-io.js at 3.7.
+const { loadRun } = require('./lib/run-io');
 
 const DEFAULT_KS = [1, 5, 8, 10];
 const PRIMARY_K = 8; // the pre-registered primary metric's k. §11.5.
@@ -111,20 +113,6 @@ function readOrFail(file) {
   return file;
 }
 
-/** run file -> Map<qid, docid[]>, ordered by the RANK column. */
-function loadRun(file) {
-  const byQuery = new Map();
-  for (const line of lines(readOrFail(file))) {
-    const [qid, , docid, rank] = line.split(/\s+/);
-    if (!byQuery.has(qid)) byQuery.set(qid, []);
-    byQuery.get(qid).push({ docid, rank: Number.parseInt(rank, 10) });
-  }
-  for (const [qid, rows] of byQuery) {
-    rows.sort((x, y) => x.rank - y.rank);
-    byQuery.set(qid, rows.map((r) => r.docid));
-  }
-  return byQuery;
-}
 
 function loadSide(label, split) {
   const runFile = path.join(REPO_ROOT, 'results', 'runs', `${label}.${split}.run`);

@@ -22,10 +22,12 @@
     "analyse:v5": "node --expose-gc scripts/analyse-embeddings.js",
     "analyse:v6": "node --expose-gc scripts/analyse-hybrid.js",
     "analyse:contamination": "node scripts/analyse-contamination.js",
+    "analyse:errors": "node scripts/analyse-errors.js",
     "analyse:rungs": "node scripts/analyse-rungs.js",
     "analyse:ladder": "node scripts/analyse-ladder.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
     "check:claims": "node scripts/check-claims.js",
+    "check:blocks": "node scripts/check-blocks.js",
     "embed:corpus": "node ../scripts/embed-corpus.js",
     "analyse:vocab": "node scripts/analyse-vocabulary.js"
   },
