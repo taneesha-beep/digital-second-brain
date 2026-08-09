@@ -21,6 +21,7 @@
     "analyse:bm25": "node scripts/analyse-bm25.js",
     "analyse:v5": "node --expose-gc scripts/analyse-embeddings.js",
     "analyse:v6": "node --expose-gc scripts/analyse-hybrid.js",
+    "analyse:contamination": "node scripts/analyse-contamination.js",
     "analyse:rungs": "node scripts/analyse-rungs.js",
     "validate:metrics": "../scripts/.venv/bin/python ../scripts/validate_metrics.py",
     "embed:corpus": "node ../scripts/embed-corpus.js",

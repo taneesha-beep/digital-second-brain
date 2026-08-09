@@ -1,0 +1,58 @@
+LINK-DATE CONTAMINATION CUT — v5-embeddings vs v4-bm25 on cooking.dev
+==============================================================================
+
+  roadmap 3.6, deferred here by EVALUATION.md §17.8. EXPLORATORY: not in
+  registry.json, no p-value quoted. The intervals support a DIRECTION.
+
+  training snapshot    2021-07-26 — flax-sentence-embeddings/stackexchange_xml,
+                       which contains cooking.stackexchange.com.7z. LinkTypeId 3
+                       Duplicate is the relation these qrels grade 2.
+  PostLinks.xml        data/raw/cooking/PostLinks.xml
+                       sha256 4e8ccda4516765a7365d1693c863345b5044fb1407ed3d1dafa8c4fb8025e029
+                       9336 rows read, 0 with no CreationDate
+  unordered pairs      8409 distinct, keyed on the EARLIEST link date
+
+  A judgment is SEEN if the link creating it predates the snapshot — the pair
+  was in the dump the model trained on. A QUERY is UNSEEN only if its WHOLE key
+  postdates it: one seen judgment is enough for the relation to have been
+  available, and per-query nDCG reads the whole key at once. Ambiguity is
+  resolved toward SEEN, which is the stratum that cannot flatter the result.
+
+1. WHAT THE CUT REACHES
+------------------------------------------------------------------------------
+  dev queries with a key    2304
+    fully post-snapshot     210  (9.1% of the split)
+    any pre-snapshot        2094
+    unmatched in PostLinks  0
+  judgments  seen 3975 · unseen 436 · unmatched 0
+
+  §17.8's query-date cut reached 155 of 2,304 dev queries — 6.7%. This one is
+  the comparison that matters for whether the finer cut was worth building.
+
+2. THE MARGIN, WITHIN EACH STRATUM
+------------------------------------------------------------------------------
+  stratum          n      v4-bm25 nDCG@8        v5-embeddings nDCG@8  A − B        95% CI
+  ----------------------------------------------------------------------------------------------------
+  unseen           210      0.233043              0.321625              +0.088582    [+0.0356, +0.1418]
+  seen            2094      0.247036              0.327422              +0.080386    [+0.0670, +0.0942]
+
+  THE COMPARISON IS OF THE DIFFERENCE WITHIN EACH STRATUM, NEVER OF THE ABSOLUTE
+  LEVELS ACROSS THEM. §5.3 measured that per-query scores are not comparable
+  across corpus age, because a document's judged degree tracks how much corpus
+  was created after it. Both absolute columns move between strata for that
+  reason, and that movement is §5.3's effect rather than a finding here.
+
+  AND IT REMOVES MEMORISATION OF THE RELATION, NOT EXPOSURE TO THE TEXT. The
+  same model card lists 25,316,456 Stack Exchange (Title, Body) pairs, so both
+  documents in a post-snapshot pair were very likely seen individually. What is
+  supported is "the margin does not depend on having been shown this pair".
+
+3. ENVIRONMENT
+------------------------------------------------------------------------------
+  runs                 results/runs/v5-embeddings.dev.run  sha256 89227f28f7cd61faae77f80df9f95bf088a2f6513664a21f5dbc1db24a0fbf97
+                       results/runs/v4-bm25.dev.run  sha256 9aa1881f581eca59afbdf31879c0a52faaa2401b379f387b7d47a10f42df142d
+  qrels                data/qrels/cooking.qrels  sha256 d92fb8c6b37a22245b519dcaeb7206a2b0184a5ae2f5276376fd6d03f42f81c1
+  bootstrap            seed 20260804, B = 10000, mulberry32 — 2.5's stream, unchanged
+  node                 v25.8.1
+
+==============================================================================
