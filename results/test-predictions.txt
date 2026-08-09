@@ -1,0 +1,104 @@
+PHASE 3.6 — PREDICTIONS, WRITTEN BEFORE THE TEST SPLIT WAS OPENED
+==============================================================================
+
+Committed in its own commit, BEFORE any --split test run exists. That timing
+is the whole value of the file: written afterwards, nobody — including its
+author — can tell whether a prediction was made or reconstructed.
+
+3.4 and 3.5 both predicted their rung wrong, and recording the prediction was
+worth more than being right, because in both cases the REASONING turned out to
+be the checkable part and not the guess. This file exists to keep that going on
+the one split that cannot be re-run.
+
+Author: the operator, 9 Aug 2026. Dev ladder as banked (nDCG@8):
+
+  v1-overlap      0.140167
+  v2-jaccard      0.142668     +0.0025    raw p 0.0482   NOT significant under Holm
+  v3-tfidf        0.210660     +0.0680    p < 0.0001     bootstrap floor
+  v4-bm25         0.245760     +0.0351    p < 0.0001     bootstrap floor
+  v5-embeddings   0.326893     +0.0811    p < 0.0001     bootstrap floor   <- winner
+  v6-hybrid       0.311361     -0.0155    p = 0.0015     clears alpha/7 AS A LOSS
+
+
+1. THE ORDERING
+------------------------------------------------------------------------------
+Predicted to hold exactly, including the shape at the top:
+
+  v1 < v2 < v3 < v4 < v6 < v5
+
+i.e. six rungs in the same order, with v6 landing BETWEEN its two components
+rather than above or below both. Dev has it at 0.3114, between v4's 0.2458 and
+v5's 0.3269.
+
+
+2. THE ABSOLUTE LEVELS
+------------------------------------------------------------------------------
+Every rung predicted within +/-0.010 of its dev value. The splits are a uniform
+random partition of one query set (§4.2), and §5.3 measured the corpus-age bias
+as distributed evenly across train/dev/test, so there is no mechanism that
+should move a level much. Anything moving more than 0.02 would surprise me and
+would be worth investigating before being written up.
+
+
+3. PER-RUNG: WHAT SURVIVES
+------------------------------------------------------------------------------
+Note what "survives" can and cannot mean here. Five ladder comparisons are
+registered on DEV (registry.json), so compare-runs.js will suppress their
+p-values on test and report difference + 95% CI only. The prediction is
+therefore about the INTERVAL, not about a p.
+
+  v1 -> v2    DOES NOT become significant. Predicted difference small and
+              positive, CI straddling zero. Confidence in the SIGN is low —
+              call it 60/40 — because +0.0025 is smaller than the resampling
+              noise on it, and six bootstrap seeds already straddle 0.05 on dev
+              (§14.4). A sign flip on test would not be a surprise; it would be
+              the honest reading of a margin this size.
+
+  v2 -> v3    SURVIVES comfortably. Predicted +0.055 to +0.080, interval well
+              clear of zero.
+
+  v3 -> v4    SURVIVES. Predicted +0.025 to +0.045, interval clear of zero.
+
+  v4 -> v5    SURVIVES, and this is the one I would bet hardest on. Predicted
+              +0.065 to +0.095. §17.8's contamination is a property of model x
+              corpus, not of split, so it does not attack test differentially.
+
+  v5 -> v6    THE LOSS HOLDS IN SIGN. Predicted -0.005 to -0.025. This is the
+              rung I am least confident about on MAGNITUDE, and the only one
+              whose interval I think could straddle zero: on dev it clears
+              Holm's alpha/7 by a factor of 4.8 where v3, v4 and v5 clear it by
+              71 (§18.11).
+
+  sweep-tuned SHIPPED CONFIGURATION IS NOT BEATEN. This is the one registered
+  -vs-shipped p-value on test, so it is the one place a p is legitimate here.
+              Predicted |difference| < 0.001 at nDCG@8, interval straddling
+              zero, p nowhere near alpha/7 = 0.00714. On dev the tuned point
+              wins by +0.000226 from 2 of 2,304 queries with a straddling
+              interval, and §13.7 measured the selection optimism on it at
+              +1.4e-5 against that +2.3e-4 margin. The prediction is that test
+              says the shipped 0.15 / cap 8 were fine.
+
+
+4. THE HOLM OUTCOME
+------------------------------------------------------------------------------
+Family of seven, alpha = 0.05, bound alpha/7 = 0.00714 at the smallest step.
+Six p-values are on dev and one on test; the decision to correct the family AS
+REGISTERED rather than re-register it on test is recorded in the writeup, with
+the rejected option.
+
+Predicted: v2->v3, v3->v4, v4->v5 and the cap ablation all survive Holm (four
+at or near the bootstrap floor). v5->v6 survives as a LOSS — 0.0015 has to
+clear alpha/3 = 0.01667 at its step position, which it does with room, but this
+is the only member whose outcome is not knowable by inspection. v1->v2 does not
+survive. sweep-tuned-vs-shipped does not survive.
+
+So: 5 of 7 predicted to survive, one of them a loss.
+
+
+5. WHAT WOULD SURPRISE ME
+------------------------------------------------------------------------------
+  - Any rung's absolute moving more than 0.02 between dev and test.
+  - v6 beating v5 on test.
+  - The tuned v1 configuration beating the shipped one significantly.
+  - v1 -> v2 turning significant.
+  - Any nDCG@8 above 0.42 on any rung — §18.2's bug-trigger, restated for test.
