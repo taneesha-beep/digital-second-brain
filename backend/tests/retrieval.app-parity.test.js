@@ -23,6 +23,11 @@
  */
 
 jest.mock('../models/Note', () => require('../scripts/lib/fake-note-store').FakeNote);
+// ↳ 4.2: BOTH models or neither. services/linker.service.js now requires
+// NoteLink at module scope, and substituting only Note left the linker holding
+// a real mongoose model with no connection — which failed loudly rather than
+// quietly, casting the fixture's string ids to ObjectId and throwing.
+jest.mock('../models/NoteLink', () => require('../scripts/lib/fake-note-store').FakeNoteLink);
 
 const fs = require('fs');
 const path = require('path');
@@ -252,7 +257,13 @@ describe('what the linker now stores', () => {
     expect(links.length).toBeGreaterThan(0);
     expect(links.length).toBeLessThanOrEqual(noteCorpus.LINK_CAP);
     expect(links.some((l) => l.strength > 1)).toBe(true); // not a [0,1] coefficient any more
-    expect(links.every((l) => l.strength >= 0)).toBe(true); // Note.linkedNotes.strength has min: 0
+    // Non-negative because v4 runs the `lucene` idf variant, NOT because a
+    // schema requires it. Note.linkedNotes.strength's `min: 0` used to be the
+    // reason this line was here; from 4.2 nothing writes that field, and
+    // NoteLink's scores carry no floor on purpose (§16.6 — `robertson` goes
+    // negative). So this now pins the RETRIEVER's range, which is the only
+    // thing that was ever really true.
+    expect(links.every((l) => l.strength >= 0)).toBe(true);
     expect(links.every((l) => Array.isArray(l.sharedKeywords) && l.sharedKeywords.length === 0)).toBe(true);
     // Descending, so LinkedNotesPanel's rank-based badge reads a real ordering.
     expect(links.map((l) => l.strength)).toEqual([...links.map((l) => l.strength)].sort((a, b) => b - a));

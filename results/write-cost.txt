@@ -1,0 +1,48 @@
+WRITE COST PER SAVE — driver operations issued by computeAndSaveLinks()
+fixture              backend/retrieval/fixtures/mini-corpus.jsonl — 34 documents
+generated at HEAD    4a38def
+unit                 one operation = one call that would reach a server.
+                     A bulkWrite is ONE operation and N server-side writes.
+                     This is NOT a latency measurement — see the script header.
+
+A. v1-shipped — scripts/lib/linker-v1-shipped.js (the pre-4.1 app)
+   THE CONTROL. Hashed by tests/retrieval.app-parity.test.js so it cannot drift,
+   therefore measurable at every commit; if this row ever moves, the instrument
+   moved and not the subject.
+   links per save       min 0  p50 2  mean 3.41  max 8  total 116
+   operations per save  min 3  p50 7  mean 9.82  max 19  total 334
+   fitted               ops = 3 + 2 x links   EXACT on every note
+   breakdown, worst     {"find":1,"findById":8,"findByIdAndUpdate":1,"findOne":1,"save":8}  (note 021, 8 links)
+
+LIVE. services/linker.service.js at this commit — classified as row C (4.2 — constant in the link count)
+   links per save       min 3  p50 8  mean 7.53  max 8  total 256
+   operations per save  min 3  p50 3  mean 3.00  max 3  total 102
+   fitted               ops = 3 + 0 x links   EXACT on every note
+   breakdown, worst     {"bulkWrite":1,"find":1,"findOne":1}  (note 001, 8 links)
+
+PROJECTION — row A's MEASURED storage pattern applied to the live link counts
+   ops = 3 + 2 x links, links measured in the run above
+   projected per save   min 9  p50 19  mean 18.06  max 19  total 614
+   agrees with live     NO — the live path is no longer the per-link pattern, so this is row B reconstructed
+   This is what makes row B quotable once it stops being measurable: the pattern
+   comes from a file that cannot drift, and the projection was checked against
+   the live path at the commit where the live path still WAS row B.
+
+THE STORED GRAPH — what canonical storage does to the shape, not the cost
+   Every note saved once, so the store is converged rather than mid-migration.
+   canonical rows           160
+   both directions          96
+   one direction only       64    <-- B ranked A, A did not rank B
+   directions disagreeing   92 of 96   (v4 is asymmetric — §14.5)
+   degree per note          min 3  p50 9  mean 9.41  max 14  total 320
+   notes above the cap of 8 22 of 34
+   THE COST OF CANONICAL STORAGE, MEASURED. A note's edge set is the UNION of
+   "notes it ranked" and "notes that ranked it", so degree exceeds the cap. That
+   is NOT new — the pre-4.2 bidirectional write pushed into the target's array
+   with no cap at all — but it stops being an accident. It is also the evidence a
+   score floor would be argued from, and EVALUATION.md §22 records why 4.2
+   declines to add one to a closed rung.
+
+ENVIRONMENT
+   Darwin 25.6.0 arm64, Node v25.8.1, npm 11.11.0
+   8 x Apple M2, 8 GB

@@ -14,6 +14,8 @@
     "parity:v1": "node scripts/parity-v1.js",
     "parity:app": "node scripts/parity-app.js",
     "analyse:app": "node --expose-gc scripts/analyse-app.js",
+    "measure:writes": "node scripts/measure-writes.js",
+    "migration:verify": "node scripts/verify-migration.js",
     "eval": "node scripts/run-eval.js",
     "eval:compare": "node scripts/compare-runs.js",
     "holm": "node scripts/holm.js",

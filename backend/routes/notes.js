@@ -1,6 +1,7 @@
 const express   = require('express');
 const router    = express.Router();
 const Note      = require('../models/Note');
+const NoteLink  = require('../models/NoteLink');
 const NoteVersion = require('../models/NoteVersion');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
@@ -53,7 +54,12 @@ function runLinkingAsync(noteId, userId) {
 // ── GET /api/notes ────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    // linkedNotes is deprecated at 4.2 and no longer written (models/Note.js).
+    // Excluding it here is what stops a retired field being served as though it
+    // were current — a stale array in an API response is a second source of
+    // truth whether or not anything reads it.
     const notes = await Note.find({ user: req.user._id })
+      .select('-linkedNotes')
       .sort({ updatedAt: -1 })
       .lean();
     res.json(notes);
@@ -141,7 +147,16 @@ router.delete('/:id', async (req, res) => {
     const note = await Note.findOne({ _id: req.params.id, user: req.user._id });
     if (!note) return res.status(404).json({ message: 'Note not found' });
     await note.deleteOne();
-    // Remove this note from other notes' linkedNotes
+    // Canonical edges incident to the note, either endpoint. Not optional: a
+    // note delete that left these behind would leave the store full of edges
+    // pointing at nothing, which getLinkedNotes has to skip over and which no
+    // later save would ever clean up.
+    await NoteLink.deleteMany({
+      user: req.user._id,
+      $or: [{ noteA: note._id }, { noteB: note._id }]
+    });
+    // And the deprecated array, so the rollback target stays internally
+    // coherent while it still exists.
     await Note.updateMany(
       { user: req.user._id },
       { $pull: { linkedNotes: { noteId: note._id } } }
@@ -156,6 +171,12 @@ router.delete('/:id', async (req, res) => {
 router.delete('/:id/relations/:relatedId', async (req, res) => {
   try {
     const { id, relatedId } = req.params;
+    // One row, both directions — which is what an undirected unlink always
+    // meant and what the two $pulls below were emulating. The next save of
+    // either note recreates the edge if the retriever still ranks it; that was
+    // true before 4.2 as well.
+    const { noteA, noteB } = NoteLink.canonicalPair(id, relatedId);
+    await NoteLink.deleteOne({ user: req.user._id, noteA, noteB });
     await Note.findOneAndUpdate(
       { _id: id,        user: req.user._id },
       { $pull: { linkedNotes: { noteId: relatedId } } }
@@ -175,7 +196,10 @@ router.get('/:id/links', async (req, res) => {
   try {
     const note = await Note.findOne({ _id: req.params.id, user: req.user._id }).select('_id').lean();
     if (!note) return res.status(404).json({ message: 'Note not found' });
-    const links = await getLinkedNotes(req.params.id);
+    // userId is required from 4.2: edges are scoped to a user on the row, so
+    // the read cannot be derived from the note id alone. Ownership is already
+    // checked above; this is the query filter, not a second check.
+    const links = await getLinkedNotes(req.params.id, req.user._id);
     res.json({ links });
   } catch (err) {
     res.status(500).json({ message: 'Error fetching linked notes' });
@@ -212,8 +236,12 @@ router.get('/:id/versions/:versionNumber', async (req, res) => {
 // ── GET /api/notes/:id ────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
+    // The populate on linkedNotes is gone with the field (4.2). Related notes
+    // come from GET /api/notes/:id/links, which is what LinkedNotesPanel.jsx
+    // already calls; the frontend's only other reader guards with
+    // `(n.linkedNotes || [])` and degrades to an empty list.
     const note = await Note.findOne({ _id: req.params.id, user: req.user._id })
-      .populate('linkedNotes.noteId', 'title _id color keywords');
+      .select('-linkedNotes');
     if (!note) return res.status(404).json({ message: 'Note not found' });
     res.json(note);
   } catch (err) {
