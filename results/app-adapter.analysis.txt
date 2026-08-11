@@ -1,0 +1,100 @@
+APP-SCALE COST OF THE 4.1 ADAPTER
+==============================================================================
+  corpus        data/corpus/cooking.jsonl, first 500 documents
+  mean words    72.3 per document — an UPPER BOUND on a note; see the header
+  node          v25.8.1  darwin/arm64
+  retriever     v4-bm25 at its shipped defaults, untuned (§16.3, §19.9)
+
+1. THE PER-SAVE BUDGET — the adapter rebuilds the index on every call
+------------------------------------------------------------------------------
+   sizes bracket the <=500 slice rather than reporting one point, so the
+   shape is visible and not just the endpoint.
+
+     N      index build (ms)                 search (ms, over all N queries)
+            mean    p50     p95              mean    p50     p95
+     100     3.5    3.2    5.5              0.02    0.01    0.04
+     250     8.0    8.1    8.4              0.02    0.02    0.04
+     500    14.0   14.1   14.1              0.04    0.04    0.07
+
+   THE SAVE PATH PAYS BUILD + SEARCH, once, off the response path — the two
+   background jobs are un-awaited (CLAUDE.md). Before 4.1 it paid an O(N·K)
+   set intersection over STORED keyword lists and no index build at all, so
+   this is more CPU per save and the honest framing is that the app bought
+   the ranking with it. A cached per-user index would amortise the build
+   away; that is END-STATE's design and ADR-0007's trigger condition, and
+   4.1 declines it because a cache needs invalidation on every write and a
+   stale index is the same class of defect as 4.6's stale keyword lists.
+
+2. `Σ_t df_t²` AT APP SCALE — §15.6's bound, at the N the app actually runs
+------------------------------------------------------------------------------
+   §15.6 measured this at N=27,325 and warned that PHASE 4 IS WHERE IT
+   BECOMES REAL, because the app rebuilds a graph and therefore pays the
+   all-pairs term the eval never does. Here it is, at N=500.
+
+                              full vocabulary (v4)    top-10 (v1)     ratio
+   |V| with postings                        3871           2619    1.48x
+   postings Σ_t df_t                       12406           4852    2.56x
+   Σ_t df_t²                           1.5626e+5      2.0710e+4    7.55x
+   max df                                     79             28    2.82x
+
+   The worst case the bound can reach at N=500 is one term in every
+   document: 500² = 250,000 pairs. Every figure above sits under it.
+
+   THE RATIO IS NOT SCALE-FREE, AND THIS SECTION FIRST ASSUMED IT WAS.
+   §15.6 measured 21.78x at N=27,325; here it is 7.55x. The mechanism is
+   in the max-df row: 2.82x here against §15.6's 4.72x. Σ_t df_t² is
+   dominated by the head of the df distribution, and that head grows
+   super-linearly in N while the top-10 rule truncates it at a rate that
+   does not — so the penalty for dropping truncation GETS WORSE AS A
+   COLLECTION GROWS. At N=500 it is 7.55x of a very small number. The
+   direction matters more than the value: this is not a fixed discount the
+   app has bought once, it is a term that will grow if the <=500 slice ever
+   does. ADR-0007's trigger condition should read this row, not §15.6's.
+
+3. MEMORY — retained for one per-user handle
+------------------------------------------------------------------------------
+   retained (--expose-gc)     2.57 MiB
+     of which V8 heap         2.43 MiB   Maps, the vocabulary strings, the postings
+     of which arrayBuffers    0.15 MiB   the Int32/Float64 typed arrays
+   peak RSS, whole process    190 MiB
+   handle held live           500 docs
+
+   BOTH TERMS, NEVER ONE — §17.11 quoted heapUsed alone for v5 and
+   understated it by 20x, because a typed array's backing store lives
+   outside the V8 heap. scripts/lib/retained-for.js exists so that mistake
+   is not available to the next caller. And v4's split is the opposite of
+   v5's — Maps and strings really are on the heap — so the two rungs'
+   per-term figures are NOT comparable quantities. Compare totals.
+
+   Per user, resident, if a cache ever holds one handle each: 2.57 MiB.
+   That number is the reason ADR-0007 needs a trigger condition rather than
+   a policy, and it is not 4.1's to spend.
+
+4. WHAT v5-embeddings WOULD COST ON THE SAME SLICE — LATENCY ONLY
+------------------------------------------------------------------------------
+   index build                mean 1.7 ms   p95 5.5 ms
+   search                     mean 0.28 ms  p50 0.27  p95 0.37 ms
+   retained for one handle    0.77 MiB  (heap 0.03 · buffers 0.74)
+
+   NO RANKING WAS READ AND NO RUN FILE WAS WRITTEN. This is a row slice of
+   the committed vectors timed for cost; §17.2's idsSha256 guard covers
+   the FULL corpus row order and is deliberately not invoked on a slice,
+   so nothing here is a retrieval result and nothing here is comparable to
+   any number in §17.
+
+   At this N the search gap that §17.11 measured at 2.6x (20.4 ms against
+   v4's 7.9) is not what decides anything — both are sub-millisecond. What
+   decides is in §21.1: the vector has to be STORED per note, kept in sync
+   with the text, and backfilled, and the model costs ~232 MiB resident.
+
+5. WHAT THIS DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+   - Not a measurement on user notes. There are none (§12.2). Stack Exchange
+     documents are longer, so these are upper bounds — the safe direction.
+   - Not a latency budget. This is an uncontrolled laptop, one process, no
+     concurrency, no Mongo round trips. §12.4's distinction holds and Phase
+     6.5 owns the controlled figure.
+   - Not the graph builder. buildGlobalGraph is still the O(N²) pairwise
+     loop it always was and 4.1 does not touch it; §2 prices the bound an
+     inverted index WOULD pay, which is 4.4's to spend.
+   - Not a Mongo cost. Round trips per save are 4.2's `[MEASURED]` item.

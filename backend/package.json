@@ -12,6 +12,8 @@
     "splits:build": "node scripts/build-splits.js",
     "bias:analyze": "node scripts/analyze-ground-truth.js",
     "parity:v1": "node scripts/parity-v1.js",
+    "parity:app": "node scripts/parity-app.js",
+    "analyse:app": "node --expose-gc scripts/analyse-app.js",
     "eval": "node scripts/run-eval.js",
     "eval:compare": "node scripts/compare-runs.js",
     "holm": "node scripts/holm.js",
@@ -29,6 +31,7 @@
     "check:claims": "node scripts/check-claims.js",
     "check:blocks": "node scripts/check-blocks.js",
     "embed:corpus": "node ../scripts/embed-corpus.js",
+    "price:v5-app": "node ../scripts/price-v5-app.js",
     "analyse:vocab": "node scripts/analyse-vocabulary.js"
   },
   "dependencies": {

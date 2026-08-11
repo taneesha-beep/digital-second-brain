@@ -10,11 +10,25 @@
  *   npm run parity:v1              report only
  *   npm run parity:v1 -- --write   also write results/parity/*.txt
  *
- * THE SHIPPED SIDE RUNS THE REAL MODULES. utils/keywords.js, utils/corpus.js
- * and services/linker.service.js are required unmodified and executed exactly
- * as routes/notes.js:118-129 executes them, minus Express. A fake Note model
- * is installed by priming require.cache, so no shipped file is edited and no
- * database is involved — mongoose is never even loaded.
+ * THE SHIPPED SIDE RUNS THE REAL MODULES. utils/keywords.js and utils/corpus.js
+ * are required unmodified and executed exactly as routes/notes.js:118-119
+ * executes them, minus Express. A fake Note model is installed by priming
+ * require.cache, so no shipped file is edited and no database is involved —
+ * mongoose is never even loaded.
+ *
+ * ↳ AMENDED AT 4.1, AND THE AMENDMENT IS A LOSS RATHER THAN AN IMPROVEMENT.
+ * The third module used to be services/linker.service.js, live. 4.1 rewired it
+ * through the retrieval interface, so the live file now computes v4-bm25 and is
+ * no longer an implementation of the algorithm this proof is about. The scoring
+ * half therefore comes from ./lib/linker-v1-shipped.js — the pre-4.1 file
+ * preserved verbatim from tag v0-pre-reorientation, hashed by the test.
+ *
+ * State it as what it is: TWO of the three modules on the shipped side are
+ * still the real, live, unmodified ones, and the third is a byte-checked copy
+ * of code that no longer runs anywhere. §7.5's "comparing a reimplementation
+ * against a reimplementation would prove nothing" is weakened by exactly one
+ * third, and the reason it is not weakened further is that the preserved copy
+ * is verifiable against a tag rather than retyped.
  *
  * WHAT IS AND IS NOT COVERED, stated rather than implied:
  *
@@ -54,7 +68,9 @@ install();
 
 const { extractKeywords } = require('../utils/keywords');
 const { loadUserCorpus } = require('../utils/corpus');
-const { computeAndSaveLinks } = require('../services/linker.service');
+// NOT ../services/linker.service — see the header. That file computes v4-bm25
+// from Phase 4.1 onward; this is the pre-4.1 scoring, preserved and hashed.
+const { computeAndSaveLinks } = require('./lib/linker-v1-shipped');
 const retrieval = require('../retrieval');
 const v1 = require('../retrieval/v1-overlap');
 

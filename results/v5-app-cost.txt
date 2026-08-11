@@ -1,0 +1,52 @@
+WHAT v5-embeddings COSTS IN THE APP — Phase 4.1
+==============================================================================
+  node        v25.8.1  darwin/arm64
+  cpu         Apple M2 x8
+  memory      8 GB
+  model       Xenova/all-MiniLM-L6-v2, fp32, dim 384, 256 wordpieces
+  baseline    44.9 MiB RSS before any model work
+
+1. COLD START — what a dyno pays on boot, or the first save pays if lazy
+------------------------------------------------------------------------------
+  import @huggingface/transformers      344 ms
+  AutoTokenizer.from_pretrained          45 ms
+  AutoModel.from_pretrained (fp32)      157 ms
+  TOTAL                                 546 ms
+
+2. PER-NOTE EMBED — a batch of ONE, which is what a single save is
+------------------------------------------------------------------------------
+     note                          tokens    mean     p50     p95     max
+     short                            41     3.9     3.9     4.4     4.4
+     medium                          167    13.7    13.8    14.1    14.1
+     long (truncates)                256    20.7    20.6    21.2    21.2
+
+  A SINGLE NOTE IS CHEAPER PER DOCUMENT THAN THE CORPUS RUN WAS, which is
+  the opposite of what batching usually buys. §17.11's 584.6 s over 27,325
+  documents is 21.4 ms each; the medium note above is under that on its own.
+  embed-corpus.js pads every batch to its longest member (§17.3 — batchSize
+  is load-bearing), so a short document in a batch of 32 pays a long
+  document's sequence length. A save has nothing to pad against.
+
+3. WHAT IT WEIGHS
+------------------------------------------------------------------------------
+  RSS after loading the model           276.6 MiB   (+231.8 over baseline)
+  RSS after embedding                   298.0 MiB
+  model weights on disk                  86.9 MiB   6 files
+  scripts/node_modules                  371.5 MiB   3206 files
+    of which onnxruntime-node           210.1 MiB   platform binaries for every target
+
+  THE RESIDENT FIGURE IS THE BILL, not the latency. It is paid for the
+  lifetime of the process whether or not anyone saves a note, and it is
+  what a Railway backend has least of.
+
+4. WHAT THIS DOES NOT ESTABLISH
+------------------------------------------------------------------------------
+  - Not a retrieval result. Nothing is ranked, no run file is produced, no
+    corpus is embedded. §17's numbers are untouched by this file.
+  - Not a production latency budget. One uncontrolled laptop, one process,
+    no concurrency, no cold page cache. §12.4's distinction holds.
+  - Not the cost of KEEPING vectors correct, which is the actual objection
+    in §21.1: storage per note, sync with the text, and a backfill. Those
+    are schema and migration costs and this script cannot see them.
+  - Not a claim about a hosted model. PRIMER §13's escape hatch was closed
+    at 3.6 for reasons unrelated to cost.
