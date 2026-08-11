@@ -1,0 +1,113 @@
+MIGRATION VERIFICATION — 001-canonical-edges, against a real MongoDB
+   server                     MongoDB 7.0.39
+   target                     localhost / dsb_migration_test   (throwaway)
+   generated at HEAD          4a38def
+
+1. FIXTURE — built to be pathological, see the script header
+   notes                      8  across 2 users
+   linkedNotes entries        10
+   fixture digest             be6066f6929863503c4abab959c4d962f07ce73913b822cf838088adce0d4f79
+
+2. BEFORE — the defect, counted off the legacy arrays
+   rows                                                0
+   canonical order violated                            0  OK
+   duplicate (user, noteA, noteB)                      0  OK
+   rows with neither direction                         0  OK
+   dangling endpoint                                   0  OK
+   endpoint not owned by row user                      0  OK
+   ASYMMETRIC PAIRS, NoteLink                          0  OK
+   asymmetric pairs, legacy linkedNotes (before)       5
+   digest over the row set                        01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+   OK    NoteLink rows before the migration                   0
+
+3. MIGRATE
+   notes read                 8
+   linkedNotes entries        10
+   canonical pairs            4
+   both directions present    3
+   one direction only         1
+   skipped                    {"selfLink":1,"danglingTarget":1,"crossUser":1,"nonFinite":0}
+   already correct            0
+   to write                   4
+   upserted 4  modified 0  matched 0
+   verification:
+   rows                                                4
+   canonical order violated                            0  OK
+   duplicate (user, noteA, noteB)                      0  OK
+   rows with neither direction                         0  OK
+   dangling endpoint                                   0  OK
+   endpoint not owned by row user                      0  OK
+   ASYMMETRIC PAIRS, NoteLink                          0  OK
+   asymmetric pairs, legacy linkedNotes (before)       5
+   digest over the row set                        900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7
+   OK    every invariant holds                                true
+
+4. EACH PATHOLOGY, CHECKED INDIVIDUALLY
+   OK    symmetric pair a-b becomes ONE row                   true
+   OK      a->b direction                                     0.42
+   OK      b->a direction                                     0.42
+   OK      v1 sharedKeywords preserved                        ["stock","broth"]
+   OK    asymmetric pair a-c keeps BOTH strengths             [11.3271,8.114]
+   OK      derived pair weight is the max                     11.3271
+   OK    one-sided link a->d keeps one direction              [3.5,null]
+   OK    self-link is not stored                              false
+   OK    dangling target is not stored                        false
+   OK    cross-user link is not stored                        false
+   OK    user two keeps its own pair                          true
+   OK    no row spans two users                               true
+
+5. THE UNIQUE INDEX — a REAL duplicate, rejected by a REAL server
+   OK    unique index on {user, noteA, noteB} exists          true
+   OK    inserting the SAME pair again is rejected (E11000)   11000
+   OK    a REVERSED pair slips past the index (so the normal form is load-bearing) true
+   OK      and the model refuses it on the document path      true
+   OK      and a non-finite score is refused                  true
+
+6. IDEMPOTENCE — run it a second time and compare, rather than reason about upserts
+   rows                                                4
+   canonical order violated                            0  OK
+   duplicate (user, noteA, noteB)                      0  OK
+   rows with neither direction                         0  OK
+   dangling endpoint                                   0  OK
+   endpoint not owned by row user                      0  OK
+   ASYMMETRIC PAIRS, NoteLink                          0  OK
+   asymmetric pairs, legacy linkedNotes (before)       5
+   digest over the row set                        900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7
+   OK    row-set digest unchanged                             "900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7"
+   OK    second run issued NO operations at all               0
+   OK    second run upserted nothing                          0
+   OK    second run modified nothing                          0
+   OK    every document byte-identical, updatedAt included    true
+
+7. ROLLBACK — tested, then re-migrated to prove it left nothing behind
+   rows in notelinks          4
+   reproducible from linkedNotes 4
+   written since the migration   0
+   notes touched by this script  0   (the migration never wrote one, so neither does its undo)
+   dropped notelinks (4 rows and its indexes)
+   OK    collection dropped                                   true
+   OK    nothing was written since the migration, so nothing is lost 0
+   OK    every note is byte-identical to the seed             true
+   OK    notelinks is gone                                    0
+   rows                                                4
+   canonical order violated                            0  OK
+   duplicate (user, noteA, noteB)                      0  OK
+   rows with neither direction                         0  OK
+   dangling endpoint                                   0  OK
+   endpoint not owned by row user                      0  OK
+   ASYMMETRIC PAIRS, NoteLink                          0  OK
+   asymmetric pairs, legacy linkedNotes (before)       5
+   digest over the row set                        900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7
+   OK    re-migrating reproduces the same row set             "900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7"
+
+8. AND WHAT THE LIVE LINKER DOES TO A MIGRATED ROW
+   Not run here. The linker needs a corpus and an index build, which is
+   scripts/measure-writes.js and tests/edges.canonical.test.js on the fake
+   store. What this section would add is a real driver under the same
+   operations, and that is roadmap 4.5 rather than 4.2.
+
+RESULT   ALL CHECKS PASSED
+
+ENVIRONMENT
+   Darwin 25.6.0 arm64, Node v25.8.1
+   MongoDB 7.0.39 in Docker, image pinned by digest in docker-compose.yml

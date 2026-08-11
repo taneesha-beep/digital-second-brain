@@ -73,13 +73,16 @@ router.post('/', upload.single('file'), async (req, res) => {
       await Note.findByIdAndUpdate(n._id, { color });
     }
 
-    // Compute linkedNotes (strength + sharedKeywords) via the shared linker service
+    // Compute canonical edges via the shared linker service (4.2 — they land in
+    // models/NoteLink.js, not on the note).
     await computeAndSaveLinks(note._id, req.user._id);
 
-    const populated = await Note.findById(note._id)
-      .populate('linkedNotes.noteId', 'title _id color');
+    // The linkedNotes populate is gone with the field. Related notes come from
+    // GET /api/notes/:id/links; returning a retired array here would be serving
+    // a second source of truth that nothing updates.
+    const created = await Note.findById(note._id).select('-linkedNotes');
 
-    res.status(201).json(populated);
+    res.status(201).json(created);
   } catch (err) {
     console.error('Upload error:', err);
     if (err.message.includes('Only .txt')) {

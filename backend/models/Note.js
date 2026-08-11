@@ -36,7 +36,26 @@ const NoteSchema = new mongoose.Schema(
       type:    [Number],
       default: []
     },
-    // Similar notes + similarity metadata
+    /**
+     * DEPRECATED AT PHASE 4.2 — no longer written, and no route serves it.
+     *
+     * Links live in models/NoteLink.js, one canonical row per unordered pair
+     * behind a unique index. This array was the last-writer-wins storage that
+     * made the stored graph depend on save order (PRIMER §3.5).
+     *
+     * IT IS LEFT ON DISK DELIBERATELY, and for three reasons rather than
+     * inertia: it is what migrations/001-canonical-edges.rollback.js reverts
+     * to; it holds v1-era sharedKeywords lists, which the migration copies into
+     * NoteLink rather than discards; and deleting a field from every document
+     * in a live database is a destructive act that buys nothing here.
+     *
+     * `strength` keeps `min: 0`, which is on 4.1's noticed list as a constraint
+     * v4 satisfies only by accident — the `lucene` idf variant is positive,
+     * `robertson` is not (§16.6). It is not corrected because nothing writes
+     * this any more; NoteLink's scores decide their constraints on purpose.
+     *
+     * Removing the field is a data migration of its own and wants its own step.
+     */
     linkedNotes: [
       {
         noteId: {

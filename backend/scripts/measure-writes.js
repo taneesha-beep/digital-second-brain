@@ -192,6 +192,43 @@ async function measureLive(docs) {
 }
 
 /**
+ * The shape of the stored graph once every note has been saved — not a cost,
+ * but the thing the cost buys, and the evidence a score-floor decision needs.
+ *
+ * Returns null on a tree where the linker does not write canonical rows, so
+ * this file stays runnable at the baseline commit.
+ */
+async function measureStoredGraph(docs) {
+  const store = require('./lib/fake-note-store');
+  if (typeof store.linkRows !== 'function') return null;
+
+  const { computeAndSaveLinks } = require('../services/linker.service');
+  setStore(new FakeNoteStore(parityV1.asNotes(docs), docs.map((d) => d.id)));
+  for (const doc of docs) await computeAndSaveLinks(doc.id, USER);
+
+  const rows = store.linkRows();
+  if (rows.length === 0) return null;
+
+  const observed = (v) => v !== null && v !== undefined;
+  const both = rows.filter((r) => observed(r.scoreAB) && observed(r.scoreBA));
+  const degree = new Map(docs.map((d) => [d.id, 0]));
+  for (const r of rows) {
+    degree.set(String(r.noteA), (degree.get(String(r.noteA)) || 0) + 1);
+    degree.set(String(r.noteB), (degree.get(String(r.noteB)) || 0) + 1);
+  }
+  const degrees = [...degree.values()];
+
+  return {
+    rows: rows.length,
+    both: both.length,
+    oneSided: rows.length - both.length,
+    disagree: both.filter((r) => r.scoreAB !== r.scoreBA).length,
+    degrees,
+    overCap: degrees.filter((d) => d > 8).length
+  };
+}
+
+/**
  * Which row the live path is, read off the MEASURED SHAPE rather than off a
  * version string — so this cannot be fooled by a comment or a stale constant.
  * Row B's cost rises by exactly 2 per link; row C's does not rise at all.
@@ -225,7 +262,9 @@ async function main() {
 
   say('WRITE COST PER SAVE — driver operations issued by computeAndSaveLinks()');
   say(`fixture              backend/retrieval/fixtures/mini-corpus.jsonl — ${docs.length} documents`);
-  say(`commit               ${shell('git', ['rev-parse', '--short', 'HEAD'])}`);
+  // HEAD at generation, which is the PARENT of the commit that carries this
+  // file — the tree whose code was measured, not the tree the artifact lands in.
+  say(`generated at HEAD    ${shell('git', ['rev-parse', '--short', 'HEAD'])}`);
   say('unit                 one operation = one call that would reach a server.');
   say('                     A bulkWrite is ONE operation and N server-side writes.');
   say('                     This is NOT a latency measurement — see the script header.');
@@ -270,6 +309,26 @@ async function main() {
     say('   This is what makes row B quotable once it stops being measurable: the pattern');
     say('   comes from a file that cannot drift, and the projection was checked against');
     say('   the live path at the commit where the live path still WAS row B.');
+    say('');
+  }
+
+  // ── what the stored graph looks like ──────────────────────────────────────
+  const shape = await measureStoredGraph(docs);
+  if (shape) {
+    say('THE STORED GRAPH — what canonical storage does to the shape, not the cost');
+    say('   Every note saved once, so the store is converged rather than mid-migration.');
+    say(`   canonical rows           ${shape.rows}`);
+    say(`   both directions          ${shape.both}`);
+    say(`   one direction only       ${shape.oneSided}    <-- B ranked A, A did not rank B`);
+    say(`   directions disagreeing   ${shape.disagree} of ${shape.both}   (v4 is asymmetric — §14.5)`);
+    say(`   degree per note          ${fmt(summarise(shape.degrees))}`);
+    say(`   notes above the cap of 8 ${shape.overCap} of ${docs.length}`);
+    say('   THE COST OF CANONICAL STORAGE, MEASURED. A note\'s edge set is the UNION of');
+    say('   "notes it ranked" and "notes that ranked it", so degree exceeds the cap. That');
+    say('   is NOT new — the pre-4.2 bidirectional write pushed into the target\'s array');
+    say('   with no cap at all — but it stops being an accident. It is also the evidence a');
+    say('   score floor would be argued from, and EVALUATION.md §22 records why 4.2');
+    say('   declines to add one to a closed rung.');
     say('');
   }
 

@@ -69,6 +69,8 @@
 
 const path = require('path');
 
+const notePair = require('../../utils/notePair');
+
 let currentStore = null;
 
 // ── operation counting (4.2) ────────────────────────────────────────────────
@@ -240,7 +242,174 @@ function requireStore() {
 
 function setStore(store) {
   currentStore = store;
+  linkStore = new FakeNoteLinkStore();
   return store;
+}
+
+// ── the canonical edge collection (4.2) ─────────────────────────────────────
+//
+// WHAT THIS CAN AND CANNOT SHOW, because the distinction is the whole reason
+// scripts/verify-migration.js exists as a separate thing that needs a real
+// server.
+//
+//   CAN   the SHAPE of what the linker issues: that it is one ordered
+//         bulkWrite, that the clear-then-upsert-then-delete order is what it
+//         says, that the row a pair ends up with is the same whichever note
+//         was saved last. That last one is the property 4.2 is for, and it is
+//         a property of the operations rather than of the server.
+//
+//   CANNOT  ANY of the unique index. A fake that "enforces" uniqueness proves
+//           only that the fake enforces uniqueness. The claim "one edge per
+//           pair by construction" is a claim about a database constraint, and
+//           the only thing that can support it is a real server rejecting a
+//           real duplicate with E11000. That is verify-migration.js's job and
+//           it is deliberately not attempted here.
+//
+// So this collection does NOT reject duplicates. If the linker ever wrote a
+// reversed pair the fake would happily hold both rows — and the canonical-pair
+// tests would catch it, because they assert the normal form directly rather
+// than relying on a constraint that is not being simulated.
+
+class FakeNoteLinkStore {
+  constructor(rows = []) {
+    this.rows = rows.map((r) => ({ ...r }));
+  }
+
+  key(row) {
+    return `${String(row.user)}|${String(row.noteA)}|${String(row.noteB)}`;
+  }
+
+  all() {
+    return this.rows;
+  }
+}
+
+let linkStore = new FakeNoteLinkStore();
+
+/** `{user}`, `{user, noteA}`, `{user, noteB}`, `{user, noteA, noteB}`, `{user, scoreAB:null, scoreBA:null}`, `{user, $or:[...]}`. */
+function linkMatches(row, filter) {
+  for (const [key, value] of Object.entries(filter)) {
+    if (key === '$or') {
+      if (!value.some((sub) => linkMatches(row, sub))) return false;
+    } else if (key === 'scoreAB' || key === 'scoreBA') {
+      const held = row[key] === undefined ? null : row[key];
+      if (held !== value) return false;
+    } else if (['user', 'noteA', 'noteB'].includes(key)) {
+      if (String(row[key]) !== String(value)) return false;
+    } else {
+      throw new Error(`fake-note-store: unsupported NoteLink filter key ${key}`);
+    }
+  }
+  return true;
+}
+
+function applyUpdate(row, update) {
+  for (const [op, fields] of Object.entries(update)) {
+    if (op === '$set') {
+      Object.assign(row, JSON.parse(JSON.stringify(fields)));
+    } else if (op === '$setOnInsert') {
+      // handled by the caller, which knows whether an insert happened
+    } else {
+      throw new Error(`fake-note-store: unsupported NoteLink update operator ${op}`);
+    }
+  }
+  return row;
+}
+
+/**
+ * A stand-in for the NoteLink model. Same rule as FakeNote: only the surface
+ * the app actually uses is implemented, and anything else throws rather than
+ * being silently mocked away.
+ *
+ *   linker.service.js   NoteLink.bulkWrite(ops, {ordered: true})
+ *                       NoteLink.find(f).populate().populate().lean()
+ *   routes/notes.js     NoteLink.deleteMany(f) · NoteLink.deleteOne(f)
+ */
+const FakeNoteLink = {
+  canonicalPair: notePair.canonicalPair,
+  directionFields: notePair.directionFields,
+  weight: notePair.weight,
+
+  async bulkWrite(operations, options = {}) {
+    bump('bulkWrite');
+    if (options.ordered === false) {
+      throw new Error('fake-note-store: only ordered bulkWrite is modelled — the linker depends on the order');
+    }
+    for (const operation of operations) {
+      if (operation.updateMany) {
+        const { filter, update } = operation.updateMany;
+        for (const row of linkStore.rows) if (linkMatches(row, filter)) applyUpdate(row, update);
+      } else if (operation.updateOne) {
+        const { filter, update, upsert } = operation.updateOne;
+        const existing = linkStore.rows.find((row) => linkMatches(row, filter));
+        if (existing) {
+          applyUpdate(existing, update);
+        } else if (upsert) {
+          const row = { ...filter, scoreAB: null, scoreBA: null, sharedAB: [], sharedBA: [] };
+          if (update.$setOnInsert) Object.assign(row, JSON.parse(JSON.stringify(update.$setOnInsert)));
+          applyUpdate(row, update);
+          linkStore.rows.push(row);
+        }
+      } else if (operation.deleteMany) {
+        const { filter } = operation.deleteMany;
+        linkStore.rows = linkStore.rows.filter((row) => !linkMatches(row, filter));
+      } else {
+        throw new Error(`fake-note-store: unsupported bulkWrite operation ${Object.keys(operation).join(',')}`);
+      }
+    }
+    return { ok: 1, nMatched: 0, nUpserted: 0, nModified: 0 };
+  },
+
+  find(filter = {}) {
+    bump('find');
+    const rows = linkStore.rows.filter((row) => linkMatches(row, filter));
+    const populated = new Set();
+    const builder = {
+      populate(field) { populated.add(field); return builder; },
+      lean: async () => rows.map((row) => hydrate(row, populated)),
+      then: (resolve, reject) => Promise.resolve(rows.map((row) => hydrate(row, populated))).then(resolve, reject)
+    };
+    return builder;
+  },
+
+  async deleteMany(filter = {}) {
+    bump('deleteMany');
+    const before = linkStore.rows.length;
+    linkStore.rows = linkStore.rows.filter((row) => !linkMatches(row, filter));
+    return { deletedCount: before - linkStore.rows.length };
+  },
+
+  async deleteOne(filter = {}) {
+    bump('deleteOne');
+    const at = linkStore.rows.findIndex((row) => linkMatches(row, filter));
+    if (at === -1) return { deletedCount: 0 };
+    linkStore.rows.splice(at, 1);
+    return { deletedCount: 1 };
+  },
+
+  create() { throw new Error('fake-note-store: NoteLink.create() is not implemented'); },
+  updateOne() { throw new Error('fake-note-store: NoteLink.updateOne() is not implemented — the linker batches'); }
+};
+
+/** .populate('noteA', 'title _id') resolves the id against the Note store. */
+function hydrate(row, populated) {
+  const out = JSON.parse(JSON.stringify(row));
+  for (const field of populated) {
+    const doc = currentStore && currentStore.docs.get(String(row[field]));
+    out[field] = doc ? { _id: doc._id, title: doc.title } : null;
+  }
+  return out;
+}
+
+/** The edge rows currently held, for assertions. Not part of the model surface. */
+function linkRows() {
+  return linkStore.rows.map((row) => ({ ...row }));
+}
+
+/** Seed the edge collection, for tests that need a pre-existing graph. */
+function setLinkRows(rows) {
+  linkStore = new FakeNoteLinkStore(rows);
+  return linkStore;
 }
 
 /**
@@ -256,19 +425,40 @@ function setStore(store) {
  * ignores require.cache, so the parity test additionally calls
  * jest.mock('../models/Note') with this same FakeNote. Two installers, one
  * substitute, and neither of them edits a shipped file.
+ *
+ * ↳ 4.2 INSTALLS NoteLink.js THE SAME WAY, and it has to be both models or
+ * neither: services/linker.service.js now requires both at module scope, so
+ * substituting only Note would leave the linker reaching for a real mongoose
+ * model with no connection behind it.
  */
-function install() {
-  const notePath = path.resolve(__dirname, '..', '..', 'models', 'Note.js');
-  require.cache[notePath] = {
-    id: notePath,
-    filename: notePath,
-    path: path.dirname(notePath),
+function primeCache(filename, exports) {
+  const resolved = path.resolve(__dirname, '..', '..', 'models', filename);
+  require.cache[resolved] = {
+    id: resolved,
+    filename: resolved,
+    path: path.dirname(resolved),
     loaded: true,
     children: [],
     paths: [],
-    exports: FakeNote
+    exports
   };
-  return notePath;
+  return resolved;
 }
 
-module.exports = { FakeNoteStore, FakeNote, setStore, install, resetOps, totalOps, opBreakdown };
+function install() {
+  primeCache('NoteLink.js', FakeNoteLink);
+  return primeCache('Note.js', FakeNote);
+}
+
+module.exports = {
+  FakeNoteStore,
+  FakeNote,
+  FakeNoteLink,
+  setStore,
+  setLinkRows,
+  linkRows,
+  install,
+  resetOps,
+  totalOps,
+  opBreakdown
+};
