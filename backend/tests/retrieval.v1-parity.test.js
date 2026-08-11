@@ -29,9 +29,50 @@ const { FakeNoteStore, setStore } = require('../scripts/lib/fake-note-store');
 const retrieval = require('../retrieval');
 const v1 = require('../retrieval/v1-overlap');
 
+const crypto = require('crypto');
+
 const REPO = path.resolve(__dirname, '..', '..');
 const EVIDENCE = path.join(REPO, 'results', 'parity');
 const USER = 'fixture-user';
+
+describe('the shipped side is still the shipped algorithm', () => {
+  // ADDED AT 4.1, because 4.1 broke this and `npm test` is what noticed.
+  // Rewiring services/linker.service.js through the retrieval interface turned
+  // the "shipped side" of this proof into v4-bm25 — two tests below failed with
+  // BM25-scale scores in a file whose header says overlap coefficient. The
+  // scoring half now comes from a preserved copy, and a preserved copy nobody
+  // checks is how a parity proof quietly becomes a comparison with itself.
+  test('the preserved pre-4.1 linker is byte-identical to the tagged file', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'scripts', 'lib', 'linker-v1-shipped.js'),
+      'utf8'
+    );
+    // `end` is the newline separating the preserved region from the END
+    // marker, so the slice stops AT it: the region's own trailing newline is
+    // the one before that, and including both would hash one byte too many.
+    const begin = source.indexOf('\n', source.indexOf('BEGIN VERBATIM')) + 1;
+    const end = source.lastIndexOf('\n// ─── END VERBATIM');
+    const verbatim = source.slice(begin, end);
+
+    // `git show v0-pre-reorientation:backend/services/linker.service.js
+    //    | tail -n +2 | shasum -a 256`
+    // Hashed rather than diffed against git, so the check needs no repository
+    // history at run time — 4.5 will run this in CI, where a shallow checkout
+    // has no tags.
+    expect(crypto.createHash('sha256').update(verbatim).digest('hex')).toBe(
+      '579e1f0b9b5270642abb10e1370e373f8e40aa6cfbc8c8a979b3c2d2e027c03f'
+    );
+  });
+
+  test('the live linker.service.js is NOT the algorithm this file proves', () => {
+    // The other half of the same claim, and the one that would catch a
+    // well-meaning revert of the require above. If these ever became the same
+    // module again, the proof would be comparing v1-overlap against v1-overlap.
+    const live = fs.readFileSync(path.join(__dirname, '..', 'services', 'linker.service.js'), 'utf8');
+    expect(live).toMatch(/noteCorpus\.service/);
+    expect(live).not.toMatch(/strength > 0\.15/);
+  });
+});
 
 const docs = parity.loadFixture();
 const idOrder = [...docs.map((d) => d.id)].sort();

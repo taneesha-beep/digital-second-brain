@@ -25,12 +25,26 @@
  *
  *   corpus.js:6            Note.find(f).select(s).limit(n).lean()
  *   linker.service.js:17   Note.findOne(f).lean()
- *   linker.service.js:20   Note.find(f).lean()
  *   linker.service.js:38   Note.findByIdAndUpdate(id, {$set: {...}})
  *   linker.service.js:43   Note.findById(id)  ->  doc.save()
+ *   noteCorpus.service.js  Note.find(f).select(s).sort({_id:1}).limit(n).lean()
  *
  * Anything else throws, so a future shipped change that reaches for another
  * method fails loudly instead of being silently mocked away.
+ *
+ * ↳ 4.1 ADDED sort() AND IT HAD TO REALLY SORT. The adapter's whole claim
+ * against §7.2's third unspecified input is that ITS corpus is order-specified
+ * where utils/corpus.js's is not. A sort() that returned the builder unchanged
+ * would make that claim untestable and every demonstration of it vacuous — the
+ * adapter would look order-independent because the fixture never reordered.
+ * Only {_id: 1} and {_id: -1} are implemented; anything else throws, for the
+ * same reason as every other method here.
+ *
+ * ↳ 4.1 also REMOVED a line from this list rather than adding one.
+ * linker.service.js:20's `Note.find({user, _id:{$ne}}).lean()` — every other
+ * note, so the old linker could intersect keyword lists — has no caller now
+ * that the linker goes through the adapter. find() still supports the filter,
+ * because parity-v1.js still drives the pre-4.1 code path through it.
  */
 
 const path = require('path');
@@ -103,10 +117,31 @@ class FakeNoteStore {
 const FakeNote = {
   find(filter = {}) {
     const store = requireStore();
-    const rows = store._inOrder().filter((doc) => matches(doc, filter));
+    let rows = store._inOrder().filter((doc) => matches(doc, filter));
     let limited = rows;
     const builder = {
       select() { return builder; }, // projection is irrelevant to a plain-object store
+      /**
+       * Really sorts — see the header. Mongo applies sort BEFORE limit, so this
+       * reorders `rows` and any later limit() slices the sorted list. Getting
+       * that order backwards would silently change WHICH 500 documents a
+       * >500-note user's corpus holds, which is the exact defect the adapter's
+       * sort exists to remove.
+       */
+      sort(spec) {
+        const keys = Object.keys(spec || {});
+        if (keys.length !== 1 || keys[0] !== '_id' || ![1, -1].includes(spec._id)) {
+          throw new Error(`fake-note-store: unsupported sort ${JSON.stringify(spec)} — only {_id: 1} and {_id: -1}`);
+        }
+        const dir = spec._id;
+        rows = [...rows].sort((a, b) => {
+          const x = String(a._id);
+          const y = String(b._id);
+          return (x < y ? -1 : x > y ? 1 : 0) * dir;
+        });
+        limited = rows;
+        return builder;
+      },
       limit(n) { limited = rows.slice(0, n); return builder; },
       lean: async () => limited.map(lean),
       then: (resolve, reject) => Promise.resolve(limited.map(lean)).then(resolve, reject)

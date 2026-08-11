@@ -12,6 +12,7 @@
     "splits:build": "node scripts/build-splits.js",
     "bias:analyze": "node scripts/analyze-ground-truth.js",
     "parity:v1": "node scripts/parity-v1.js",
+    "parity:app": "node scripts/parity-app.js",
     "eval": "node scripts/run-eval.js",
     "eval:compare": "node scripts/compare-runs.js",
     "holm": "node scripts/holm.js",
