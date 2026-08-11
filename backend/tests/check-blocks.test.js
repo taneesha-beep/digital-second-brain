@@ -10,6 +10,9 @@
  * must NOT be collected — the same shape as check-claims.test.js.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const { npmScriptsIn, pathsIn } = require('../scripts/check-blocks');
 
 describe('npmScriptsIn', () => {
@@ -30,6 +33,45 @@ describe('npmScriptsIn', () => {
 
   test('multi-segment names survive whole', () => {
     expect(npmScriptsIn('npm run a:b:c').map((x) => x.script)).toEqual(['a:b:c']);
+  });
+
+  describe('hyphenated names, which produced a false positive at 4.1', () => {
+    // Every script name up to 3.7 was `word` or `word:word`, so the character
+    // class excluded `-` and nothing revealed it. 4.1 added `price:v5-app`; the
+    // name truncated at the hyphen and the tool reported
+    // `npm run price:v5 — no such script` against a command that runs fine.
+    // A false positive dressed as a staleness finding is worse than no check,
+    // because it is the kind that teaches people to skim the report.
+
+    test('a hyphen inside a name is part of the name', () => {
+      expect(npmScriptsIn('npm run price:v5-app').map((x) => x.script)).toEqual(['price:v5-app']);
+      expect(npmScriptsIn('npm run build-corpus').map((x) => x.script)).toEqual(['build-corpus']);
+    });
+
+    test('a hyphenated name still stops at the flag separator', () => {
+      // The regression the fix could plausibly introduce: `--` is hyphens, so a
+      // greedier class could swallow it and invent a script nobody named.
+      expect(npmScriptsIn('npm run price:v5-app -- --n 500').map((x) => x.script))
+        .toEqual(['price:v5-app']);
+      expect(npmScriptsIn('npm run analyse:app --verbose').map((x) => x.script))
+        .toEqual(['analyse:app']);
+    });
+
+    test('a name cannot end on a hyphen or a colon', () => {
+      expect(npmScriptsIn('npm run eval- x').map((x) => x.script)).toEqual(['eval']);
+      expect(npmScriptsIn('npm run eval: x').map((x) => x.script)).toEqual(['eval']);
+    });
+
+    test('every script this repo actually has is captured whole', () => {
+      // The check that would have caught the original bug, and it is cheap:
+      // read the manifest rather than listing names in a test that goes stale.
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
+      );
+      for (const name of Object.keys(manifest.scripts)) {
+        expect(npmScriptsIn(`npm run ${name}`).map((x) => x.script)).toEqual([name]);
+      }
+    });
   });
 
   test('reports an offset, so a failure can name a line', () => {

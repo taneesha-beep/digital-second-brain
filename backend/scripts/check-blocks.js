@@ -97,7 +97,15 @@ const MANIFESTS = ['backend/package.json', 'scripts/package.json', 'frontend/pac
 // be written vaguely. Each entry names the section doing the reporting.
 const QUOTED = new Map([
   ['backend/eval/run-file.js', '§20.8 — the shared loader ROADMAP proposed; it was built as scripts/lib/run-io.js'],
-  ['fixtures/mini-corpus.json', '§20.8 — END-STATE\'s planned tree said .json; the fixture is mini-corpus.jsonl']
+  ['fixtures/mini-corpus.json', '§20.8 — END-STATE\'s planned tree said .json; the fixture is mini-corpus.jsonl'],
+  // 4.1. Not merely a path that does not exist — a path that MUST NOT, which is
+  // a distinction this tool cannot draw on its own. END-STATE §1 planned the
+  // corpus adapter here; tests/retrieval.interface.test.js fails any require
+  // resolving outside backend/retrieval/, and an adapter requires
+  // ../models/Note by definition. Worth noting the tool could never have found
+  // it: END-STATE is forward-looking, where an unresolved path is the document
+  // doing its job.
+  ['backend/retrieval/adapters/mongoNotes.js', '§21.2 — END-STATE planned the adapter here; the location is FORBIDDEN by the no-I/O test, not merely absent. It is services/noteCorpus.service.js']
 ]);
 
 // Scripts a writeup names for a phase that has not run yet.
@@ -176,9 +184,26 @@ function lineIndexer(text) {
   };
 }
 
-/** Every `npm run <script>` in a blob, with its offset. */
+/**
+ * Every `npm run <script>` in a blob, with its offset.
+ *
+ * ↳ 4.1 ADDED THE HYPHEN, and the bug it fixes is the worst kind this tool can
+ * have. Every script name up to 3.7 was `word` or `word:word`, so the class
+ * excluded `-` and nobody noticed. 4.1 added `price:v5-app`, the name truncated
+ * at the hyphen, and the report said `npm run price:v5 — no such script`:
+ * a FALSE POSITIVE WEARING THE COSTUME OF A REAL STALENESS FINDING, against a
+ * command that runs perfectly. A checker whose failures cannot be trusted is
+ * one people learn to skim, which is the failure mode §20.8 named from the
+ * other direction — the fix there was to stop the tool demanding that hundreds
+ * of correct references be rewritten to satisfy it.
+ *
+ * Renaming the script to dodge this was the cheaper option and would have been
+ * the tool serving itself. The class now allows `-` and `:` internally while
+ * still requiring the name to start and end alphanumeric, so a trailing `--`
+ * (as in `npm run check:blocks -- --verbose`) is not swallowed.
+ */
 function npmScriptsIn(text) {
-  const re = /npm run ([a-z][a-z0-9]*(?::[a-z0-9]+)*)/g;
+  const re = /npm run ([a-z](?:[a-z0-9:-]*[a-z0-9])?)/g;
   const out = [];
   let m;
   while ((m = re.exec(text)) !== null) out.push({ script: m[1], index: m.index });
