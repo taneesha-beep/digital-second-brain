@@ -1,0 +1,33 @@
+WRITE COST PER SAVE — driver operations issued by computeAndSaveLinks()
+fixture              backend/retrieval/fixtures/mini-corpus.jsonl — 34 documents
+commit               9343228
+unit                 one operation = one call that would reach a server.
+                     A bulkWrite is ONE operation and N server-side writes.
+                     This is NOT a latency measurement — see the script header.
+
+A. v1-shipped — scripts/lib/linker-v1-shipped.js (the pre-4.1 app)
+   THE CONTROL. Hashed by tests/retrieval.app-parity.test.js so it cannot drift,
+   therefore measurable at every commit; if this row ever moves, the instrument
+   moved and not the subject.
+   links per save       min 0  p50 2  mean 3.41  max 8  total 116
+   operations per save  min 3  p50 7  mean 9.82  max 19  total 334
+   fitted               ops = 3 + 2 x links   EXACT on every note
+   breakdown, worst     {"find":1,"findById":8,"findByIdAndUpdate":1,"findOne":1,"save":8}  (note 021, 8 links)
+
+LIVE. services/linker.service.js at this commit — classified as row B (pre-4.2 — findById + save per link)
+   links per save       min 3  p50 8  mean 7.53  max 8  total 256
+   operations per save  min 9  p50 19  mean 18.06  max 19  total 614
+   fitted               ops = 3 + 2 x links   EXACT on every note
+   breakdown, worst     {"find":1,"findById":8,"findByIdAndUpdate":1,"findOne":1,"save":8}  (note 001, 8 links)
+
+PROJECTION — row A's MEASURED storage pattern applied to the live link counts
+   ops = 3 + 2 x links, links measured in the run above
+   projected per save   min 9  p50 19  mean 18.06  max 19  total 614
+   agrees with live     YES on all 34 notes — the live path IS row B
+   This is what makes row B quotable once it stops being measurable: the pattern
+   comes from a file that cannot drift, and the projection was checked against
+   the live path at the commit where the live path still WAS row B.
+
+ENVIRONMENT
+   Darwin 25.6.0 arm64, Node v25.8.1, npm 11.11.0
+   8 x Apple M2, 8 GB

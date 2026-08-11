@@ -301,7 +301,12 @@ async function main() {
   if (!identical) process.exitCode = 1;
 }
 
-module.exports = { loadFixture, runShipped, runHarness, render, sha256, capFixture, keywordsUnderOrder, CAP };
+// asNotes is exported for scripts/measure-writes.js (4.2), so the fixture ->
+// Note shaping has ONE definition rather than one per script. parity-app.js
+// carries its own copy from 4.1; that is noted on 4.2's out-of-scope list
+// rather than merged here, because merging it would edit a file two committed
+// parity hashes depend on for no measured benefit.
+module.exports = { loadFixture, runShipped, runHarness, render, sha256, capFixture, keywordsUnderOrder, asNotes, CAP };
 
 if (require.main === module) {
   main().catch((err) => {

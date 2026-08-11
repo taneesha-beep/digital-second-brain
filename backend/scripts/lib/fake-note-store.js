@@ -45,11 +45,63 @@
  * note, so the old linker could intersect keyword lists — has no caller now
  * that the linker goes through the adapter. find() still supports the filter,
  * because parity-v1.js still drives the pre-4.1 code path through it.
+ *
+ * ↳ 4.2 MADE THE STORE COUNT ITS OWN OPERATIONS, and that is a change of
+ * instrument rather than a convenience. scripts/measure-writes.js first tried
+ * to count from OUTSIDE, by putting a proxy in require.cache in front of this
+ * module. It does not work, for two reasons worth recording because both are
+ * invisible until they bite:
+ *
+ *   1. parity-v1.js calls install() at ITS module scope and requires the
+ *      preserved linker there, so by the time an outside caller can install
+ *      anything, the module under measurement is already holding a reference to
+ *      the uncounted fake. The script reported ZERO operations while reporting
+ *      exactly the right LINK COUNTS — a bug wearing a working script's face.
+ *   2. doc.save is defined below with Object.defineProperty and is neither
+ *      writable nor configurable, so a Proxy cannot substitute a counting
+ *      version of it: the invariant check throws.
+ *
+ * Counting here instead means there is ONE instrument, it is the same object
+ * the code under measurement already talks to, and it cannot be got in front
+ * of. The counter is off until resetOps() is called, so every existing caller
+ * is unaffected.
  */
 
 const path = require('path');
 
 let currentStore = null;
+
+// ── operation counting (4.2) ────────────────────────────────────────────────
+//
+// ONE OPERATION = ONE CALL THAT WOULD REACH A SERVER. A builder chain
+// (.select().sort().limit().lean()) is client-side and counts once, at the
+// model method that starts it; doc.save() and bulkWrite() count once each.
+// bulkWrite counting ONE is the whole point of the 4.2 measurement and is also
+// its sharpest caveat — one command, N server-side writes. measure-writes.js
+// says so where the number is quoted.
+let ops = null;
+
+function bump(name) {
+  if (ops) ops.set(name, (ops.get(name) || 0) + 1);
+}
+
+/** Start counting, discarding anything counted before. */
+function resetOps() {
+  ops = new Map();
+}
+
+/** Total operations since resetOps(), or 0 if counting was never started. */
+function totalOps() {
+  if (!ops) return 0;
+  let n = 0;
+  for (const v of ops.values()) n += v;
+  return n;
+}
+
+/** Per-method counts since resetOps(), sorted by name. */
+function opBreakdown() {
+  return ops ? [...ops.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)) : [];
+}
 
 /** `{user}`, `{user, _id: {$ne}}`, `{_id, user}` — the three filters in use. */
 function matches(doc, filter) {
@@ -86,7 +138,7 @@ class FakeNoteStore {
       const doc = { linkedNotes: [], keywords: [], ...note };
       Object.defineProperty(doc, 'save', {
         enumerable: false,
-        value: async () => doc // already live in the map; nothing to flush
+        value: async () => { bump('save'); return doc; } // already live in the map; nothing to flush
       });
       this.docs.set(String(note._id), doc);
     }
@@ -116,6 +168,7 @@ class FakeNoteStore {
  */
 const FakeNote = {
   find(filter = {}) {
+    bump('find');
     const store = requireStore();
     let rows = store._inOrder().filter((doc) => matches(doc, filter));
     let limited = rows;
@@ -150,6 +203,7 @@ const FakeNote = {
   },
 
   findOne(filter = {}) {
+    bump('findOne');
     const store = requireStore();
     const found = store._inOrder().find((doc) => matches(doc, filter)) || null;
     const builder = {
@@ -160,11 +214,13 @@ const FakeNote = {
   },
 
   async findById(id) {
+    bump('findById');
     const store = requireStore();
     return store.docs.get(String(id)) || null;
   },
 
   async findByIdAndUpdate(id, update) {
+    bump('findByIdAndUpdate');
     const store = requireStore();
     const doc = store.docs.get(String(id));
     if (!doc) return null;
@@ -215,4 +271,4 @@ function install() {
   return notePath;
 }
 
-module.exports = { FakeNoteStore, FakeNote, setStore, install };
+module.exports = { FakeNoteStore, FakeNote, setStore, install, resetOps, totalOps, opBreakdown };
