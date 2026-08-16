@@ -139,3 +139,71 @@ describe('pathsIn', () => {
     for (const h of hits) expect(text.slice(h.index)).toContain(h.token.split('/').pop());
   });
 });
+
+describe('rule 3 — reverse coverage (4.3)', () => {
+  const { expandBraces, COVERED_ROOTS, UNDOCUMENTED } = require('../scripts/check-blocks');
+  const REPO = path.resolve(__dirname, '..', '..');
+
+  describe('expandBraces, which exists because rule 3 was WRONG on its first run', () => {
+    // It reported results/contamination-linkdate.test.txt as named by nothing.
+    // §19.6 names it, as `results/contamination-linkdate.{dev,test}.txt` — a
+    // convention this repo uses in at least four places, and one rule 2 already
+    // skips as a PLACEHOLDER. A literal substring search could not see through
+    // it. This is the 4.1 hyphen bug's family: a false positive dressed as a
+    // real finding, and the cheap fix — rewriting the document to satisfy the
+    // tool — was refused for the same reason.
+    test('the case that actually bit', () => {
+      const got = expandBraces('`results/contamination-linkdate.{dev,test}.txt`');
+      expect(got).toContain('results/contamination-linkdate.test.txt');
+      expect(got).toContain('results/contamination-linkdate.dev.txt');
+    });
+
+    test('three alternatives, and a group in the middle of a path', () => {
+      const got = expandBraces('`data/splits/{train,dev,test}.ids`').split('\n');
+      expect(got).toEqual(['data/splits/train.ids', 'data/splits/dev.ids', 'data/splits/test.ids']);
+    });
+
+    test('a group with a directory suffix after it', () => {
+      expect(expandBraces('`results/parity/v1-{shipped,harness}.txt`').split('\n'))
+        .toEqual(['results/parity/v1-shipped.txt', 'results/parity/v1-harness.txt']);
+    });
+
+    test('text with no braces expands to nothing rather than to itself', () => {
+      // If it echoed the input, every file would appear "named" by any document
+      // that mentions anything, and the rule would silently stop failing.
+      expect(expandBraces('results/write-cost.txt')).toBe('');
+    });
+
+    test('it does not invent a match for a file no brace form covers', () => {
+      const got = expandBraces('`results/contamination-linkdate.{dev,test}.txt`');
+      expect(got).not.toContain('results/contamination-linkdate.train.txt');
+    });
+  });
+
+  describe('the roots it scans', () => {
+    test('every covered root exists, so the rule is not vacuous', () => {
+      // A root that had moved would make this rule check nothing while still
+      // printing PASS — the "too weak to fail" shape §22.6 names.
+      expect(COVERED_ROOTS.length).toBeGreaterThan(0);
+      for (const root of COVERED_ROOTS) {
+        expect(fs.existsSync(path.join(REPO, root.dir))).toBe(true);
+      }
+    });
+
+    test('each root actually contains files matching its extension', () => {
+      for (const root of COVERED_ROOTS) {
+        const names = fs.readdirSync(path.join(REPO, root.dir), { withFileTypes: true })
+          .filter((e) => e.isFile() && root.ext.test(e.name));
+        expect(names.length).toBeGreaterThan(0);
+      }
+    });
+
+    test('the exemption list is not a junk drawer — every entry carries a reason', () => {
+      for (const [rel, why] of UNDOCUMENTED) {
+        expect(typeof why).toBe('string');
+        expect(why.length).toBeGreaterThan(20);
+        expect(fs.existsSync(path.join(REPO, rel))).toBe(true);
+      }
+    });
+  });
+});

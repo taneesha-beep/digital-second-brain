@@ -269,6 +269,16 @@ function setStore(store) {
 // reversed pair the fake would happily hold both rows — and the canonical-pair
 // tests would catch it, because they assert the normal form directly rather
 // than relying on a constraint that is not being simulated.
+//
+// ↳ 4.3 ADDED A SECOND THING IN THE SAME CLASS, and it is worth naming rather
+// than leaving to be inferred from the paragraph above. This collection does
+// not simulate ANY index, so it cannot show that the two provenance indexes
+// {user, retrieverAB} and {user, retrieverBA} are USED by
+// edgesForVersion()'s $or — only that the query returns the right rows. A
+// filter that returns the right answer by scanning every row looks identical
+// from here. Index SELECTION is scripts/measure-provenance-query.js against a
+// real server, reading explain(), and the shape checks are in
+// scripts/verify-migration.js so they stay in the reproducible artifact.
 
 class FakeNoteLinkStore {
   constructor(rows = []) {
@@ -286,12 +296,21 @@ class FakeNoteLinkStore {
 
 let linkStore = new FakeNoteLinkStore();
 
-/** `{user}`, `{user, noteA}`, `{user, noteB}`, `{user, noteA, noteB}`, `{user, scoreAB:null, scoreBA:null}`, `{user, $or:[...]}`. */
+/**
+ * `{user}`, `{user, noteA}`, `{user, noteB}`, `{user, noteA, noteB}`,
+ * `{user, scoreAB:null, scoreBA:null}`, `{user, $or:[...]}`, and from 4.3
+ * `{user, $or:[{retrieverAB: v}, {retrieverBA: v}]}`.
+ *
+ * ↳ 4.3 MATCHES THE PROVENANCE FIELDS BY VALUE, null INCLUDED, for the same
+ * reason the score branch does: `null` is a queryable state here — it is how
+ * the migration finds the directions nothing has labelled — and an undefined
+ * field has to answer that query the way an absent one does in Mongo.
+ */
 function linkMatches(row, filter) {
   for (const [key, value] of Object.entries(filter)) {
     if (key === '$or') {
       if (!value.some((sub) => linkMatches(row, sub))) return false;
-    } else if (key === 'scoreAB' || key === 'scoreBA') {
+    } else if (['scoreAB', 'scoreBA', 'retrieverAB', 'retrieverBA', 'digestAB', 'digestBA'].includes(key)) {
       const held = row[key] === undefined ? null : row[key];
       if (held !== value) return false;
     } else if (['user', 'noteA', 'noteB'].includes(key)) {
@@ -307,6 +326,12 @@ function applyUpdate(row, update) {
   for (const [op, fields] of Object.entries(update)) {
     if (op === '$set') {
       Object.assign(row, JSON.parse(JSON.stringify(fields)));
+    } else if (op === '$unset') {
+      // 4.3's rollback. `$unset` REMOVES the field rather than nulling it, and
+      // the difference is the whole point of that rollback: a row with no
+      // provenance fields is the pre-4.3 shape, where a row with four nulls is
+      // a 4.3 row that happens to be unlabelled.
+      for (const field of Object.keys(fields)) delete row[field];
     } else if (op === '$setOnInsert') {
       // handled by the caller, which knows whether an insert happened
     } else {
@@ -329,6 +354,8 @@ const FakeNoteLink = {
   canonicalPair: notePair.canonicalPair,
   directionFields: notePair.directionFields,
   weight: notePair.weight,
+  weightProvenance: notePair.weightProvenance,
+  UNKNOWN_PROVENANCE: notePair.UNKNOWN_PROVENANCE,
 
   async bulkWrite(operations, options = {}) {
     bump('bulkWrite');
@@ -345,7 +372,15 @@ const FakeNoteLink = {
         if (existing) {
           applyUpdate(existing, update);
         } else if (upsert) {
-          const row = { ...filter, scoreAB: null, scoreBA: null, sharedAB: [], sharedBA: [] };
+          // The schema's defaults, reproduced — including 4.3's four provenance
+          // fields, so an upserted row here has the same shape a real one does
+          // and a test cannot pass because a field the schema would have
+          // defaulted was simply missing.
+          const row = {
+            ...filter,
+            scoreAB: null, scoreBA: null, sharedAB: [], sharedBA: [],
+            retrieverAB: null, retrieverBA: null, digestAB: null, digestBA: null
+          };
           if (update.$setOnInsert) Object.assign(row, JSON.parse(JSON.stringify(update.$setOnInsert)));
           applyUpdate(row, update);
           linkStore.rows.push(row);
