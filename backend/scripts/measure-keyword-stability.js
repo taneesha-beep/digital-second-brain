@@ -61,6 +61,22 @@
  * a different purpose gets a different stream, so sharing a constant does not
  * imply a coupling that does not exist.
  *
+ * AND THE SORTED SLICE HERE IS NOT "THE OLDEST 500", WHICH IT IS IN THE APP.
+ * `.sort({_id: 1})` orders by the id's byte sequence. A real note's `_id` is an
+ * ObjectId whose 24-hex string is monotonic in creation time, so in the app
+ * lexicographic order IS chronological order. These documents carry Stack
+ * Exchange ids as NUMERIC STRINGS, where "1000" sorts before "999", so the
+ * sorted 500 is a lexicographic slice and not a chronological one. That is why
+ * section A's live digest differs from the pre-4.6 ascending digest even though
+ * the file is in ascending numeric order: the two loaders are choosing
+ * different 500 documents, which is the point — one of them chooses a
+ * SPECIFIED 500.
+ *
+ * It costs the measurement nothing, because section A asks whether the RETURN
+ * ORDER changes the answer, not which documents were picked. It is stated
+ * because a reader who assumes "oldest first" would be reading a property of
+ * the app into a fixture that does not have it.
+ *
  * ---------------------------------------------------------------------------
  * IT RUNS THE REAL MODULES
  * ---------------------------------------------------------------------------
@@ -216,18 +232,21 @@ fake.install();
 // Required AFTER install(), so both resolve the primed models/Note.
 const { loadUserCorpus } = require('../utils/corpus');
 const { extractKeywords } = require('../utils/keywords');
+// The pre-4.6 loader, preserved, so section A carries its own "before" side
+// rather than depending on a checkout. See its header.
+const { loadUserCorpus: loadUserCorpusV1 } = require('./lib/corpus-v1-shipped');
 
 /**
  * Every note's keywords extracted once, after all notes exist — §7.2's frozen
  * definition, and "what the app would converge to if every note were re-saved
  * once". `order` is the store's return order, which is section A's whole input.
  */
-async function convergedKeywords(notes, order) {
+async function convergedKeywords(notes, order, loadCorpus = loadUserCorpus) {
   const store = fake.setStore(new fake.FakeNoteStore(notes, order));
   const byId = new Map();
   for (const note of notes) {
-    const corpus = await loadUserCorpus(USER, { excludeId: note._id });
-    byId.set(String(note._id), extractKeywords(note.title, note.contentText, corpus));
+    const corpus = await loadCorpus(USER, { excludeId: note._id });
+    byId.set(String(note._id), extractKeywords(store.raw(note._id).title, store.raw(note._id).contentText, corpus));
   }
   return byId;
 }
@@ -323,13 +342,31 @@ async function sectionA(orderN) {
   w(`   corpus sha256          ${sliceDigest(docs)}`);
   w(`                          mean ${meanWords.toFixed(1)} words per document — NOT a notebook`);
   w(`   epoch held constant    every list extracted after all ${orderN} notes exist, so the ONLY`);
-  w('                          variable below is the store\'s return order');
+  w('                          variables below are the store\'s return order and the loader');
   w('');
 
+  // BOTH LOADERS, one variable apart. The pre-4.6 side comes from the
+  // preserved copy rather than from git history, so this artifact carries its
+  // own "before" and stays readable without a checkout. 4.4's
+  // graph-characterization.txt does the same thing with the frozen builder.
+  w('   ── pre-4.6, unsorted (scripts/lib/corpus-v1-shipped.js) ──');
+  const v1Asc = await convergedKeywords(notes, ids, loadUserCorpusV1);
+  const v1Desc = await convergedKeywords(notes, [...ids].reverse(), loadUserCorpusV1);
+  w(`   id-ascending  digest   ${digestOf(v1Asc)}`);
+  w(`   id-descending digest   ${digestOf(v1Desc)}`);
+  w('');
+  row('ascending vs descending', compare(v1Asc, v1Desc));
+  w('');
+
+  w('   ── live, sorted {_id: 1} (utils/corpus.js) ──');
+  w('   NOTE: these ids are Stack Exchange NUMERIC STRINGS, so the sorted 500 is a');
+  w('   lexicographic slice, not "the oldest 500". In the app an _id is an ObjectId');
+  w('   whose hex string IS monotonic in time. That is why the digest below differs');
+  w('   from the unsorted ascending one — different 500 documents, one of them');
+  w('   specified. It does not affect what this section asks. See the header.');
   const asc = await convergedKeywords(notes, ids);
   const desc = await convergedKeywords(notes, [...ids].reverse());
   const shuf = await convergedKeywords(notes, shuffled(ids, SHUFFLE_SEED));
-
   w(`   id-ascending  digest   ${digestOf(asc)}`);
   w(`   id-descending digest   ${digestOf(desc)}`);
   w(`   shuffled      digest   ${digestOf(shuf)}   mulberry32 seed ${SHUFFLE_SEED}`);
@@ -346,6 +383,14 @@ async function sectionA(orderN) {
   const stable = digestOf(ascAgain) === digestOf(asc);
   w(`   harness deterministic  ${stable ? 'YES' : 'NO'}  — same order twice, same digest`);
   if (!stable) fail('the harness is not deterministic; every figure above is unattributable');
+
+  // And the contrast is asserted rather than left for a reader to spot. If the
+  // two loaders ever agreed, either the preserved copy drifted into having a
+  // sort or the live one lost the one it gained at 4.6 — both defects, and both
+  // would leave every figure above looking perfectly reasonable.
+  const contrast = compare(v1Asc, v1Desc).setDiff > 0 && compare(asc, desc).setDiff === 0;
+  w(`   the sort is what did it ${contrast ? 'YES' : 'NO — the two loaders agree, which is a defect'}`);
+  if (!contrast) fail('the pre-4.6 and live loaders no longer disagree; section A is measuring nothing');
   w('');
   return { asc, desc, shuf, stable };
 }
@@ -512,4 +557,12 @@ async function main() {
   }
 }
 
-main().catch((err) => fail(err && err.stack ? err.stack : String(err)));
+// The two harnesses are exported so tests/keywords.stability.test.js drives the
+// SAME code this artifact was measured with, rather than a second copy of it —
+// §7.5's rule applied to a harness. Guarded by require.main so importing them
+// does not run a two-minute measurement, and so the import needs no data/.
+module.exports = { convergedKeywords, saveHistoryKeywords, compare, asNotes, USER, CORPUS_LIMIT };
+
+if (require.main === module) {
+  main().catch((err) => fail(err && err.stack ? err.stack : String(err)));
+}

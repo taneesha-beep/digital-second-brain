@@ -1,8 +1,8 @@
 KEYWORD STABILITY — how much a stored note.keywords list moves, and why
 subject              utils/keywords.js + utils/corpus.js, called as routes/notes.js:124-125
-live loader sha256   2f52efa7599883ff13f5b155ad04941c6860ddbf605e4717bcae6280ccfe152f
+live loader sha256   0bbc186d508ead72d711a5d3e2ce980d537a5f4c581eef20a1bbffd4e59a44f1
                      backend/utils/corpus.js at this commit
-generated at HEAD    1a3a4b3
+generated at HEAD    67c0b86
 scales               epoch 500 (at/below the cap), order 1000 (above it)
 THIS FILE DOES NOT     regenerate byte-identically, and that is deliberate. Section D
                      carries wall times. Every DIGEST, COUNT and percentage below DOES
@@ -18,21 +18,36 @@ TWO DEFECTS          ORDER (section A) and EPOCH (sections B, C). Measured at di
    corpus sha256          66b285591af26367aa15f0c75cb0d2214d124bee2fe9d2c79ce360c06ca63dc7
                           mean 73.6 words per document — NOT a notebook
    epoch held constant    every list extracted after all 1000 notes exist, so the ONLY
-                          variable below is the store's return order
+                          variables below are the store's return order and the loader
 
+   ── pre-4.6, unsorted (scripts/lib/corpus-v1-shipped.js) ──
    id-ascending  digest   d4a2b5e8cee3bfb6696d2865e06655e94aa87409178b8837494107bda75c39c8
    id-descending digest   83b82317c20f660608a129d2f86d1d10f8659159134283066bf8724708d3d1f3
-   shuffled      digest   86ed476f6a24faf27f9d334085c200a8b7f02ceb57aaf6ba27457c80f504b63c   mulberry32 seed 20260816
 
    ascending vs descending   549 / 1000  notes differ as a SET   54.9%
                             925 / 1000  differ in SEQUENCE      92.5%
                            1436        terms moved in total, worst single note 10
 
-   ascending vs shuffled    420 / 1000  notes differ as a SET   42.0%
-                            876 / 1000  differ in SEQUENCE      87.6%
-                            980        terms moved in total, worst single note 6
+   ── live, sorted {_id: 1} (utils/corpus.js) ──
+   NOTE: these ids are Stack Exchange NUMERIC STRINGS, so the sorted 500 is a
+   lexicographic slice, not "the oldest 500". In the app an _id is an ObjectId
+   whose hex string IS monotonic in time. That is why the digest below differs
+   from the unsorted ascending one — different 500 documents, one of them
+   specified. It does not affect what this section asks. See the header.
+   id-ascending  digest   f07470b9fc092597f24411d5572b92118a035444857f2ba9954b582b1a8ad00e
+   id-descending digest   f07470b9fc092597f24411d5572b92118a035444857f2ba9954b582b1a8ad00e
+   shuffled      digest   f07470b9fc092597f24411d5572b92118a035444857f2ba9954b582b1a8ad00e   mulberry32 seed 20260816
+
+   ascending vs descending     0 / 1000  notes differ as a SET    0.0%
+                              0 / 1000  differ in SEQUENCE       0.0%
+                              0        terms moved in total, worst single note 0
+
+   ascending vs shuffled      0 / 1000  notes differ as a SET    0.0%
+                              0 / 1000  differ in SEQUENCE       0.0%
+                              0        terms moved in total, worst single note 0
 
    harness deterministic  YES  — same order twice, same digest
+   the sort is what did it YES
 
 ══ B. EPOCH — when each list was computed ══════════════════════════════
    N                      500, AT OR BELOW CORPUS_LIMIT=500 so order CANNOT act
@@ -85,8 +100,8 @@ TWO DEFECTS          ORDER (section A) and EPOCH (sections B, C). Measured at di
    on every read instead. extractKeywords rebuilds the whole df table per
    call (utils/keywords.js:71), so extracting N lists is N x O(N*K).
 
-   N =  500   extract all lists   min 2196.7 ms  p50 2202.8 ms  max 2262.4 ms
-   N = 2000   extract all lists   min 9399.7 ms  p50 9477.3 ms  max 9524.4 ms
+   N =  500   extract all lists   min 2235.9 ms  p50 2237.0 ms  max 2290.2 ms
+   N = 2000   extract all lists   min 8785.6 ms  p50 8786.9 ms  max 8850.4 ms
 
    Against 4.4's measured buildGlobalGraph: 5.1 ms at N=500 and 43.9 ms at
    N=2000 (results/graph-characterization.txt). The comparison is the point —

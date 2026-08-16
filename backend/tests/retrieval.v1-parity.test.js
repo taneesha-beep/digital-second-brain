@@ -64,6 +64,35 @@ describe('the shipped side is still the shipped algorithm', () => {
     );
   });
 
+  // ADDED AT 4.6, for the same reason and about a second file. Giving
+  // utils/corpus.js a .sort() would have inverted demonstration C, so the
+  // pre-4.6 loader is preserved and C prints both rows. A preserved copy
+  // nobody checks is how a demonstration quietly becomes a comparison with
+  // itself, which is exactly what the comment above says about the linker.
+  test('the preserved pre-4.6 corpus loader is byte-identical to the tagged file', () => {
+    const source = fs.readFileSync(
+      path.join(__dirname, '..', 'scripts', 'lib', 'corpus-v1-shipped.js'),
+      'utf8'
+    );
+    const begin = source.indexOf('\n', source.indexOf('BEGIN VERBATIM')) + 1;
+    const end = source.lastIndexOf('\n// ─── END VERBATIM');
+    const verbatim = source.slice(begin, end);
+
+    // `git show 1a3a4b3:backend/utils/corpus.js | tail -n +2 | shasum -a 256`
+    expect(crypto.createHash('sha256').update(verbatim).digest('hex')).toBe(
+      '5fd8c427e72f15d3122c50cb85ddeda0d7651c9cc5fae2e308c25502e286302d'
+    );
+  });
+
+  test('the live utils/corpus.js is NOT the loader demonstration C freezes', () => {
+    // The other half, and the one that would catch a well-meaning revert of
+    // 4.6's one-line change. If these became the same function again, both rows
+    // of demonstration C would report the same thing and the pair would assert
+    // nothing while still passing its own arithmetic.
+    const live = fs.readFileSync(path.join(__dirname, '..', 'utils', 'corpus.js'), 'utf8');
+    expect(live).toMatch(/\.sort\(\{\s*_id:\s*1\s*\}\)/);
+  });
+
   test('the live linker.service.js is NOT the algorithm this file proves', () => {
     // The other half of the same claim, and the one that would catch a
     // well-meaning revert of the require above. If these ever became the same
@@ -166,16 +195,39 @@ describe('the freeze is load-bearing, not decorative', () => {
     );
   });
 
-  test('above 500 documents, which 500 the database returns changes the keywords', async () => {
-    // The fixture is deliberately under the cap, so this is the only place
-    // loadUserCorpus's unsorted limit(500) is exercised.
-    const capDocs = parity.capFixture();
-    const ids = capDocs.map((d) => d.id);
-    const asc = await parity.keywordsUnderOrder(capDocs, ids);
-    const desc = await parity.keywordsUnderOrder(capDocs, [...ids].reverse());
+  // ── demonstration C, as a PAIR from 4.6 ─────────────────────────────────
+  //
+  // This was one test asserting `.not.toEqual`. 4.6's sort makes that false, and
+  // the two cheap responses to that were both refused: deleting it destroys the
+  // only place loadUserCorpus's 500-cap is exercised at all, and flipping the
+  // assertion in place converts a proof that a hazard EXISTS into a proof that
+  // it does not, at the same line number, while §7.6 goes on quoting the two
+  // contested keyword lists. Both rows are asserted instead, one loader apart.
+  const capDocs = parity.capFixture();
+  const capIds = capDocs.map((d) => d.id);
+
+  test('BEFORE 4.6: which 500 the database returns changes the keywords', async () => {
+    // The preserved pre-4.6 loader. §7.6's "which 500" row still has evidence.
+    const asc = await parity.keywordsUnderOrder(capDocs, capIds, parity.loadUserCorpusV1);
+    const desc = await parity.keywordsUnderOrder(capDocs, [...capIds].reverse(), parity.loadUserCorpusV1);
     expect(asc.corpusSize).toBe(500);
     expect(capDocs.length).toBeGreaterThan(501);
     expect([...asc.keywords].sort()).not.toEqual([...desc.keywords].sort());
+    // The exact pair §7.6 quotes, so the section and the test cannot drift.
+    expect(asc.keywords[9]).toBe('bravo');
+    expect(desc.keywords[9]).toBe('alpha');
+  });
+
+  test('AFTER 4.6: the sorted loader gives one answer regardless of return order', async () => {
+    const asc = await parity.keywordsUnderOrder(capDocs, capIds, parity.loadUserCorpus);
+    const desc = await parity.keywordsUnderOrder(capDocs, [...capIds].reverse(), parity.loadUserCorpus);
+    expect(asc.corpusSize).toBe(500);
+    expect(asc.keywords).toEqual(desc.keywords);
+    // AND it is the ascending answer, not merely *an* answer. The sorted 500
+    // holds all 60 alphas (bg001-060) and only 40 bravos (bg461-500), so bravo
+    // is the rarer term and wins slot 10. Asserting the value rather than just
+    // the agreement is what stops this passing if both sides broke together.
+    expect(asc.keywords[9]).toBe('bravo');
   });
 });
 

@@ -39,6 +39,17 @@
  *     which holds 24 documents on purpose. Demonstration C below covers it
  *     separately with generated documents, so the parity run is not left
  *     implying a coverage it does not have.
+ *
+ *     ↳ 4.6 GAVE utils/corpus.js A .sort() AND DEMONSTRATION C IS WHERE THAT
+ *     SHOWS. The sentence above is still exactly true — the 34-document fixture
+ *     still does not reach the cap, and 83f9e35e… is unmoved, VERIFIED BY
+ *     RUNNING both proofs rather than reasoned about. What changed is that C
+ *     now prints TWO rows: the preserved pre-4.6 loader, which still reports
+ *     `same keyword set NO`, and the live one, which reports YES. Deleting the
+ *     first would have destroyed the only evidence §7.6's "which 500" row has;
+ *     flipping its assertion in place would have converted a proof that a
+ *     hazard exists into a proof that it does not, at the same line number.
+ *     scripts/lib/corpus-v1-shipped.js carries the reason at length.
  *   - linker.service.js:40-64, the bidirectional write, is not re-expressed.
  *     Demonstration B shows why: it is last-writer-wins storage and it makes
  *     the *stored* graph depend on save order. Phase 4.2's subject.
@@ -53,7 +64,8 @@
  *      different link graph.
  *   C. The 500-cap freeze is load-bearing. Generated documents, above the cap,
  *      where which 500 the database happens to return changes which keywords a
- *      document ends up with.
+ *      document ends up with — shown against the PRESERVED pre-4.6 loader,
+ *      beside the live one where 4.6's sort has removed the effect.
  *   D. What the shipped threshold actually means, per document.
  */
 
@@ -68,6 +80,9 @@ install();
 
 const { extractKeywords } = require('../utils/keywords');
 const { loadUserCorpus } = require('../utils/corpus');
+// The pre-4.6 loader, preserved. Demonstration C's "before" side; see its own
+// header for why it is a preserved file rather than six retyped lines.
+const { loadUserCorpus: loadUserCorpusV1 } = require('./lib/corpus-v1-shipped');
 // NOT ../services/linker.service — see the header. That file computes v4-bm25
 // from Phase 4.1 onward; this is the pre-4.1 scoring, preserved and hashed.
 const { computeAndSaveLinks } = require('./lib/linker-v1-shipped');
@@ -194,10 +209,16 @@ function capFixture() {
   return docs;
 }
 
-async function keywordsUnderOrder(docs, order) {
+/**
+ * `loadCorpus` is an argument from 4.6 so that ONE function drives both rows of
+ * demonstration C — the preserved pre-4.6 loader and the live sorted one — and
+ * the two rows differ in nothing but the loader. Defaulting to the live one
+ * keeps every existing caller unchanged.
+ */
+async function keywordsUnderOrder(docs, order, loadCorpus = loadUserCorpus) {
   const store = setStore(new FakeNoteStore(asNotes(docs), order));
   const note = store.raw('query');
-  const corpus = await loadUserCorpus(USER, { excludeId: note._id });
+  const corpus = await loadCorpus(USER, { excludeId: note._id });
   return { keywords: extractKeywords(note.title, note.contentText, corpus), corpusSize: corpus.length };
 }
 
@@ -271,15 +292,38 @@ async function main() {
   }
 
   // ── C. The 500 cap ──────────────────────────────────────────────────────
+  //
+  // TWO ROWS FROM 4.6, and the pair is the demonstration rather than either
+  // half of it. The first row is what the freeze was FOR; the second is what
+  // the sort bought. Same fixture, same code, one loader apart.
   const capDocs = capFixture();
-  const asc = await keywordsUnderOrder(capDocs, capDocs.map((d) => d.id));
-  const desc = await keywordsUnderOrder(capDocs, [...capDocs.map((d) => d.id)].reverse());
+  const capIds = capDocs.map((d) => d.id);
+  const sameSet = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
-  console.log('\nC. THE 500-CAP FREEZE IS LOAD-BEARING');
-  console.log(`   generated documents  ${capDocs.length}   loadUserCorpus returned ${asc.corpusSize}`);
-  console.log(`   id-ascending  order  ${asc.keywords.join(',')}`);
-  console.log(`   id-descending order  ${desc.keywords.join(',')}`);
-  console.log(`   same keyword set     ${JSON.stringify([...asc.keywords].sort()) === JSON.stringify([...desc.keywords].sort()) ? 'YES' : 'NO'}`);
+  const rows = [
+    { label: 'pre-4.6, unsorted', loader: loadUserCorpusV1 },
+    { label: 'live, sorted _id:1', loader: loadUserCorpus }
+  ];
+
+  console.log('\nC. THE 500-CAP FREEZE IS LOAD-BEARING — AND 4.6 REMOVED WHAT MADE IT SO');
+  console.log(`   generated documents  ${capDocs.length}`);
+  const capResults = [];
+  for (const { label, loader } of rows) {
+    const asc = await keywordsUnderOrder(capDocs, capIds, loader);
+    const desc = await keywordsUnderOrder(capDocs, [...capIds].reverse(), loader);
+    const same = sameSet(asc.keywords, desc.keywords);
+    capResults.push({ label, asc, desc, same });
+    console.log(`   ${label}`);
+    console.log(`     loadUserCorpus returned ${asc.corpusSize}`);
+    console.log(`     id-ascending  order  ${asc.keywords.join(',')}`);
+    console.log(`     id-descending order  ${desc.keywords.join(',')}`);
+    console.log(`     same keyword set     ${same ? 'YES' : 'NO'}`);
+  }
+  // The pair is only evidence if the two rows disagree. If they ever agreed,
+  // one of two things happened and both are defects: the preserved copy drifted
+  // into having a sort, or the live one lost the one it gained at 4.6.
+  const capContrast = capResults[0].same === false && capResults[1].same === true;
+  console.log(`   the sort is what changed it   ${capContrast ? 'YES' : 'NO — the two rows agree, which is a defect'}`);
 
   // ── D. What the threshold means ─────────────────────────────────────────
   console.log('\nD. WHAT `strength > 0.15` MEANS PER DOCUMENT');
@@ -298,15 +342,26 @@ async function main() {
     console.log(`\nwrote ${path.relative(REPO, OUT_DIR)}/v1-shipped.txt and v1-harness.txt`);
   }
 
-  if (!identical) process.exitCode = 1;
+  if (!identical || !capContrast) process.exitCode = 1;
 }
 
 // asNotes is exported for scripts/measure-writes.js (4.2), so the fixture ->
-// Note shaping has ONE definition rather than one per script. parity-app.js
-// carries its own copy from 4.1; that is noted on 4.2's out-of-scope list
-// rather than merged here, because merging it would edit a file two committed
-// parity hashes depend on for no measured benefit.
-module.exports = { loadFixture, runShipped, runHarness, render, sha256, capFixture, keywordsUnderOrder, asNotes, CAP };
+// Note shaping has ONE definition rather than one per script.
+//
+// ↳ 4.6 FINISHED THAT, AND parity-app.js NOW TAKES IT FROM HERE TOO. Its copy
+// was byte-identical and was declined three times — 4.3 and 4.4 because merging
+// edits a file two committed parity hashes depend on, 4.5 because CI's debut
+// had to baseline unmodified files. The last reason expired when 4.5 merged,
+// and this session edits this file anyway, so both hashes are re-run rather
+// than read in the same commit.
+module.exports = {
+  loadFixture, runShipped, runHarness, render, sha256, capFixture, keywordsUnderOrder,
+  asNotes, CAP,
+  // 4.6. Exported so tests/retrieval.v1-parity.test.js drives demonstration C's
+  // two rows through the same entry point this script does, rather than
+  // reaching past it for the preserved module.
+  loadUserCorpus, loadUserCorpusV1
+};
 
 if (require.main === module) {
   main().catch((err) => {
