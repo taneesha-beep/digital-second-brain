@@ -1,0 +1,162 @@
+GLOBAL GRAPH CHARACTERIZATION — the pre-4.4 builder, its output and its cost
+subject              scripts/lib/graph-builder-v1-shipped.js, byte-identical to
+                     services/graphBuilder.service.js at 83689c6 below line 1
+verbatim sha256      711b6588dc6a72101d557000157e9df4dd3cbf112c0cdf475c5a79160d2f3fb2
+live file sha256     cad9e6236b7791e18ea0d9be3883da23f7012aaf4bc6fccf1fdbaebc0ae21c71
+                     services/graphBuilder.service.js at this commit
+generated at HEAD    83689c6
+scales               500, 2000
+timing               5 repeats, one process, no Mongo — NOT an endpoint latency
+THIS FILE DOES NOT     regenerate byte-identically, and that is deliberate. It carries
+                     wall times. Every DIGEST, COUNT and df figure below DOES reproduce
+                     exactly — they are functions of the corpus slice and the frozen
+                     code, not of the machine. Same split §23.10 made between
+                     migration-verification.txt and provenance-query.txt.
+DF cutoff quoted     MAX_DF = 30, the value 4.4 adopts. NOTHING HERE APPLIES IT —
+                     the frozen builder has no cutoff, which is the point. Section 3
+                     carries the arithmetic the 4.4 diff will be checked against.
+
+══ N = 500 ═════════════════════════════════════════════════════════
+corpus slice         first 500 documents of data/corpus/cooking.jsonl, shaped as Notes
+corpus sha256        36dc369efd141392075aac80405dd9f6d38145ace27b3fa6251d075de678ae2d
+                     mean 72.3 words per document — NOT a notebook, see the header
+keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js,
+                     2.4 s to build — this script's cost, not the builder's
+
+1. THE OUTPUT — what buildGlobalGraph returns, and its identity
+   elements total       18133
+     cross-link         7929
+     keyword            4852
+     note               500
+     note-keyword       4852
+   payload             2.90 MiB of JSON
+   OUTPUT DIGEST       bee573378b645120f0e8278256ec7638e0f92845bed7bdce29d6a1d91721f231
+   The digest is over JSON.stringify({elements}) in EMISSION ORDER, so it
+   covers ordering as well as content. This is the fixture 4.4 is checked
+   against — a frozen implementation rather than a committed blob, because
+   the blob regenerates from committed inputs and §8.5 sends it to .gitignore.
+
+2. THE COST — MEASURED, whole-build
+   buildGlobalGraph     min 224.5 ms  p50 229.4 ms  max 236.0 ms   at N=500
+   NO PART OF THIS IS I/O. The one Note.find() is served by FakeNoteStore
+   from memory, so this is the builder's CPU and nothing else.
+
+3. THE DOCUMENT-FREQUENCY TABLE over stored keywords — what the cutoff acts on
+   |V| with postings    2619
+   Sigma_t df_t         4852      (= the keyword-node count above)
+   Sigma_t df_t^2       2.0710e+4
+   max df               28   (5.6% of N)
+   df p50 / p90 / p99   1 / 3 / 12
+   df == 1, emits none  1763 of 2619
+   cross edges, all     7929      = Sigma_t C(df_t, 2), and it MATCHES the emitted count: YES
+
+   THE CUTOFF ARITHMETIC, at the MAX_DF = 30 that 4.4 adopts. Computed from
+   this table and NOT from any diff, so it is the independent expected value
+   the 4.4 comparison is checked against.
+   terms with df > 30   0
+   cross edges removed  0   (0.0% of 7929)
+   THE CUTOFF IS INERT AT N=500.
+
+4. WHERE THE TIME GOES — RECONSTRUCTION, not a measurement of the frozen file
+   The frozen copy is one function and instrumenting it would end its claim
+   to be the shipped code. These three phases are re-expressed and timed
+   apart, and the re-expression is admitted only if it passes BOTH checks.
+   output byte-identical  YES   bee573378b645120f0e8278256ec7638e0f92845bed7bdce29d6a1d91721f231
+   total 232.5 ms vs MEASURED p50 229.4 ms — within 5%   YES
+     store read (INSTRUMENT)         1.1 ms     0.5%   FakeNoteStore's lean() clone
+     pairwise connCount loop       228.5 ms    98.3%   O(N^2 * K^2)
+     node emission                   1.5 ms     0.6%   O(N * K)
+     cross-edge emission             1.5 ms     0.6%   O(Sigma_t df_t^2)
+   THE FINDING, and it is not what roadmap 4.4 names. Cross-edge emission
+   ALREADY runs from an inverted index — graphBuilder.service.js:261 groups
+   keyword nodes by keyword and emits from the buckets, which IS postings.
+   What is quadratic is the OTHER loop, at :206, and the roadmap does not
+   mention it.
+
+5. WHAT THE PAIRWISE LOOP BUYS — its only consumer
+   connCount feeds ONE value: noteSize = 64 + min(conns * 6, 24), at :223.
+   It saturates at conns >= 4.
+   degree p50 / p90     27 / 51      max 83
+   notes at or above 4  494 of 500   (98.80%)
+   distinct node sizes  5
+   So the quadratic loop distinguishes the notes NOT at the cap, and there
+   are few of them. That is the cost being paid, stated as a count rather
+   than as an opinion.
+
+══ N = 2000 ════════════════════════════════════════════════════════
+corpus slice         first 2000 documents of data/corpus/cooking.jsonl, shaped as Notes
+corpus sha256        e0c393ca6cad4d5fd3eb85cd9d360d9c3c0775c8ba6cc7e46b09dca6b839703d
+                     mean 81.5 words per document — NOT a notebook, see the header
+keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js,
+                     9.9 s to build — this script's cost, not the builder's
+
+1. THE OUTPUT — what buildGlobalGraph returns, and its identity
+   elements total       157503
+     cross-link         116425
+     keyword            19539
+     note               2000
+     note-keyword       19539
+   payload             25.94 MiB of JSON
+   OUTPUT DIGEST       78804b062b48aa8989fadea13e8a55b3ee44ca3bc41438b5ef9bfc4900f1416b
+   The digest is over JSON.stringify({elements}) in EMISSION ORDER, so it
+   covers ordering as well as content. This is the fixture 4.4 is checked
+   against — a frozen implementation rather than a committed blob, because
+   the blob regenerates from committed inputs and §8.5 sends it to .gitignore.
+
+2. THE COST — MEASURED, whole-build
+   buildGlobalGraph     min 3527.6 ms  p50 3572.5 ms  max 3886.3 ms   at N=2000
+   NO PART OF THIS IS I/O. The one Note.find() is served by FakeNoteStore
+   from memory, so this is the builder's CPU and nothing else.
+
+3. THE DOCUMENT-FREQUENCY TABLE over stored keywords — what the cutoff acts on
+   |V| with postings    6081
+   Sigma_t df_t         19539      (= the keyword-node count above)
+   Sigma_t df_t^2       2.5239e+5
+   max df               105   (5.3% of N)
+   df p50 / p90 / p99   1 / 7 / 29
+   df == 1, emits none  3197 of 6081
+   cross edges, all     116425      = Sigma_t C(df_t, 2), and it MATCHES the emitted count: YES
+
+   THE CUTOFF ARITHMETIC, at the MAX_DF = 30 that 4.4 adopts. Computed from
+   this table and NOT from any diff, so it is the independent expected value
+   the 4.4 comparison is checked against.
+   terms with df > 30   54
+   cross edges removed  61328   (52.7% of 116425)
+   THE CUTOFF IS LIVE AT N=2000.
+
+4. WHERE THE TIME GOES — RECONSTRUCTION, not a measurement of the frozen file
+   The frozen copy is one function and instrumenting it would end its claim
+   to be the shipped code. These three phases are re-expressed and timed
+   apart, and the re-expression is admitted only if it passes BOTH checks.
+   output byte-identical  YES   78804b062b48aa8989fadea13e8a55b3ee44ca3bc41438b5ef9bfc4900f1416b
+   total 3595.8 ms vs MEASURED p50 3572.5 ms — within 5%   YES
+     store read (INSTRUMENT)         4.7 ms     0.1%   FakeNoteStore's lean() clone
+     pairwise connCount loop      3578.8 ms    99.5%   O(N^2 * K^2)
+     node emission                   3.5 ms     0.1%   O(N * K)
+     cross-edge emission             8.8 ms     0.2%   O(Sigma_t df_t^2)
+   THE FINDING, and it is not what roadmap 4.4 names. Cross-edge emission
+   ALREADY runs from an inverted index — graphBuilder.service.js:261 groups
+   keyword nodes by keyword and emits from the buckets, which IS postings.
+   What is quadratic is the OTHER loop, at :206, and the roadmap does not
+   mention it.
+
+5. WHAT THE PAIRWISE LOOP BUYS — its only consumer
+   connCount feeds ONE value: noteSize = 64 + min(conns * 6, 24), at :223.
+   It saturates at conns >= 4.
+   degree p50 / p90     103 / 182      max 343
+   notes at or above 4  1997 of 2000   (99.85%)
+   distinct node sizes  2
+   So the quadratic loop distinguishes the notes NOT at the cap, and there
+   are few of them. That is the cost being paid, stated as a count rather
+   than as an opinion.
+
+6. WHAT THIS DOES NOT ESTABLISH
+   - NOT an endpoint latency. No Mongo, no network, no serialisation on the
+     wire, no browser layout. GET /api/graph/global pays all four.
+   - NOT a measurement of a notebook. Stack Exchange documents shaped as
+     Notes; §12.2 and §21.4 say the same thing about the same slice.
+   - NOT extrapolable. §21.4 established Sigma_t df_t^2 is not scale-free,
+     so every figure here names its N and none of them implies another.
+   - NOT a claim about buildNoteGraph or expandKeyword. They are a keyword
+     tree for ONE note, they are not this function, and 4.4 does not touch
+     them.
