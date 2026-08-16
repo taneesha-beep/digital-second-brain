@@ -103,6 +103,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const fake = require('./lib/fake-note-store');
+const { explainDiff } = require('./lib/graph-diff');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const CORPUS = path.join(REPO, 'data', 'corpus', 'cooking.jsonl');
@@ -554,7 +555,67 @@ async function characterize(n) {
   w('   than as an opinion.');
   w('');
 
-  return { n, agrees };
+  // ── 6 and 7: THE LIVE BUILDER, and the two comparisons ────────────────────
+  //
+  // TWO RUNS, NEVER ONE, and never both variables at once (CLAUDE.md). The
+  // uncapped run answers "did the rewrite change anything"; the capped run
+  // answers "what does the cutoff change". Fusing them produces one diff that
+  // attributes nothing.
+  const live = require('../services/graphBuilder.service');
+
+  const uncappedTimed = await timeIt(() => live.buildGlobalGraph(USER, { maxDf: Infinity }));
+  const uncapped = uncappedTimed.value;
+  const uncappedSha = sha256(JSON.stringify({ elements: uncapped.elements }));
+  const identical = uncappedSha === sha256(payload);
+
+  const cappedTimed = await timeIt(() => live.buildGlobalGraph(USER));
+  const capped = cappedTimed.value;
+
+  const verdict = explainDiff(elements, capped.elements, {
+    maxDf: live.MAX_DF,
+    notes: notes.map((note) => ({ id: String(note._id), keywords: note.keywords })),
+  });
+
+  w('6. THE REWRITE — one inverted index, and the cutoff switched OFF');
+  w(`   buildGlobalGraph     min ${fixed(uncappedTimed.min)} ms  p50 ${fixed(uncappedTimed.p50)} ms  max ${fixed(uncappedTimed.max)} ms   maxDf = Infinity`);
+  w(`   against the frozen   p50 ${fixed(timed.p50)} ms  ->  ${fixed(timed.p50 / uncappedTimed.p50, 1)}x faster`);
+  w(`   OUTPUT DIGEST        ${uncappedSha}`);
+  w(`   BYTE-IDENTICAL TO THE FIXTURE   ${identical ? 'YES' : 'NO'}`);
+  w('   This is the behaviour-preservation proof and it carries no cutoff, so');
+  w('   it is a ONE-VARIABLE result: same output, different cost.');
+  w('');
+
+  w(`7. THE CUTOFF — the same builder at MAX_DF = ${live.MAX_DF}`);
+  w(`   buildGlobalGraph     min ${fixed(cappedTimed.min)} ms  p50 ${fixed(cappedTimed.p50)} ms  max ${fixed(cappedTimed.max)} ms`);
+  w(`   elements             ${verdict.counts.before} -> ${verdict.counts.after}`);
+  w(`   payload              ${fixed(payload.length / 1048576, 2)} -> ${fixed(JSON.stringify({ elements: capped.elements }).length / 1048576, 2)} MiB`);
+  w(`   cross-links removed  ${verdict.counts.removed}`);
+  w(`   expected, from the df table and NOT from the diff   ${verdict.counts.expectedRemoved}`);
+  w(`   terms cut            ${verdict.counts.cutTerms}   meta.suppressedTerms says ${capped.meta.suppressedTerms}`);
+  w(`   elements added       ${verdict.counts.added}`);
+  w(`   \`shared\` flipped     ${verdict.counts.sharedFlipped}   (keyword nodes of cut terms)`);
+  w(`   note sizes changed   ${verdict.counts.sizeChanged}`);
+  w('');
+  w(`   FULLY EXPLAINED BY THE DF CUTOFF   ${verdict.explained ? 'YES' : 'NO'}`);
+  w('   The predicate is scripts/lib/graph-diff.js and it was written BEFORE the');
+  w('   rewrite existed — ROADMAP decisions log, 2026-08-16. It derives its own');
+  w('   postings, df table and expected degrees from the NOTES and never asks the');
+  w('   builder anything, so its expected removal count cannot agree with an');
+  w('   arbitrary diff.');
+  if (!verdict.explained) {
+    for (const v of verdict.violations.slice(0, 12)) w(`     VIOLATION  ${v}`);
+    if (verdict.violations.length > 12) w(`     ... and ${verdict.violations.length - 12} more`);
+  }
+  if (capped.meta.suppressed.length) {
+    const top = capped.meta.suppressed.slice(0, 12).map((t) => `${t.keyword}:${t.df}`).join(' ');
+    w(`   meta.suppressed, top ${Math.min(12, capped.meta.suppressed.length)}   ${top}`);
+    w('   Reported in the RESPONSE, not only here: a suppressed edge is');
+    w('   indistinguishable from an absent relationship, so the cutoff is the one');
+    w('   thing this builder must not be silent about.');
+  }
+  w('');
+
+  return { n, agrees, identical, explained: verdict.explained };
 }
 
 async function main() {
@@ -594,7 +655,7 @@ async function main() {
   const results = [];
   for (const n of args.scales) results.push(await characterize(n));
 
-  w('6. WHAT THIS DOES NOT ESTABLISH');
+  w('8. WHAT THIS DOES NOT ESTABLISH');
   w('   - NOT an endpoint latency. No Mongo, no network, no serialisation on the');
   w('     wire, no browser layout. GET /api/graph/global pays all four.');
   w('   - NOT a measurement of a notebook. Stack Exchange documents shaped as');
@@ -610,7 +671,11 @@ async function main() {
     console.log(`\nwrote ${path.relative(REPO, OUT)}`);
   }
 
-  if (results.some((r) => !r.agrees)) process.exit(1);
+  const bad = results.filter((r) => !r.agrees || !r.identical || !r.explained);
+  if (bad.length) {
+    console.error(`\ncharacterize-graph: FAILED at N=${bad.map((r) => r.n).join(', ')}\n`);
+    process.exit(1);
+  }
 }
 
 main().catch((err) => fail(err && err.stack ? err.stack : String(err)));

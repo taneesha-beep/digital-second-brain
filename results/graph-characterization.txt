@@ -2,9 +2,9 @@ GLOBAL GRAPH CHARACTERIZATION — the pre-4.4 builder, its output and its cost
 subject              scripts/lib/graph-builder-v1-shipped.js, byte-identical to
                      services/graphBuilder.service.js at 83689c6 below line 1
 verbatim sha256      711b6588dc6a72101d557000157e9df4dd3cbf112c0cdf475c5a79160d2f3fb2
-live file sha256     cad9e6236b7791e18ea0d9be3883da23f7012aaf4bc6fccf1fdbaebc0ae21c71
+live file sha256     871af99ad26870d6eb6da94a12999417eb83bcb20e31d50fbb19f878edbe89eb
                      services/graphBuilder.service.js at this commit
-generated at HEAD    83689c6
+generated at HEAD    162b23c
 scales               500, 2000
 timing               5 repeats, one process, no Mongo — NOT an endpoint latency
 THIS FILE DOES NOT     regenerate byte-identically, and that is deliberate. It carries
@@ -21,7 +21,7 @@ corpus slice         first 500 documents of data/corpus/cooking.jsonl, shaped as
 corpus sha256        36dc369efd141392075aac80405dd9f6d38145ace27b3fa6251d075de678ae2d
                      mean 72.3 words per document — NOT a notebook, see the header
 keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js,
-                     2.4 s to build — this script's cost, not the builder's
+                     2.3 s to build — this script's cost, not the builder's
 
 1. THE OUTPUT — what buildGlobalGraph returns, and its identity
    elements total       18133
@@ -37,7 +37,7 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    the blob regenerates from committed inputs and §8.5 sends it to .gitignore.
 
 2. THE COST — MEASURED, whole-build
-   buildGlobalGraph     min 224.5 ms  p50 229.4 ms  max 236.0 ms   at N=500
+   buildGlobalGraph     min 224.3 ms  p50 225.1 ms  max 233.5 ms   at N=500
    NO PART OF THIS IS I/O. The one Note.find() is served by FakeNoteStore
    from memory, so this is the builder's CPU and nothing else.
 
@@ -62,11 +62,11 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    to be the shipped code. These three phases are re-expressed and timed
    apart, and the re-expression is admitted only if it passes BOTH checks.
    output byte-identical  YES   bee573378b645120f0e8278256ec7638e0f92845bed7bdce29d6a1d91721f231
-   total 232.5 ms vs MEASURED p50 229.4 ms — within 5%   YES
+   total 229.2 ms vs MEASURED p50 225.1 ms — within 5%   YES
      store read (INSTRUMENT)         1.1 ms     0.5%   FakeNoteStore's lean() clone
-     pairwise connCount loop       228.5 ms    98.3%   O(N^2 * K^2)
-     node emission                   1.5 ms     0.6%   O(N * K)
-     cross-edge emission             1.5 ms     0.6%   O(Sigma_t df_t^2)
+     pairwise connCount loop       225.8 ms    98.5%   O(N^2 * K^2)
+     node emission                   1.2 ms     0.5%   O(N * K)
+     cross-edge emission             1.1 ms     0.5%   O(Sigma_t df_t^2)
    THE FINDING, and it is not what roadmap 4.4 names. Cross-edge emission
    ALREADY runs from an inverted index — graphBuilder.service.js:261 groups
    keyword nodes by keyword and emits from the buckets, which IS postings.
@@ -82,6 +82,32 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    So the quadratic loop distinguishes the notes NOT at the cap, and there
    are few of them. That is the cost being paid, stated as a count rather
    than as an opinion.
+
+6. THE REWRITE — one inverted index, and the cutoff switched OFF
+   buildGlobalGraph     min 3.3 ms  p50 5.1 ms  max 7.1 ms   maxDf = Infinity
+   against the frozen   p50 225.1 ms  ->  44.0x faster
+   OUTPUT DIGEST        bee573378b645120f0e8278256ec7638e0f92845bed7bdce29d6a1d91721f231
+   BYTE-IDENTICAL TO THE FIXTURE   YES
+   This is the behaviour-preservation proof and it carries no cutoff, so
+   it is a ONE-VARIABLE result: same output, different cost.
+
+7. THE CUTOFF — the same builder at MAX_DF = 30
+   buildGlobalGraph     min 3.0 ms  p50 4.0 ms  max 7.0 ms
+   elements             18133 -> 18133
+   payload              2.90 -> 2.90 MiB
+   cross-links removed  0
+   expected, from the df table and NOT from the diff   0
+   terms cut            0   meta.suppressedTerms says 0
+   elements added       0
+   `shared` flipped     0   (keyword nodes of cut terms)
+   note sizes changed   0
+
+   FULLY EXPLAINED BY THE DF CUTOFF   YES
+   The predicate is scripts/lib/graph-diff.js and it was written BEFORE the
+   rewrite existed — ROADMAP decisions log, 2026-08-16. It derives its own
+   postings, df table and expected degrees from the NOTES and never asks the
+   builder anything, so its expected removal count cannot agree with an
+   arbitrary diff.
 
 ══ N = 2000 ════════════════════════════════════════════════════════
 corpus slice         first 2000 documents of data/corpus/cooking.jsonl, shaped as Notes
@@ -104,7 +130,7 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    the blob regenerates from committed inputs and §8.5 sends it to .gitignore.
 
 2. THE COST — MEASURED, whole-build
-   buildGlobalGraph     min 3527.6 ms  p50 3572.5 ms  max 3886.3 ms   at N=2000
+   buildGlobalGraph     min 3555.7 ms  p50 3656.9 ms  max 3732.0 ms   at N=2000
    NO PART OF THIS IS I/O. The one Note.find() is served by FakeNoteStore
    from memory, so this is the builder's CPU and nothing else.
 
@@ -129,11 +155,11 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    to be the shipped code. These three phases are re-expressed and timed
    apart, and the re-expression is admitted only if it passes BOTH checks.
    output byte-identical  YES   78804b062b48aa8989fadea13e8a55b3ee44ca3bc41438b5ef9bfc4900f1416b
-   total 3595.8 ms vs MEASURED p50 3572.5 ms — within 5%   YES
-     store read (INSTRUMENT)         4.7 ms     0.1%   FakeNoteStore's lean() clone
-     pairwise connCount loop      3578.8 ms    99.5%   O(N^2 * K^2)
-     node emission                   3.5 ms     0.1%   O(N * K)
-     cross-edge emission             8.8 ms     0.2%   O(Sigma_t df_t^2)
+   total 3536.0 ms vs MEASURED p50 3656.9 ms — within 5%   YES
+     store read (INSTRUMENT)         4.0 ms     0.1%   FakeNoteStore's lean() clone
+     pairwise connCount loop      3519.9 ms    99.5%   O(N^2 * K^2)
+     node emission                   3.8 ms     0.1%   O(N * K)
+     cross-edge emission             8.3 ms     0.2%   O(Sigma_t df_t^2)
    THE FINDING, and it is not what roadmap 4.4 names. Cross-edge emission
    ALREADY runs from an inverted index — graphBuilder.service.js:261 groups
    keyword nodes by keyword and emits from the buckets, which IS postings.
@@ -150,7 +176,37 @@ keywords             converged (§7.2), real utils/keywords.js + utils/corpus.js
    are few of them. That is the cost being paid, stated as a count rather
    than as an opinion.
 
-6. WHAT THIS DOES NOT ESTABLISH
+6. THE REWRITE — one inverted index, and the cutoff switched OFF
+   buildGlobalGraph     min 35.0 ms  p50 43.9 ms  max 50.4 ms   maxDf = Infinity
+   against the frozen   p50 3656.9 ms  ->  83.2x faster
+   OUTPUT DIGEST        78804b062b48aa8989fadea13e8a55b3ee44ca3bc41438b5ef9bfc4900f1416b
+   BYTE-IDENTICAL TO THE FIXTURE   YES
+   This is the behaviour-preservation proof and it carries no cutoff, so
+   it is a ONE-VARIABLE result: same output, different cost.
+
+7. THE CUTOFF — the same builder at MAX_DF = 30
+   buildGlobalGraph     min 24.2 ms  p50 25.5 ms  max 50.5 ms
+   elements             157503 -> 96175
+   payload              25.94 -> 15.74 MiB
+   cross-links removed  61328
+   expected, from the df table and NOT from the diff   61328
+   terms cut            54   meta.suppressedTerms says 54
+   elements added       0
+   `shared` flipped     2482   (keyword nodes of cut terms)
+   note sizes changed   8
+
+   FULLY EXPLAINED BY THE DF CUTOFF   YES
+   The predicate is scripts/lib/graph-diff.js and it was written BEFORE the
+   rewrite existed — ROADMAP decisions log, 2026-08-16. It derives its own
+   postings, df table and expected degrees from the NOTES and never asks the
+   builder anything, so its expected removal count cannot agree with an
+   arbitrary diff.
+   meta.suppressed, top 12   cooking:105 difference:81 recipe:78 chicken:72 sauce:71 baking:68 without:62 substitute:60 meat:56 bread:55 water:53 long:50
+   Reported in the RESPONSE, not only here: a suppressed edge is
+   indistinguishable from an absent relationship, so the cutoff is the one
+   thing this builder must not be silent about.
+
+8. WHAT THIS DOES NOT ESTABLISH
    - NOT an endpoint latency. No Mongo, no network, no serialisation on the
      wire, no browser layout. GET /api/graph/global pays all four.
    - NOT a measurement of a notebook. Stack Exchange documents shaped as
