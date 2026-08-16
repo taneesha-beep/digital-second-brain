@@ -1,0 +1,105 @@
+KEYWORD STABILITY — how much a stored note.keywords list moves, and why
+subject              utils/keywords.js + utils/corpus.js, called as routes/notes.js:124-125
+live loader sha256   2f52efa7599883ff13f5b155ad04941c6860ddbf605e4717bcae6280ccfe152f
+                     backend/utils/corpus.js at this commit
+generated at HEAD    1a3a4b3
+scales               epoch 500 (at/below the cap), order 1000 (above it)
+THIS FILE DOES NOT     regenerate byte-identically, and that is deliberate. Section D
+                     carries wall times. Every DIGEST, COUNT and percentage below DOES
+                     reproduce exactly — they are functions of the corpus slice and the
+                     shipped code, not of the machine. Same split §23.10 made between
+                     migration-verification.txt and provenance-query.txt.
+TWO DEFECTS          ORDER (section A) and EPOCH (sections B, C). Measured at different
+                     N so no figure confounds them. A .sort() closes the first and
+                     cannot touch the second.
+
+══ A. ORDER — which 500 documents feed the IDF ════════════════════════
+   N                      1000, ABOVE CORPUS_LIMIT=500 so the cap bites
+   corpus sha256          66b285591af26367aa15f0c75cb0d2214d124bee2fe9d2c79ce360c06ca63dc7
+                          mean 73.6 words per document — NOT a notebook
+   epoch held constant    every list extracted after all 1000 notes exist, so the ONLY
+                          variable below is the store's return order
+
+   id-ascending  digest   d4a2b5e8cee3bfb6696d2865e06655e94aa87409178b8837494107bda75c39c8
+   id-descending digest   83b82317c20f660608a129d2f86d1d10f8659159134283066bf8724708d3d1f3
+   shuffled      digest   86ed476f6a24faf27f9d334085c200a8b7f02ceb57aaf6ba27457c80f504b63c   mulberry32 seed 20260816
+
+   ascending vs descending   549 / 1000  notes differ as a SET   54.9%
+                            925 / 1000  differ in SEQUENCE      92.5%
+                           1436        terms moved in total, worst single note 10
+
+   ascending vs shuffled    420 / 1000  notes differ as a SET   42.0%
+                            876 / 1000  differ in SEQUENCE      87.6%
+                            980        terms moved in total, worst single note 6
+
+   harness deterministic  YES  — same order twice, same digest
+
+══ B. EPOCH — when each list was computed ══════════════════════════════
+   N                      500, AT OR BELOW CORPUS_LIMIT=500 so order CANNOT act
+   corpus sha256          36dc369efd141392075aac80405dd9f6d38145ace27b3fa6251d075de678ae2d
+                          mean 72.3 words per document
+   save history           note i extracted against notes 1..i-1, as routes/notes.js does
+   converged              every note re-extracted after all N exist (§7.2)
+
+   save-history  digest   18c8eda6076a958405c5b9fbc3131acdcacb20b206204167170e6f4e55283140
+   converged     digest   21df5e8a2ff0bf4c5bfcc3e6c4546924526f6158ad973b73728c6421f1e10b2e
+
+   history vs converged     220 / 500  notes differ as a SET   44.0%
+                            407 / 500  differ in SEQUENCE      81.4%
+                            574        terms moved in total, worst single note 10
+
+   WHERE IT LIVES, by save position
+     saves    1-  10      7 /   10 differ   70.0%      22 terms
+     saves   11-  50     32 /   40 differ   80.0%      96 terms
+     saves   51- 100     38 /   50 differ   76.0%     114 terms
+     saves  101- 250     88 /  150 differ   58.7%     222 terms
+     saves  251- 500     55 /  250 differ   22.0%     120 terms
+
+══ C. SAVE ORDER — the Done criterion's own experiment ══════════════════
+   N                      500, the same slice as B
+   question               permute the order the notes are saved in; does a note
+                          end with the same keywords?
+
+   forward   digest       18c8eda6076a958405c5b9fbc3131acdcacb20b206204167170e6f4e55283140
+   reversed  digest       d3b95d1c8bbddce8981028261192d45e706747b9720e3925178d68c190f66011
+
+   forward vs reversed      341 / 500  notes differ as a SET   68.2%
+                            487 / 500  differ in SEQUENCE      97.4%
+                           1008        terms moved in total, worst single note 10
+
+   TWO NOTES, BYTE-IDENTICAL TEXT, positions 1 and N of the same corpus
+     converged     twin-early  cookies,chocolate,chewy,increased,chip,starbucks,answered,biggest,everyone,impact
+                   twin-late   cookies,chocolate,chewy,increased,chip,starbucks,answered,biggest,everyone,impact
+                   IDENTICAL   YES
+     save history  twin-early  cookies,chocolate,chewy,increased,chip,starbucks,everyone,answered,biggest,however
+                   twin-late   cookies,chocolate,chewy,increased,chip,starbucks,answered,biggest,everyone,impact
+                   IDENTICAL   NO
+
+   The converged row is what a single corpus state buys and it holds at
+   N <= 500: each twin's leave-one-out corpus contains the other, and
+   identical text contributes identical df, so the two tables agree exactly.
+   The save-history row is the defect this phase measures and does not fix.
+
+══ D. WHAT RECOMPUTING AT READ TIME WOULD COST ══════════════════════════
+   Prices ONE design option: dropping stored note.keywords and extracting
+   on every read instead. extractKeywords rebuilds the whole df table per
+   call (utils/keywords.js:71), so extracting N lists is N x O(N*K).
+
+   N =  500   extract all lists   min 2196.7 ms  p50 2202.8 ms  max 2262.4 ms
+   N = 2000   extract all lists   min 9399.7 ms  p50 9477.3 ms  max 9524.4 ms
+
+   Against 4.4's measured buildGlobalGraph: 5.1 ms at N=500 and 43.9 ms at
+   N=2000 (results/graph-characterization.txt). The comparison is the point —
+   read-time extraction is the term 4.4 removed from this function, put back
+   one layer up.
+
+══ WHAT THIS DOES NOT ESTABLISH ═══════════════════════════════════════
+   - NOT a measurement of a notebook. Stack Exchange cooking questions
+     shaped as Notes; §12.2 says the same thing about the same slice.
+   - NOT a quality claim. It measures whether a list MOVED, never whether
+     the list it moved to is better. No answer key here grades keywords.
+   - NOT a latency claim. Section D is CPU in one process, no Mongo, no
+     network, no serialisation, and the environment is printed with it.
+   - NOT extrapolable across N. Every figure names its own.
+   - NOTHING about graphBuilder.service.js:10's third tokenizer, which has
+     no corpus and therefore neither of these two defects.
