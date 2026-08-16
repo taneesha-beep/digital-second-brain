@@ -49,8 +49,9 @@ const Note = require('../models/Note');
  * Any stored value derived from a moving corpus is a function of when it was
  * derived. The only two fixes are to stop storing it or to recompute everything
  * whenever the corpus moves, and 4.6 priced the first: extracting every list at
- * read time costs 2202.8 ms at N=500 against buildGlobalGraph's 5.1 ms.
- * EVALUATION §26.
+ * read time costs 2237.0 ms at N=500 against buildGlobalGraph's 5.1 ms
+ * (results/keyword-stability.txt section D — a wall time, so it does not
+ * reproduce to the decimal; the ratio is the claim). EVALUATION §26.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * THE PRE-4.6 FUNCTION IS PRESERVED at scripts/lib/corpus-v1-shipped.js, so
