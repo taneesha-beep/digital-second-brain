@@ -35,7 +35,8 @@
     "embed:corpus": "node ../scripts/embed-corpus.js",
     "price:v5-app": "node ../scripts/price-v5-app.js",
     "analyse:vocab": "node scripts/analyse-vocabulary.js",
-    "measure:query": "node scripts/measure-provenance-query.js"
+    "measure:query": "node scripts/measure-provenance-query.js",
+    "characterize:graph": "node scripts/characterize-graph.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
