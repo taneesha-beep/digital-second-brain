@@ -1,0 +1,146 @@
+# CI — Phase 4.5.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THIS RUNS, AND WHY EACH LINE IS HERE RATHER THAN "npm test" ALONE.
+#
+#   npm test          419 -> the suite, including an integration suite that only
+#                     exists when a real MongoDB is reachable. See MONGO_TEST_URI
+#                     below and tests/ci-scope.test.js, which FAILS the run if
+#                     this workflow promises a database and does not deliver one.
+#   parity:v1         83f9e35e... regenerated, not read. §21.6's lesson is that a
+#   parity:app        f09360a7... parity test reading its own committed output is
+#                     not a parity test, and this repo had one for twenty
+#                     minutes. These two proofs are the ones most damaged by
+#                     silent drift and nothing automated has ever re-run them.
+#   check:claims      every 4+ place decimal in the writeups traces to an artifact
+#   check:blocks      every path a writeup names exists, and every file under four
+#                     covered roots is named by a writeup
+#   migration:verify  BOTH migrations, both rollbacks, the unique index and both
+#                     provenance indexes, against a real server. 4.2, 4.3 and 4.4
+#                     each called this the strongest argument in the repo for
+#                     4.5, because it needs Docker and so ran only by hand.
+#
+# BOTH PARITY SCRIPTS RUN OFF backend/retrieval/fixtures/mini-corpus.jsonl, WHICH
+# IS TRACKED. They need no data/, which is what makes them affordable here — 0.2 s
+# each. Everything that needs the gitignored Stack Exchange corpus (eval, the
+# sweeps, characterize:graph, analyse:*) is absent from this file on purpose and
+# is listed in README.md beside the badge, where a recruiter reads, rather than
+# only in docs/EVALUATION.md §25.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ONE JOB, NOT TWO. A second job would repeat `npm ci` for the sake of tidiness,
+# and the mongo service starts in parallel with checkout and install anyway. A
+# workflow people switch off is worth nothing, so the whole thing is kept under
+# the couple of minutes at which nobody minds it.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A second push to the same branch cancels the first. Without this a busy branch
+# queues runs whose results nobody will read.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend tests, parity proofs, checkers, migrations
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        # PINNED BY DIGEST, NOT BY TAG, and it is the SAME digest
+        # docker-compose.yml pins — the pin Phase 1.6 established, reused for the
+        # fourth time rather than a new one. Verified to be an OCI image index
+        # carrying a linux/amd64 manifest (MongoDB 7.0.39-jammy), so it resolves
+        # on this runner as well as on the arm64 laptop it was pinned from.
+        image: mongo:7@sha256:9bdaeb6dac6e7e762e84e2f84103d1f9bb078fa1ba6bde8bb9d2274f655ad173
+        ports:
+          - 27017:27017
+        # The same healthcheck docker-compose.yml uses. Without it the steps
+        # below race the server's startup, and a race that fails one run in ten
+        # is worse than one that fails every time.
+        options: >-
+          --health-cmd "mongosh --quiet --eval \"db.adminCommand('ping').ok\""
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 10s
+
+    env:
+      # The ONE place this workflow declares what it satisfies.
+      # tests/ci-scope.test.js asserts the declaration is true in BOTH
+      # directions: a promised precondition that is missing fails the run, and an
+      # unpromised one that is present fails it too — because README.md's badge
+      # scope sentence is derived from this line and a one-way check lets it rot.
+      CI_PRECONDITIONS: mongo
+      # A SEPARATE VARIABLE FROM MONGO_URI, deliberately. The integration suite
+      # drops collections, and MONGO_URI is the name backend/.env uses for a real
+      # Atlas cluster. helpers/preconditions.js never falls back to it and
+      # refuses any non-localhost host with no override.
+      MONGO_TEST_URI: mongodb://127.0.0.1:27017/dsb_integration_test
+      # migration:verify uses MONGO_URI and enforces its own localhost guard
+      # (scripts/verify-migration.js:198). A different database name from the one
+      # above, so neither can be reading the other's leftovers.
+      MONGO_URI: mongodb://127.0.0.1:27017/dsb_migration_test
+      # NO GROQ_API_KEY, AND NOTHING HERE NEEDS ONE. The only LLM assertion is a
+      # cross-user 400, which routes/llm.js returns from its ownership check
+      # before processNote is reached. A test that needed a real key would not
+      # belong in CI.
+      JWT_SECRET: ci-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned to the version the Dockerfile pins by digest
+          # (node:25.8.1-alpine) and the one every figure in docs/EVALUATION.md
+          # was measured on, so "it passed in CI" and "it passed on the machine
+          # that produced the numbers" are the same claim.
+          node-version: 25.8.1
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` rather than `npm install`: the lockfile is committed and an
+      # install that is free to resolve differently makes a green run mean less.
+      - name: install
+        working-directory: backend
+        run: npm ci
+
+      - name: unit and integration tests
+        working-directory: backend
+        run: npm test
+
+      # Re-run rather than read. §21.6, §22.5, §23.6 and §24.7 are all about this
+      # exact mistake, and until now the re-running was a thing a person
+      # remembered to do.
+      - name: parity — shipped v1 vs harness
+        working-directory: backend
+        run: npm run parity:v1
+
+      - name: parity — app adapter vs harness
+        working-directory: backend
+        run: npm run parity:app
+
+      - name: check — every quoted decimal traces to an artifact
+        working-directory: backend
+        run: npm run check:claims
+
+      - name: check — every named path exists, and every new file is documented
+        working-directory: backend
+        run: npm run check:blocks
+
+      # The step three sessions asked for. It creates and destroys data,
+      # including dropping a collection, and refuses any non-localhost host with
+      # no override at all — so the service container above is the only thing it
+      # can ever have been pointed at.
+      - name: migrations 001 and 002 against a real MongoDB
+        working-directory: backend
+        run: npm run migration:verify

@@ -4,7 +4,22 @@
 > against the rest of your collection on save, and the resulting relationships are
 > rendered as an interactive knowledge graph.
 
-**[🔗 Live demo](https://taneesha-digital-second-brain.vercel.app/login)**
+**[🔗 Live demo](https://taneesha-digital-second-brain.vercel.app/login)** ·
+[![CI](https://github.com/taneesha-beep/digital-second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/taneesha-beep/digital-second-brain/actions/workflows/ci.yml)
+
+> **What the badge covers, so a green tick is not read as more than it is.**
+> The backend test suite, including integration tests against a real MongoDB;
+> both retrieval parity proofs *regenerated rather than read*; the two
+> documentation checkers; and **both database migrations with their rollbacks
+> against a real MongoDB 7**.
+> **What it does not cover:** the frontend, which has no tests at all; the
+> evaluation scripts — the eval runner, the three parameter sweeps, the analysis
+> drivers and the graph characterization — which need a multi-hundred-megabyte
+> Stack Exchange corpus that is not in the repository; metric validation against
+> `pytrec_eval`, which needs a pinned Python environment; and the LLM features,
+> which need an API key. Those are run by hand and are listed with their commands
+> in `docs/EVALUATION.md`. A green tick means **the checked subset passed**, not
+> that the project is fully tested.
 
 ---
 
@@ -73,8 +88,13 @@ reworked:
   the weight stored on an edge depends on which note was saved last.
 - **Keyword extraction degrades on short notes and on code-heavy text**, where
   identifiers and boilerplate dominate the term distribution.
-- **Building the whole-collection graph compares every pair of notes**, which does not
-  scale past a few hundred notes.
+- **The whole-collection graph used to compare every pair of notes.** It is now built
+  from a single inverted index, and the cost is `O(N·K)` to build the index plus
+  `O(Σ df²)` to emit edges from it — output-sensitive, and still quadratic if one
+  keyword appears in every note, which is why a document-frequency cutoff bounds it.
+  The payload is the remaining problem: it is still tens of thousands of elements on
+  a large collection, and browser-side layout is now the dominant cost and is
+  unmeasured.
 
 ---
 
@@ -211,6 +231,19 @@ development. It is matched exactly — a deployed frontend will not reach the AP
 without being listed.
 
 Run the backend tests with `npm test` from `backend/`.
+
+Most of the suite needs nothing but Node. The integration tests need a throwaway
+MongoDB and **skip themselves loudly when one is not configured** — they never fail
+for its absence, and the run prints what it skipped and why:
+
+```bash
+docker run -d --rm --name dsb-mongo -p 27017:27017 mongo:7
+MONGO_TEST_URI=mongodb://127.0.0.1:27017/dsb_integration_test npm test
+```
+
+`MONGO_TEST_URI` is deliberately a different variable from `MONGO_URI`: these tests
+drop collections, so they refuse any host that is not localhost, and there is no
+override.
 
 ---
 
