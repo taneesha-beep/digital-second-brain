@@ -26,6 +26,7 @@ const os = require('os');
 const path = require('path');
 
 const { readLines, loadQrels, loadQrelsStrict, loadRun, retrievalSha256 } = require('../scripts/lib/run-io');
+const { describeWith } = require('./helpers/preconditions');
 
 let dir;
 beforeAll(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'run-io-')); });
@@ -176,13 +177,24 @@ describe('retrievalSha256', () => {
   });
 });
 
-describe('the real cooking key, if it is present', () => {
-  // Skipped rather than failed when data/ is absent: data/qrels/ is gitignored
-  // for size, so a fresh clone has no key until `npm run qrels:build` runs.
+/**
+ * Skipped rather than failed when data/ is absent: data/qrels/ is gitignored for
+ * size, so a fresh clone — and every CI run, where `git ls-files data/` is 0
+ * files — has no key until `npm run qrels:build` runs against a raw dump.
+ *
+ * ↳ 4.5 MOVED THIS ONTO THE SHARED MECHANISM AND CHANGED NOTHING ABOUT WHEN IT
+ * SKIPS. The behaviour was already right; what it lacked was any statement that
+ * it had happened. The bare `fs.existsSync(...) ? test : test.skip` here was the
+ * pattern 4.5 generalised, and it is the reason §25's skip ledger exists —
+ * a green run with this block silently deleted from it is §22.6's shape, and
+ * this was the only instance in the repo. helpers/preconditions.js now prints
+ * the reason, and tests/ci-scope.test.js asserts under CI that this block is
+ * skipped THERE and nowhere it was promised to run.
+ */
+describeWith('qrels', 'the real cooking key, if it is present', () => {
   const qrelsFile = path.join(__dirname, '..', '..', 'data', 'qrels', 'cooking.qrels');
-  const maybe = fs.existsSync(qrelsFile) ? test : test.skip;
 
-  maybe('parses to §3.3\'s committed shape — 16,678 judgments over 9,218 queries', () => {
+  test('parses to §3.3\'s committed shape — 16,678 judgments over 9,218 queries', () => {
     const { byQuery, judgments } = loadQrelsStrict(qrelsFile);
     expect(judgments).toBe(16678);
     expect(byQuery.size).toBe(9218);
