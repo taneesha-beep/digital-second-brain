@@ -2,11 +2,34 @@
 'use strict';
 
 /**
- * verify-migration.js — Phase 4.2
+ * verify-migration.js — Phase 4.2, extended at 4.3
  *
  *   MONGO_URI=mongodb://localhost:27017/dsb_migration_test \
  *     npm run migration:verify
  *   ... -- --write     also write results/migration-verification.txt
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * ↳ 4.3 EXTENDS THIS SCRIPT RATHER THAN ADDING A SECOND ONE, because 4.2's
+ * noticed list is right that the central constraint of canonical storage is
+ * "verified by a command someone has to remember to run" and a SECOND such
+ * command would be strictly worse. Sections 8 to 12 cover 002-edge-provenance:
+ * the backfill, the mixed row a per-row field could not describe, the version
+ * query's shape, the rollback, and idempotence.
+ *
+ * THE FAKE STILL DOES NOT SIMULATE ANY INDEX, and 4.3 adds a second thing that
+ * makes it matter: tests/edges.provenance.test.js can show that
+ * edgesForVersion() returns the right rows, and cannot show that the two new
+ * indexes are USED — a filter that scans every row returns the same answer.
+ * Index SELECTION is checked here and measured in
+ * scripts/measure-provenance-query.js.
+ *
+ * TIMINGS ARE DELIBERATELY NOT IN THIS ARTIFACT. results/migration-verification
+ * .txt regenerates byte-identically and §8.5 leans on that; a duration would
+ * end it. This file gets the stable SHAPE checks — which indexes exist, which
+ * plan won, docs examined against returned — and measure:query gets the
+ * numbers. §22.6's rule again: a value that is COMPARED and a value that is
+ * PUBLISHED are not the same value.
+ * ───────────────────────────────────────────────────────────────────────────
  *
  * ───────────────────────────────────────────────────────────────────────────
  * WHY THIS NEEDS A REAL SERVER AND scripts/lib/fake-note-store.js WILL NOT DO.
@@ -63,13 +86,41 @@ const mongoose = require('mongoose');
 
 const Note = require('../models/Note');
 const NoteLink = require('../models/NoteLink');
+const retrieval = require('../retrieval');
 const migration = require('../migrations/001-canonical-edges');
 const { rollback } = require('../migrations/001-canonical-edges.rollback');
+const provenance = {
+  ...require('../migrations/002-edge-provenance'),
+  rollback: require('../migrations/002-edge-provenance.rollback').rollback
+};
 
 const REPO = path.resolve(__dirname, '..', '..');
 const OUT = path.join(REPO, 'results', 'migration-verification.txt');
 
+/**
+ * The digest in the committed v4-bm25 TEST sidecar. Read from the file rather
+ * than pasted, so the claim "an app edge and a committed ladder run are
+ * joinable on one key" is checked at every run instead of asserted once. §23.2.
+ */
+const ladderDigest = require(path.join(REPO, 'results', 'runs', 'v4-bm25.test.run.json')).retriever.digest;
+
 const oid = (hex) => new mongoose.Types.ObjectId(hex);
+
+/** Flatten an explain() plan tree to its stage names, parent first. */
+function collectStages(node, out = []) {
+  if (!node || typeof node !== 'object') return out;
+  if (node.stage) out.push(node.stage);
+  for (const child of [node.inputStage, ...(node.inputStages || [])]) collectStages(child, out);
+  return out;
+}
+
+/** The index names an explain() plan tree actually chose. */
+function collectIndexNames(node, out = []) {
+  if (!node || typeof node !== 'object') return out;
+  if (node.indexName) out.push(node.indexName);
+  for (const child of [node.inputStage, ...(node.inputStages || [])]) collectIndexNames(child, out);
+  return out;
+}
 
 /**
  * The pathological fixture — see the header for what each row is for.
@@ -337,8 +388,132 @@ async function main() {
     check('re-migrating reproduces the same row set', remigrated.digest, first.digest);
     say('');
 
-    // ── 8. what a live save does to a migrated row ──────────────────────────
-    say('8. AND WHAT THE LIVE LINKER DOES TO A MIGRATED ROW');
+    // ── 8. provenance: the recorded unknown ─────────────────────────────────
+    say('8. PROVENANCE — 002 labels what nothing can identify, and says so');
+    const beforeProvenance = await provenance.verify(() => {});
+    check('every direction is unlabelled before 002 runs', beforeProvenance.ok, false);
+    await provenance.migrate({ apply: true, log: say });
+    say('   verification:');
+    const labelled = await provenance.verify(say);
+    check('every invariant holds', labelled.ok, true);
+    check('no direction was labelled with a real version', labelled.realDirections, 0);
+
+    // The sentinel is a RECORDED UNKNOWN and not an absence, and it is not a
+    // version. Both halves are asserted, because a sentinel whose only
+    // protection is that nobody picked the same string is not protected.
+    check('the sentinel is not a registered retriever version',
+      retrieval.versions().includes(NoteLink.UNKNOWN_PROVENANCE), false);
+    check('the sentinel fails the shape every rung satisfies',
+      /^v\d+-[a-z0-9]+$/.test(NoteLink.UNKNOWN_PROVENANCE), false);
+
+    const acLabelled = (await NoteLink.find({}).lean())
+      .find((r) => String(r.noteA) === String(find(fixture.n.a, fixture.n.c).noteA)
+        && String(r.noteB) === String(find(fixture.n.a, fixture.n.c).noteB));
+    check('both directions of a two-sided row are labelled unknown',
+      [acLabelled.retrieverAB, acLabelled.retrieverBA], ['unknown', 'unknown']);
+    check('  and so are both digests', [acLabelled.digestAB, acLabelled.digestBA], ['unknown', 'unknown']);
+
+    const adLabelled = (await NoteLink.find({}).lean())
+      .find((r) => String(r.noteA) === String(find(fixture.n.a, fixture.n.d).noteA)
+        && String(r.noteB) === String(find(fixture.n.a, fixture.n.d).noteB));
+    const adDir = String(adLabelled.noteA) === String(fixture.n.a) ? 'AB' : 'BA';
+    const adOther = adDir === 'AB' ? 'BA' : 'AB';
+    check('a ONE-SIDED row labels only the observed direction',
+      [adLabelled[`retriever${adDir}`], adLabelled[`retriever${adOther}`]], ['unknown', null]);
+    say('');
+
+    // ── 9. the mixed row, which is why provenance is per-direction ──────────
+    say('9. A MIXED ROW — the case a single retrieverVersion per row CANNOT describe');
+    // Simulate what the live 4.3 linker writes into one direction of a row the
+    // migration already labelled. This is not hypothetical: it is what happens
+    // the first time either note of a migrated pair is saved.
+    const appDigest = retrieval.describe(retrieval.index('v4-bm25', [
+      { id: 'x', title: 'x', body: 'x' }, { id: 'y', title: 'y', body: 'y' }
+    ], {}));
+    await NoteLink.collection.updateOne(
+      { _id: acLabelled._id },
+      { $set: { scoreAB: 12.5, retrieverAB: appDigest.version, digestAB: appDigest.digest } }
+    );
+    const mixed = await NoteLink.findById(acLabelled._id).lean();
+    check('one row now holds a real label AND a recorded unknown',
+      [mixed.retrieverAB, mixed.retrieverBA], ['v4-bm25', 'unknown']);
+    check('  the stored digest is describe(handle).digest, not a version string',
+      mixed.digestAB, appDigest.digest);
+    check('  and it equals the digest in the committed v4-bm25 ladder sidecar',
+      mixed.digestAB, ladderDigest);
+    // The pair weight is max over two directions with DIFFERENT provenance, so
+    // "which retriever produced this weight" is a real question the number
+    // cannot answer on its own.
+    const wp = NoteLink.weightProvenance(mixed);
+    check('weightProvenance names the direction the weight came from', [wp.weight, wp.direction], [12.5, 'AB']);
+    check('  and reports THAT direction\'s label', wp.retriever, 'v4-bm25');
+    check('  while weight() alone is unchanged', NoteLink.weight(mixed), 12.5);
+    say('');
+
+    // ── 10. the version query, SHAPE only ───────────────────────────────────
+    say('10. THE VERSION QUERY — 4.3\'s Done criterion, shape checked here');
+    say('    Timings are deliberately NOT here: this artifact regenerates');
+    say('    byte-identically and a duration would end that. They are in');
+    say('    results/provenance-query.txt via npm run measure:query.');
+    const versionQuery = { user: fixture.userOne, $or: [{ retrieverAB: 'v4-bm25' }, { retrieverBA: 'v4-bm25' }] };
+    const v4Rows = await NoteLink.find(versionQuery).lean();
+    check('the edge set for v4-bm25 is the one row a save touched', v4Rows.length, 1);
+    const unknownRows = await NoteLink.find({
+      user: fixture.userOne, $or: [{ retrieverAB: 'unknown' }, { retrieverBA: 'unknown' }]
+    }).lean();
+    check('the edge set for the RECORDED UNKNOWN is still every migrated row', unknownRows.length, 3);
+    // A row appears in BOTH answers, which is the honest content of §23.1's
+    // cost: the query returns (row, direction) pairs and not edges.
+    check('and one row is in both answers, because a row is not single-version',
+      v4Rows.filter((r) => unknownRows.some((u) => String(u._id) === String(r._id))).length, 1);
+
+    const indexNames = (await NoteLink.collection.indexes()).map((i) => JSON.stringify(i.key));
+    check('index {user, retrieverAB} exists', indexNames.includes('{"user":1,"retrieverAB":1}'), true);
+    check('index {user, retrieverBA} exists', indexNames.includes('{"user":1,"retrieverBA":1}'), true);
+    const plan = await NoteLink.find(versionQuery).explain('executionStats');
+    const stages = collectStages(plan.queryPlanner.winningPlan);
+    say(`   winning plan stages        ${stages.join(' -> ')}`);
+    say(`   indexes chosen             ${collectIndexNames(plan.queryPlanner.winningPlan).join(', ') || '(none — COLLSCAN)'}`);
+    say(`   docs examined / returned   ${plan.executionStats.totalDocsExamined} / ${plan.executionStats.nReturned}`);
+    say('   NOTE: the planner picked BOTH indexes on a FOUR-ROW collection, which');
+    say('   was not the expectation — a collection scan would have been a');
+    say('   reasonable choice at this size and is what was predicted. It is');
+    say('   recorded as a fact about this fixture and NOT as evidence the plan');
+    say('   holds at scale: a planner free to choose differently on a bigger');
+    say('   collection is exactly what measure:query exists to observe.');
+    say('');
+
+    // ── 11. the 002 rollback ────────────────────────────────────────────────
+    say('11. 002 ROLLBACK — and what the sentinel is what makes it able to report');
+    const provenanceBack = await provenance.rollback({ apply: true, log: say });
+    check('it names the real label it is destroying', provenanceBack.appWritten, 1);
+    check('and the recorded unknowns it can reproduce', provenanceBack.recorded, 6);
+    const afterUnset = await NoteLink.find({}).lean();
+    check('no row carries a provenance FIELD any more, not even a null',
+      afterUnset.some((r) => 'retrieverAB' in r || 'retrieverBA' in r || 'digestAB' in r || 'digestBA' in r), false);
+    check('scores are untouched by the provenance rollback',
+      afterUnset.filter((r) => r.scoreAB !== null || r.scoreBA !== null).length, 4);
+    // Re-labelling reproduces every `unknown` exactly, because the value is a
+    // constant rather than a measurement — which is the asymmetry the rollback
+    // header states and the reason the real label was the only loss.
+    await provenance.migrate({ apply: true, log: () => {} });
+    const relabelled = await provenance.verify(() => {});
+    check('re-running 002 reproduces the recorded unknowns', relabelled.unknownDirections, 7);
+    say('');
+
+    // ── 12. idempotence of 002 ──────────────────────────────────────────────
+    say('12. 002 IDEMPOTENCE — the timestamps:true trap 001 already paid for');
+    const provenanceDocs = async () => sha256(
+      (await NoteLink.find({}).lean()).map((r) => JSON.stringify(r)).sort().join('\n')
+    );
+    const beforeRerun = await provenanceDocs();
+    const rerun = await provenance.migrate({ apply: true, log: () => {} });
+    check('a second run issues NO operations at all', rerun.operations, 0);
+    check('every document byte-identical, updatedAt included', (await provenanceDocs()) === beforeRerun, true);
+    say('');
+
+    // ── 13. what a live save does to a migrated row ─────────────────────────
+    say('13. AND WHAT THE LIVE LINKER DOES TO A MIGRATED ROW');
     say('   Not run here. The linker needs a corpus and an index build, which is');
     say('   scripts/measure-writes.js and tests/edges.canonical.test.js on the fake');
     say('   store. What this section would add is a real driver under the same');

@@ -1,0 +1,52 @@
+PROVENANCE QUERY COST — the edge set for a given retriever version
+   server                     MongoDB 7.0.39 in Docker, digest-pinned by docker-compose.yml
+   target                     localhost / dsb_query_test   (throwaway)
+   generated at HEAD          ad6603a
+   THIS FILE DOES NOT REGENERATE BYTE-IDENTICALLY. It carries timings on
+   purpose, which is why it is not part of migration-verification.txt.
+
+1. THE COLLECTION
+   rows                       40000   (20000 per user, 2 users)
+   directions labelled v4-bm25 4000   AB only, 10% of rows
+   directions RECORDED UNKNOWN 38666   rows holding at least one
+
+2. EACH QUERY — plan, work done, and time
+   edge set for v4-bm25, one user
+      stages                  FETCH -> OR -> IXSCAN -> IXSCAN
+      indexes chosen          user_1_retrieverAB_1, user_1_retrieverBA_1
+      returned / docs examined / keys examined   2000 / 2000 / 2000
+      wall time, 11 runs      p50 9.04 ms   min 7.94   max 17.15
+
+   edge set for the RECORDED UNKNOWN, one user
+      stages                  FETCH -> OR -> IXSCAN -> IXSCAN
+      indexes chosen          user_1_retrieverAB_1, user_1_retrieverBA_1
+      returned / docs examined / keys examined   19333 / 19333 / 31333
+      wall time, 11 runs      p50 84.17 ms   min 70.49   max 92.50
+
+   a version nothing wrote (the empty answer)
+      stages                  FETCH -> OR -> IXSCAN -> IXSCAN
+      indexes chosen          user_1_retrieverAB_1, user_1_retrieverBA_1
+      returned / docs examined / keys examined   0 / 0 / 0
+      wall time, 11 runs      p50 0.39 ms   min 0.36   max 0.46
+
+   NOT user-scoped — the ops question, and it has no index prefix
+      stages                  SUBPLAN -> COLLSCAN
+      indexes chosen          (none — COLLSCAN)
+      returned / docs examined / keys examined   4000 / 40000 / 0
+      wall time, 11 runs      p50 28.97 ms   min 26.95   max 31.61
+
+3. WHAT THE NUMBERS DO NOT SAY
+   - docs examined == returned means the index answered without touching
+     a row it did not need. It does NOT mean the query is cheap in any
+     absolute sense, and no budget for it has been stated anywhere.
+   - The wall times include driver and BSON decode for every returned row,
+     so the large answers are dominated by materialising them rather than
+     by finding them. That is why keys/docs examined is the load-bearing
+     column and the milliseconds are context.
+   - Loopback to a container. No Atlas, no replica set, no real network.
+   - The row mixture is synthetic and uniform. A real store after a
+     partial re-save is neither.
+
+ENVIRONMENT
+   Darwin 25.6.0 arm64, Node v25.8.1
+   MongoDB 7.0.39 in Docker, image pinned by digest in docker-compose.yml

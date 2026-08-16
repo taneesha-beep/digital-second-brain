@@ -70,6 +70,20 @@ const notePair = require('../utils/notePair');
  * v4-bm25 gave it. Any single stored weight would have re-sorted that list by a
  * number partly determined by the other note.
  * ───────────────────────────────────────────────────────────────────────────
+ * ↳ 4.3 STAMPED THE VERSION, AND THE "REJECTED — mean" ARGUMENT ABOVE HELD.
+ *
+ * That paragraph rejected a stored mean partly because "4.3 is about to stamp
+ * retrieverVersion: 'v4-bm25' on this row, which that number would make false".
+ * 4.3 arrived and the stamp is real — but it is per-DIRECTION rather than
+ * per-row, which sharpens the argument rather than weakening it. A mean is a
+ * value belonging to neither direction, so under per-direction provenance there
+ * would be no field it could honestly be labelled in at all.
+ *
+ * The one thing 4.3 changed about the paragraph's premise: the label is not
+ * 'v4-bm25' alone. It is a version AND a params digest, because 'v4-bm25' does
+ * not distinguish k1 1.2 from k1 2.0 and a stored strength's scale depends on
+ * which. See the field comments below and EVALUATION.md §23.2.
+ * ───────────────────────────────────────────────────────────────────────────
  */
 
 const NoteLinkSchema = new mongoose.Schema(
@@ -131,7 +145,53 @@ const NoteLinkSchema = new mongoose.Schema(
      * that can be described as reversible.
      */
     sharedAB: { type: [String], default: [] },
-    sharedBA: { type: [String], default: [] }
+    sharedBA: { type: [String], default: [] },
+
+    /**
+     * WHAT WROTE EACH DIRECTION. Phase 4.3.
+     *
+     * PER-DIRECTION, NOT PER-ROW, and 4.2's answer is not automatically this
+     * one — it was re-decided. A row's two directions are written by two
+     * different notes' saves at two different times, and after
+     * migrations/001-canonical-edges.js a single row LEGITIMATELY holds a
+     * v1-era coefficient in one direction and a v4-bm25 score in the other
+     * (§21.8, §22.4). One retrieverVersion per row would therefore be false
+     * exactly on the rows that motivated the field. §23.1.
+     *
+     * TWO FIELDS PER DIRECTION, AND A VERSION STRING ALONE WOULD NOT DO.
+     * `retriever` is describe(handle).version — 'v4-bm25' — and it is the
+     * legible half. `digest` is describe(handle).digest, sha256 over
+     * {version, params}, and it is the identifying half: 'v4-bm25' is the same
+     * string under k1 1.2 and k1 2.0, under idfVariant lucene and robertson,
+     * under titleWeight 2 and 1, which are exactly the distinctions §13 and
+     * §16.8's sweeps exist to make and §16.9's ablations flipped. A stored
+     * strength is a RAW SCORE whose scale those params set (§21.5), so a bare
+     * version does not make the number interpretable and a digest does.
+     *
+     * NOT THE WHOLE DESCRIPTOR. That is §8.5's sidecar convention applied at
+     * the wrong unit, and §13.9 already worked the correction out: when
+     * per-item provenance is identical across items the committed unit MOVES UP
+     * A LEVEL — 342 sweep points became one manifest plus a per-point digest.
+     * Every edge the live app writes shares one configuration; what varies row
+     * to row is WHICH configuration, not what it contains. Copying
+     * {k1, b, idfVariant, qtfMode, titleWeight} onto every edge of every user
+     * stores one constant N times.
+     *
+     * FLAT FIELDS RATHER THAN A NESTED { version, digest } SUBDOCUMENT, and
+     * that is §22.6's finding applied before it bit: mongoose generates an _id
+     * for every subdocument, which is what moved the migration artifact's
+     * digest between runs when nothing had changed. Four flat strings cannot do
+     * that.
+     *
+     * `notePair.UNKNOWN_PROVENANCE` in both fields of a direction is a RECORDED
+     * UNKNOWN and is not the same statement as null — that file's header argues
+     * why, and why guessing 'v1-overlap' from a non-empty sharedKeywords list
+     * was rejected.
+     */
+    retrieverAB: { type: String, default: null },
+    retrieverBA: { type: String, default: null },
+    digestAB: { type: String, default: null },
+    digestBA: { type: String, default: null }
   },
   { timestamps: true }
 );
@@ -155,6 +215,31 @@ NoteLinkSchema.index({ user: 1, noteA: 1, noteB: 1 }, { unique: true });
 NoteLinkSchema.index({ user: 1, noteB: 1 });
 
 /**
+ * THE PROVENANCE QUERY'S INDEXES. Phase 4.3, and there are two of them because
+ * §23.1's answer was per-direction.
+ *
+ *   NoteLink.find({user, $or: [{retrieverAB: v}, {retrieverBA: v}]})
+ *
+ * is 4.3's Done criterion — "a query can return the edge set for a given
+ * version" — and Mongo can use a different index per $or branch. Neither branch
+ * is served as a prefix by anything above, so each needs its own. That is the
+ * DIRECT PRICE of per-direction provenance: a per-row field would have needed
+ * one index, and could not have described a mixed row.
+ *
+ * The pattern is 4.2's, reused rather than invented: {user, noteB} exists for
+ * exactly the same reason on exactly the same shape of query.
+ *
+ * COST, and it is not measured here: every additional index makes every write
+ * more expensive in index maintenance. §22.7 already states that the unique
+ * index does this in a way the operation count cannot see, and two more indexes
+ * add to it. results/write-cost.txt counts OPERATIONS ISSUED, which is
+ * unchanged at 3 — provenance rides inside the existing $set — and that is a
+ * different claim from a latency one.
+ */
+NoteLinkSchema.index({ user: 1, retrieverAB: 1 });
+NoteLinkSchema.index({ user: 1, retrieverBA: 1 });
+
+/**
  * The normal form and the derived weight are ATTACHED here, not defined here —
  * utils/notePair.js owns them, so the linker, the migration and the harness's
  * fake collection all share one definition without any of them having to load
@@ -163,6 +248,8 @@ NoteLinkSchema.index({ user: 1, noteB: 1 });
 NoteLinkSchema.statics.canonicalPair = notePair.canonicalPair;
 NoteLinkSchema.statics.directionFields = notePair.directionFields;
 NoteLinkSchema.statics.weight = notePair.weight;
+NoteLinkSchema.statics.weightProvenance = notePair.weightProvenance;
+NoteLinkSchema.statics.UNKNOWN_PROVENANCE = notePair.UNKNOWN_PROVENANCE;
 
 /**
  * The normal form is enforced on write as well as constructed on write. A row
@@ -188,7 +275,49 @@ NoteLinkSchema.pre('validate', function assertCanonical(next) {
       'Build the row with NoteLink.canonicalPair().'
     ));
   }
+  for (const side of ['AB', 'BA']) {
+    const bad = provenanceKindError(side, this[`retriever${side}`], this[`digest${side}`]);
+    if (bad) return next(new Error(bad));
+  }
   return next();
 });
+
+/**
+ * THE PAIRED-KIND INVARIANT. Phase 4.3.
+ *
+ * A direction's two provenance fields are in exactly one of three states, and
+ * they are in the SAME one: both null (unlabelled), both the recorded-unknown
+ * sentinel, or both real. `retrieverAB: 'v4-bm25'` beside `digestAB: 'unknown'`
+ * is nonsense — it claims to know the configuration and to not know it — and so
+ * is the reverse.
+ *
+ * WHAT IT DELIBERATELY DOES NOT SAY: that an observed score must carry a label.
+ * That is TRUE AFTER 002 and false before it, and it is false in a state the
+ * project will really be in — 4.2's linker writes scores and no labels, so
+ * every row it wrote between the two deploys is legitimately score-without-
+ * label. Baking a post-migration property into an always-property would make
+ * the model reject a state the system is designed to pass through. It is
+ * checked where it belongs instead: as a QUERY in
+ * migrations/002-edge-provenance.js's verify(), over the collection, after the
+ * migration.
+ *
+ * AND THIS HOOK DOES NOT COVER bulkWrite, which is how the linker and both
+ * migrations write. §22.4 established that; nothing here changes it. The hook
+ * protects the document path, and the real enforcement is the query.
+ */
+function provenanceKindError(side, retriever, digest) {
+  const kind = (value) => {
+    if (value === null || value === undefined) return 'null';
+    return value === notePair.UNKNOWN_PROVENANCE ? 'unknown' : 'real';
+  };
+  const r = kind(retriever);
+  const d = kind(digest);
+  if (r === d) return null;
+  return (
+    `NoteLink: retriever${side} and digest${side} must agree in kind — got ${r} and ${d} ` +
+    `(${JSON.stringify(retriever)}, ${JSON.stringify(digest)}). A direction knows its ` +
+    'configuration or it does not; it cannot half-know it.'
+  );
+}
 
 module.exports = mongoose.model('NoteLink', NoteLinkSchema);

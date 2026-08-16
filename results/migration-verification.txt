@@ -1,7 +1,7 @@
 MIGRATION VERIFICATION — 001-canonical-edges, against a real MongoDB
    server                     MongoDB 7.0.39
    target                     localhost / dsb_migration_test   (throwaway)
-   generated at HEAD          4a38def
+   generated at HEAD          ad6603a
 
 1. FIXTURE — built to be pathological, see the script header
    notes                      8  across 2 users
@@ -100,7 +100,74 @@ MIGRATION VERIFICATION — 001-canonical-edges, against a real MongoDB
    digest over the row set                        900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7
    OK    re-migrating reproduces the same row set             "900bd5422b4115cce57fbf5fb190dd73d156e08e90b79bfb09a7b3423840a4d7"
 
-8. AND WHAT THE LIVE LINKER DOES TO A MIGRATED ROW
+8. PROVENANCE — 002 labels what nothing can identify, and says so
+   OK    every direction is unlabelled before 002 runs        false
+   rows read                  4
+   observed directions        7
+   already labelled           0
+   to label RECORDED UNKNOWN  7  across 4 rows
+   modified 4  matched 4
+   verification:
+   rows                                                4
+   observed directions with NO provenance              0  OK
+   provenance on an unobserved direction               0  OK
+   retriever and digest disagreeing in kind            0  OK
+   directions labelled RECORDED UNKNOWN                7
+   directions labelled with a real version             0
+   digest over the provenance state              3a6c097a456ecf49600d3606db590dfd73e660a6544395f03559714d29b7e66e
+   OK    every invariant holds                                true
+   OK    no direction was labelled with a real version        0
+   OK    the sentinel is not a registered retriever version   false
+   OK    the sentinel fails the shape every rung satisfies    false
+   OK    both directions of a two-sided row are labelled unknown ["unknown","unknown"]
+   OK      and so are both digests                            ["unknown","unknown"]
+   OK    a ONE-SIDED row labels only the observed direction   ["unknown",null]
+
+9. A MIXED ROW — the case a single retrieverVersion per row CANNOT describe
+   OK    one row now holds a real label AND a recorded unknown ["v4-bm25","unknown"]
+   OK      the stored digest is describe(handle).digest, not a version string "ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c"
+   OK      and it equals the digest in the committed v4-bm25 ladder sidecar "ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c"
+   OK    weightProvenance names the direction the weight came from [12.5,"AB"]
+   OK      and reports THAT direction's label                 "v4-bm25"
+   OK      while weight() alone is unchanged                  12.5
+
+10. THE VERSION QUERY — 4.3's Done criterion, shape checked here
+    Timings are deliberately NOT here: this artifact regenerates
+    byte-identically and a duration would end that. They are in
+    results/provenance-query.txt via npm run measure:query.
+   OK    the edge set for v4-bm25 is the one row a save touched 1
+   OK    the edge set for the RECORDED UNKNOWN is still every migrated row 3
+   OK    and one row is in both answers, because a row is not single-version 1
+   OK    index {user, retrieverAB} exists                     true
+   OK    index {user, retrieverBA} exists                     true
+   winning plan stages        FETCH -> OR -> IXSCAN -> IXSCAN
+   indexes chosen             user_1_retrieverAB_1, user_1_retrieverBA_1
+   docs examined / returned   1 / 1
+   NOTE: the planner picked BOTH indexes on a FOUR-ROW collection, which
+   was not the expectation — a collection scan would have been a
+   reasonable choice at this size and is what was predicted. It is
+   recorded as a fact about this fixture and NOT as evidence the plan
+   holds at scale: a planner free to choose differently on a bigger
+   collection is exactly what measure:query exists to observe.
+
+11. 002 ROLLBACK — and what the sentinel is what makes it able to report
+   rows in notelinks          4
+   rows carrying provenance   4
+   directions RECORDED UNKNOWN 6   (002's own work — re-running 002 reproduces every one)
+   directions with a REAL label 1   <-- DISCARDED, and recoverable only by re-saving the note
+   notes touched by this script  0   (the migration never wrote one, so neither does its undo)
+   unset retrieverAB, retrieverBA, digestAB, digestBA on 4 rows
+   OK    it names the real label it is destroying             1
+   OK    and the recorded unknowns it can reproduce           6
+   OK    no row carries a provenance FIELD any more, not even a null false
+   OK    scores are untouched by the provenance rollback      4
+   OK    re-running 002 reproduces the recorded unknowns      7
+
+12. 002 IDEMPOTENCE — the timestamps:true trap 001 already paid for
+   OK    a second run issues NO operations at all             0
+   OK    every document byte-identical, updatedAt included    true
+
+13. AND WHAT THE LIVE LINKER DOES TO A MIGRATED ROW
    Not run here. The linker needs a corpus and an index build, which is
    scripts/measure-writes.js and tests/edges.canonical.test.js on the fake
    store. What this section would add is a real driver under the same

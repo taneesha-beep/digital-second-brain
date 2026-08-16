@@ -155,6 +155,77 @@ const PLACEHOLDER = /[<>{}*]/;
 // not of the document. Reported, never failed.
 const UNTRACKED_BY_DESIGN = /^data\//;
 
+// ---------------------------------------------------------------------------
+// RULE 3 — REVERSE COVERAGE. Phase 4.3.
+// ---------------------------------------------------------------------------
+//
+// Rules 1 and 2 check that everything a document NAMES exists. Nothing checked
+// the opposite direction, and that gap has now fired twice: 4.1 shipped six
+// source files and four artifacts, and END-STATE's tree and CLAUDE.md's
+// architecture map were both missing the corpus adapter until a deliberate
+// manual sweep found it; 4.2 found four more gaps only on a SECOND sweep. Both
+// sessions put "a reverse check is mechanisable" on the noticed list and
+// deferred it, correctly, as a tool change on top of a structural one. Three
+// deferrals is where a deferral becomes a habit, so it is built here.
+//
+// IT IS SCOPED TO ENUMERATED ROOTS, and that is what bounds the false-positive
+// risk 4.1 established is the worst output this tool can produce. A repo-wide
+// version would flag every fixture, every frozen frontend component and every
+// file in node_modules, and would be switched off in a week. These four roots
+// are where the reorientation adds files, and they are the ones the two
+// recorded misses were in.
+//
+// A FILE IS "NAMED" IF ITS BASENAME APPEARS IN ANY WRITEUP, forward-looking
+// ones included — END-STATE's planned tree is a legitimate place to introduce a
+// file, and requiring the repo-relative path would fail the many correct
+// references written relative to a contextual root (see ROOTS above). Basename
+// matching is deliberately the LOOSE direction: it errs toward passing, so a
+// failure here is strong evidence and never noise.
+const COVERED_ROOTS = [
+  { dir: 'backend/services', ext: /\.js$/ },
+  { dir: 'backend/migrations', ext: /\.js$/ },
+  { dir: 'backend/scripts/lib', ext: /\.js$/ },
+  { dir: 'results', ext: /\.txt$/ }
+];
+
+// Files under a covered root that no writeup names ON PURPOSE. Every entry
+// carries the reason, so this cannot quietly become the place undocumented
+// files go to be forgiven.
+const UNDOCUMENTED = new Map([]);
+
+/**
+ * Expand `a{x,y}b` into `axb` and `ayb`, so a brace form counts as naming both
+ * files.
+ *
+ * THIS FUNCTION EXISTS BECAUSE THE RULE ABOVE FAILED ON ITS FIRST RUN AND WAS
+ * WRONG. It reported results/contamination-linkdate.test.txt as named by
+ * nothing. §19.6 names it — as `results/contamination-linkdate.{dev,test}.txt`,
+ * which is a convention this repo uses deliberately and readably in at least
+ * four places (`results/parity/v1-{shipped,harness}.txt`,
+ * `data/splits/{train,dev,test}.ids`). Rule 2 already skips brace tokens as
+ * PLACEHOLDERs; rule 3 was doing a literal substring search and could not see
+ * through them.
+ *
+ * A FALSE POSITIVE DRESSED AS A COVERAGE FINDING IS THE WORST OUTPUT THIS TOOL
+ * CAN PRODUCE — 4.1 established that when the hyphen bug reported a working
+ * command as missing, and the cheap fix there was to rename the script to dodge
+ * the checker. The equivalent cheap fix here was to add the file to
+ * UNDOCUMENTED, or to rewrite §19.6's brace form as two paths. Both would have
+ * left the tool wrong about every future brace reference. The rule is fixed
+ * instead, and check-blocks.test.js pins it.
+ */
+function expandBraces(text) {
+  const out = [];
+  const re = /([\w./-]*)\{([\w.,-]+)\}([\w./-]*)/g;
+  let match = re.exec(text);
+  while (match !== null) {
+    const [, prefix, alternatives, suffix] = match;
+    for (const alt of alternatives.split(',')) out.push(`${prefix}${alt}${suffix}`);
+    match = re.exec(text);
+  }
+  return out.join('\n');
+}
+
 function fail(message) {
   const err = new Error(message);
   err.assertion = true;
@@ -308,14 +379,51 @@ function main() {
     }
   }
 
+  // --- rule 3: reverse coverage ---------------------------------------------
+  const raw = writeupsFound.map((rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8')).join('\n');
+  const corpus = `${raw}\n${expandBraces(raw)}`;
+  const undocumented = [];
+  const undocumentedHit = new Map();
+  let coverageChecked = 0;
+  const rootsScanned = [];
+
+  for (const root of COVERED_ROOTS) {
+    const dir = path.join(REPO_ROOT, root.dir);
+    if (!fs.existsSync(dir)) continue;
+    const names = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && root.ext.test(e.name))
+      .map((e) => e.name)
+      .sort();
+    rootsScanned.push(`${root.dir}/ (${names.length})`);
+    for (const name of names) {
+      coverageChecked += 1;
+      const rel = `${root.dir}/${name}`;
+      if (UNDOCUMENTED.has(rel)) {
+        undocumentedHit.set(rel, UNDOCUMENTED.get(rel));
+        continue;
+      }
+      if (!corpus.includes(name)) undocumented.push(rel);
+    }
+  }
+
   // --- report ---------------------------------------------------------------
   console.log('check:blocks — every command a writeup tells you to run must exist,');
-  console.log('and every file it names must be there.\n');
+  console.log('every file it names must be there, and every file in a covered root');
+  console.log('must be named somewhere.\n');
   console.log(`  writeups         ${writeupsFound.length}  (${WRITEUPS.filter((w) => w.mode === 'current').length} current, the rest forward-looking)`);
   console.log(`  manifests        ${manifestsFound.join(', ')}  (${known.size} scripts)`);
   console.log(`  npm run checked  ${scriptsChecked}`);
   console.log(`  paths checked    ${pathsChecked}`);
+  console.log(`  files covered    ${coverageChecked}  in ${rootsScanned.join(', ')}`);
   console.log('');
+
+  if (undocumentedHit.size > 0) {
+    console.log('  UNDOCUMENTED ON PURPOSE — in a covered root, named by no writeup.');
+    for (const [rel, why] of [...undocumentedHit].sort()) {
+      console.log(`    ${rel.padEnd(52)}  ${why}`);
+    }
+    console.log('');
+  }
 
   if (plannedScriptHit.size > 0) {
     console.log('  PLANNED SCRIPTS — named for a phase that has not run.');
@@ -354,7 +462,18 @@ function main() {
   const failures = [...badScripts.map((b) => ({ ...b, what: `npm run ${b.script}`, why: 'no such script' })),
     ...badPaths.map((b) => ({ ...b, what: b.token, why: 'no such file' }))];
 
-  if (failures.length === 0) {
+  if (undocumented.length > 0) {
+    console.log(`  FAIL — ${undocumented.length} file(s) exist in a covered root and no writeup names them:\n`);
+    for (const rel of undocumented) console.log(`    ${rel}`);
+    console.log('');
+    console.log('  This is the direction rules 1 and 2 cannot see. Either name the file');
+    console.log('  in END-STATE\'s tree, EVALUATION\'s writeup or the ROADMAP entry that');
+    console.log('  created it, or add it to UNDOCUMENTED with the reason it is not named.');
+    console.log('');
+    process.exitCode = 1;
+  }
+
+  if (failures.length === 0 && undocumented.length === 0) {
     console.log('  IT DOES NOT CHECK CODE QUOTED VERBATIM. A fenced block holding a function');
     console.log('  signature is invisible here — see the header. That is 3.4\'s case and it');
     console.log('  is still open.');
@@ -362,6 +481,12 @@ function main() {
     console.log('  PASS');
     return;
   }
+
+  // Guarded, because rule 3 can fail on its own: printing "FAIL — 0
+  // reference(s) do not resolve" beside a real rule-3 failure is a false
+  // positive in the report even when the verdict is right, and 4.1 established
+  // that a checker whose output cannot be trusted is one people skim.
+  if (failures.length === 0) return;
 
   console.log(`  FAIL — ${failures.length} reference(s) do not resolve:\n`);
   const byFile = new Map();
@@ -394,4 +519,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { npmScriptsIn, pathsIn };
+module.exports = { npmScriptsIn, pathsIn, expandBraces, COVERED_ROOTS, UNDOCUMENTED };

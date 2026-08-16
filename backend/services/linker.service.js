@@ -53,11 +53,27 @@
  * stored score depend on which other notes exist — the corpus-epoch defect 4.6
  * exists to remove. Roadmap 4.3 puts retrieverVersion beside it, which is what
  * makes the number interpretable; until then it is a score without a scale.
+ *
+ * ↳ 4.3 ARRIVED, AND A VERSION ALONE WOULD NOT HAVE DONE IT. Each direction now
+ * carries `retriever` and `digest` — the version for legibility, the params
+ * digest for identity, because 'v4-bm25' is the same string under k1 1.2 and
+ * k1 2.0 and the stored score's SCALE is what those params set. The paragraph
+ * above is therefore kept rather than merely ticked: the number is
+ * interpretable now, and it took two fields per direction rather than one.
+ *
+ * WHAT 4.3 CHANGES HERE, IN THREE PLACES AND NO MORE. The clear step nulls each
+ * direction's provenance alongside its score; each upsert writes the label in
+ * the SAME $set as the number it explains; getLinkedNotes returns them. THE
+ * OPERATION COUNT IS UNCHANGED AT 3 — provenance rides inside the existing
+ * bulkWrite and adds no round trip. results/write-cost.txt, re-measured.
  */
 
 const Note = require('../models/Note');
 const NoteLink = require('../models/NoteLink');
-const { indexUserNotes, relatedNotes, LINK_CAP } = require('./noteCorpus.service');
+// `describe` is aliased on import. It is the retrieval interface's name and the
+// right one there, but at module scope in a file Jest loads it sits beside the
+// global `describe`, and a reader should not have to work out which one wins.
+const { indexUserNotes, relatedNotes, describe: describeRetriever, LINK_CAP } = require('./noteCorpus.service');
 
 /**
  * Recompute one note's outgoing edges and write them as canonical rows.
@@ -87,6 +103,27 @@ async function computeAndSaveLinks(noteId, userId) {
   const handle = await indexUserNotes(userId);
   const hits = relatedNotes(handle, source._id, LINK_CAP);
 
+  /**
+   * PROVENANCE COMES FROM THE HANDLE THAT PRODUCED THE SCORES, NOT FROM A
+   * CONSTANT. Phase 4.3.
+   *
+   * describe(handle) is the same function every run sidecar's provenance comes
+   * from (retrieval/index.js: "the handle is self-describing... run provenance
+   * then comes from describe(handle) — the thing that ACTUALLY PRODUCED THE
+   * NUMBERS — instead of from whatever the runner believes it passed"). Reading
+   * noteCorpus's APP_RETRIEVER constant instead would record what the app
+   * MEANT to run, which is the failure that sentence exists to prevent.
+   *
+   * MEASURED CONSEQUENCE, and it is the reason `digest` is stored at all: this
+   * digest is byte-identical to the one in results/runs/v4-bm25.test.run.json,
+   * ba72e199…, so an app edge and a committed ladder run are joinable on one
+   * key. It proves SAME CONFIGURATION and emphatically not same corpus —
+   * docCount is deliberately not in the digest, so a 3-note handle and the
+   * 27,325-document ladder corpus hash identically. §12.2 and §21.8's gap is
+   * untouched. §23.2.
+   */
+  const provenance = describeRetriever(handle);
+
   const links = hits.map((hit) => ({
     noteId: hit.docId,
     strength: Number(hit.score.toFixed(4)),
@@ -99,9 +136,13 @@ async function computeAndSaveLinks(noteId, userId) {
     sharedKeywords: []
   }));
 
+  // The CLEAR step nulls provenance with the score it belongs to. A direction
+  // that no longer holds a score must not keep the label of the score it used
+  // to hold: that would be a recorded provenance for a value that is not there,
+  // which is worse than an absent one.
   const ops = [
-    { updateMany: { filter: { user: userId, noteA: source._id }, update: { $set: { scoreAB: null, sharedAB: [] } } } },
-    { updateMany: { filter: { user: userId, noteB: source._id }, update: { $set: { scoreBA: null, sharedBA: [] } } } }
+    { updateMany: { filter: { user: userId, noteA: source._id }, update: { $set: { scoreAB: null, sharedAB: [], retrieverAB: null, digestAB: null } } } },
+    { updateMany: { filter: { user: userId, noteB: source._id }, update: { $set: { scoreBA: null, sharedBA: [], retrieverBA: null, digestBA: null } } } }
   ];
 
   for (const link of links) {
@@ -111,8 +152,20 @@ async function computeAndSaveLinks(noteId, userId) {
       updateOne: {
         filter: { user: userId, noteA, noteB },
         update: {
-          $set: { [f.score]: link.strength, [f.shared]: link.sharedKeywords },
-          $setOnInsert: { [f.reverseScore]: null, [f.reverseShared]: [] }
+          // The score and the label that explains it go in ONE $set, so no
+          // interleaving can leave a number beside another run's provenance.
+          $set: {
+            [f.score]: link.strength,
+            [f.shared]: link.sharedKeywords,
+            [f.retriever]: provenance.version,
+            [f.digest]: provenance.digest
+          },
+          $setOnInsert: {
+            [f.reverseScore]: null,
+            [f.reverseShared]: [],
+            [f.reverseRetriever]: null,
+            [f.reverseDigest]: null
+          }
         },
         upsert: true
       }
@@ -170,11 +223,22 @@ async function getLinkedNotes(noteId, userId) {
     const reverseShared = isA ? row.sharedBA : row.sharedAB;
     const outgoing = own !== null && own !== undefined;
 
+    // PROVENANCE TRAVELS WITH THE NUMBER IT EXPLAINS. `strength` here is one
+    // direction's score, so `retriever` and `digest` are THAT direction's — not
+    // the row's, which has no single answer (§23.1). Reading them off the other
+    // side would produce a label that describes a number the caller cannot see.
+    const ownRetriever = isA ? row.retrieverAB : row.retrieverBA;
+    const reverseRetriever = isA ? row.retrieverBA : row.retrieverAB;
+    const ownDigest = isA ? row.digestAB : row.digestBA;
+    const reverseDigest = isA ? row.digestBA : row.digestAB;
+
     links.push({
       noteId: other,
       strength: outgoing ? own : reverse,
       sharedKeywords: (outgoing ? ownShared : reverseShared) || [],
-      direction: outgoing ? 'out' : 'in'
+      direction: outgoing ? 'out' : 'in',
+      retriever: (outgoing ? ownRetriever : reverseRetriever) ?? null,
+      digest: (outgoing ? ownDigest : reverseDigest) ?? null
     });
   }
 
@@ -185,7 +249,64 @@ async function getLinkedNotes(noteId, userId) {
   );
 }
 
+/**
+ * THE EDGE SET FOR A GIVEN RETRIEVER VERSION. Phase 4.3's Done criterion.
+ *
+ * ONE QUERY, TWO INDEXED BRANCHES:
+ *
+ *   {user, $or: [{retrieverAB: version}, {retrieverBA: version}]}
+ *
+ * served by {user, retrieverAB} and {user, retrieverBA} in models/NoteLink.js.
+ * Mongo can use a different index per $or branch, and neither branch is a
+ * prefix of any index 4.2 left behind, so both were added.
+ *
+ * WHAT IT RETURNS IS (row, direction) PAIRS, NOT EDGES, and that falls straight
+ * out of per-direction provenance rather than being a defect of the query. A
+ * row can be half v4-bm25 and half `unknown`, so "the edge set for version X"
+ * is not well defined at the row level: `matched` names the directions that
+ * actually carry X. Callers that want whole edges must decide what a half-match
+ * means, and this function refuses to decide for them.
+ *
+ * WHAT IT CANNOT DO, stated here rather than in a document nobody opens beside
+ * the code:
+ *
+ *   - It cannot say which version produced a PAIR'S WEIGHT. weight() is max
+ *     over two directions that may carry different provenance;
+ *     notePair.weightProvenance() is what answers that, per row.
+ *   - It is NOT the Phase 7 diff view. Comparing "the graph as v1 built it"
+ *     against "as v4 built it" needs both present at once, and the linker
+ *     OVERWRITES a direction on every save. Provenance labels what is there; it
+ *     does not retain what was replaced. The roadmap is right that the diff view
+ *     is impossible without this, and it is not sufficient for it.
+ *   - It cannot recover PARAMS from a digest whose configuration has left the
+ *     codebase. The digest identifies a configuration; it does not encode one.
+ *
+ * @param {*} userId
+ * @param {string} version  a retriever version, or notePair.UNKNOWN_PROVENANCE
+ *                          to find the directions no migration could label
+ */
+async function edgesForVersion(userId, version) {
+  const rows = await NoteLink.find({
+    user: userId,
+    $or: [{ retrieverAB: version }, { retrieverBA: version }]
+  }).lean();
+
+  return rows.map((row) => ({
+    noteA: row.noteA,
+    noteB: row.noteB,
+    matched: [
+      row.retrieverAB === version ? 'AB' : null,
+      row.retrieverBA === version ? 'BA' : null
+    ].filter(Boolean),
+    scoreAB: row.scoreAB ?? null,
+    scoreBA: row.scoreBA ?? null,
+    digestAB: row.digestAB ?? null,
+    digestBA: row.digestBA ?? null
+  }));
+}
+
 module.exports = {
   computeAndSaveLinks,
-  getLinkedNotes
+  getLinkedNotes,
+  edgesForVersion
 };
