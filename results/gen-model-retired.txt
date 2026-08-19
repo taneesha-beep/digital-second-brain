@@ -1,0 +1,55 @@
+THE SHIPPED MODEL STRING IS RETIRED — Phase 5.3, 19 Aug 2026
+==========================================================================
+
+  services/llm.service.js:17   const MODEL = 'llama-3.3-70b-versatile';
+
+  DOES NOT REGENERATE. This is a fact about a third party on a date, in the
+  class of §27.1's curl transcript against the Railway host. The model list
+  below will move again; that is the point of writing it down.
+
+1. IS THE KEY VALID?
+
+   models.list()            200 OK — the key authenticates
+   models reachable         13
+
+2. IS THE SHIPPED MODEL AMONG THEM?
+
+   llama-3.3-70b-versatile   ABSENT
+
+     allam-2-7b
+     canopylabs/orpheus-arabic-saudi
+     canopylabs/orpheus-v1-english
+     groq/compound
+     groq/compound-mini
+     meta-llama/llama-prompt-guard-2-22m
+     meta-llama/llama-prompt-guard-2-86m
+     openai/gpt-oss-120b
+     openai/gpt-oss-20b
+     openai/gpt-oss-safeguard-20b
+     qwen/qwen3.6-27b
+     whisper-large-v3
+     whisper-large-v3-turbo
+
+3. WHAT DOES A REAL CALL DO?
+
+   One call, the shipped prompt for `summarize`, the shipped temperature and
+   max_tokens, against the shipped model string.
+
+   status                   404
+   message                  404 {"error":{"message":"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.","type":"invalid_request_error","code":"model_not_found"}}
+
+4. WHAT THIS MEANS FOR THE APP, WHICH IS NOT AN EVAL QUESTION
+
+   POST /api/llm/:noteId/:feature returns 500 for all five features. The
+   error mapping at llm.service.js:64-77 handles 401, 429 and 503 and has no
+   branch for 404, so the user-visible string is the generic
+   "AI processing failed: 404 ...".
+
+   NOTHING IN THIS REPOSITORY COULD HAVE CAUGHT IT. No test, no checker, no
+   CI step and no eval reads the model string; `npm test` passes green with
+   the feature entirely dead. check:blocks verifies that commands run and
+   paths resolve — a retired third-party identifier is neither.
+
+   Fixing it is a PRODUCT decision (which model the app should ship) and is
+   deliberately not taken by this measurement session. ROADMAP Phase 5.
+

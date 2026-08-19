@@ -1,0 +1,109 @@
+PHASE 5.3 — PREDICTIONS, WRITTEN BEFORE THE FIRST API CALL
+==========================================================================
+
+Committed in its own commit, before `npm run gen:baseline -- --run` was ever
+invoked, so the ordering is checkable in git rather than asserted. Same device
+as results/test-predictions.txt at 3.6 (EVALUATION.md §19.5).
+
+Scored in EVALUATION.md §28.10. Priors: the README pass scored 4 of 6, Phase
+4.6 scored 5 of 10, 3.6 scored 9 of 10, 3.7 scored 4 right / 5 wrong / 1
+marginal.
+
+The point is not to be right. Two sessions of this project produced their most
+useful findings from a prediction that FAILED (§20.5's reachability axis,
+§19.5's +-0.010 band), and a ladder that only reports its confirmations is not
+measuring anything.
+
+--------------------------------------------------------------------------
+1. DEFECT 1 — max_tokens: 1024 (llm.service.js:53)
+--------------------------------------------------------------------------
+
+Truncation rate per feature, as a share of that feature's completed calls,
+measured by finish_reason === 'length':
+
+    examQs        35-60%     5 questions with DETAILED answers
+    flashcards     5-15%     6 short Q&A pairs
+    concepts       2-10%     8 terms + one-sentence definitions
+    eli5            0-5%
+    summarize       0-2%     4-5 sentences
+
+  1a. The ORDERING holds: examQs > flashcards > concepts > eli5 >= summarize.
+
+  1b. TRUNCATION IS THE DOMINANT CAUSE OF SCHEMA FAILURE, at >= 80% of all
+      failing JSON calls. A truncated array is unterminated JSON, so
+      truncation -> parse failure is near-deterministic; wrapping is not.
+
+--------------------------------------------------------------------------
+2. DEFECT 2 — the fence-strip (llm.service.js:59-60)
+--------------------------------------------------------------------------
+
+  2a. The raw output contains a code fence on 5-20% of JSON calls. The system
+      message forbids fences and each JSON prompt forbids them again, so I
+      expect mostly compliance.
+
+  2b. A PROSE PREAMBLE — the wrapper the strip cannot touch — accounts for
+      0-8% of JSON calls. This is the half of defect 2 that 5.5 owns; the
+      strip removes fences and has never been able to remove prose.
+
+  2c. The unanchored-global defect (a fence inside a string VALUE deleted from
+      CONTENT rather than from the wrapper) fires on < 2% of calls. It is a
+      correctness defect rather than a conformance one, so it would not appear
+      in any 5.5 conformance number at all.
+
+--------------------------------------------------------------------------
+3. WITHIN-CELL VARIANCE — WHAT n=3 IS FOR
+--------------------------------------------------------------------------
+
+  3a. >= 85% of (seed, feature) cells are UNANIMOUS across their three draws.
+      Truncation is driven by input length, which is fixed within a cell.
+
+      IF THIS IS RIGHT IT ARGUES AGAINST MY OWN DESIGN CHOICE: n=3 would have
+      bought little, and 5.5 could have paired on n=1 cells. I will say so
+      rather than defend the decision. If it is WRONG — if cells split often —
+      then n=1 would have made 5.5's before/after indistinguishable from a
+      re-draw, and n=3 was necessary.
+
+--------------------------------------------------------------------------
+4. LENGTH
+--------------------------------------------------------------------------
+
+  4a. Shape conformance is >= 20 points WORSE in the longest quintile (Q5)
+      than in the shortest (Q1). This is the check that 5.2's stratification
+      was aimed at the right axis.
+
+--------------------------------------------------------------------------
+5. BUDGETS AND COST
+--------------------------------------------------------------------------
+
+  5a. ROADMAP 6.5's "LLM call < 4 s" is BREACHED at p95 on at least one
+      feature (expected: examQs) — before Study Pack's larger context exists.
+
+  5b. Total tokens for the run land between 150,000 and 350,000. Estimate
+      built beforehand: input ~240 tokens/call (system ~40 + prompt ~60 +
+      document ~140 at the corpus mean of 103.3 words), output ~550 mean for
+      JSON features and ~200 for prose, over 270 + 60 calls.
+
+  5c. DELIVERY RATE >= 95%. Serial calls 2.5 s apart should stay under a free
+      tier's request cap; if a daily TOKEN cap exists the run pauses rather
+      than failing, so a low delivery rate here would mean I mis-designed the
+      pacing.
+
+--------------------------------------------------------------------------
+6. WHAT I EXPECT TO BE SURPRISED BY
+--------------------------------------------------------------------------
+
+  6a. THE UNPINNABLE MODEL turns out to be the session's most consequential
+      finding, above either named defect — because it is the only one no later
+      phase can fix. The corpus has a SHA-256 and the vectors have a manifest;
+      "llama-3.3-70b-versatile" has neither, and every generation number this
+      project ever produces sits on that.
+
+--------------------------------------------------------------------------
+NOT PREDICTED, AND DELIBERATELY SO
+--------------------------------------------------------------------------
+
+Absolute shape-conformance rates per feature. I have no prior worth writing:
+this is the first generation measurement in the project, there is no ladder of
+previous rungs to interpolate from, and a band invented to look confident is
+worse than an admission. §12's classes of number — this one would be neither
+countable nor asymptotic nor measured.
