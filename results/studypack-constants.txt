@@ -1,0 +1,112 @@
+STUDY PACK — THE MEASURED CONSTANTS (Phase 5.1)
+
+  Produced by:  cd backend && npm run studypack:calibrate -- --write
+  Inputs:       results/gen-v2.calls.jsonl, data/gen-eval/clusters.jsonl
+  Spends:       no quota, no key, no network.
+
+  REGENERATES BYTE-IDENTICALLY from unchanged inputs — it reads two
+  committed files and computes. It is NOT a timing artifact, so it carries
+  none of §23.10's caveat. It WILL change if the gen-v2 ledger grows, which
+  is correct: the estimator is calibrated on that ledger.
+
+==============================================================================
+A. THE DAILY CAP IS A CONSTANT-RATE TOKEN BUCKET
+==============================================================================
+
+  Each row: a 429 refusal. The deficit is what the call needed beyond what
+  was left; the wait is what the provider said it would take to free it.
+
+  limit    used     requested  remaining  deficit  wait s    tokens/s
+  ----------------------------------------------------------------------
+  200000   199994   916        6          910      393.12    2.3148
+  200000   199486   2310       514        1796     775.87    2.3148
+
+    results/gen-v2.calls.jsonl, 2026-08-19T15:13:45.324Z
+    results/gen-v2.calls.jsonl, 2026-08-19T15:40:00.222Z
+
+  2 independent refusals, 1 distinct rate(s).
+
+  200000 / 86400 = 2.31481 tokens/s, which both rows reproduce.
+
+  SO THE WAIT FOR ANY REFUSED CALL IS COMPUTABLE RATHER THAN ESTIMABLE:
+      wait_seconds = (requested - remaining) / 2.3148
+
+  It is a refill, not a window that ages out in blocks — which is why a new
+  API KEY does not reset it either (§29.6: the cap is per ORGANISATION).
+
+  The 5.5 re-measure has 71 cells outstanding at ~2310 reserved tokens each:
+      71 x 2310 = 164010 tokens = 19.7 hours of refill.
+
+==============================================================================
+B. TOKENS FROM CHARACTERS, WITHOUT A TOKENIZER
+==============================================================================
+
+  Fitted on 79 completed API calls in results/gen-v2.calls.jsonl. Each row
+  carries the API's own prompt_tokens and the exact character count of the
+  content sent, so the input to this fit is measured on both axes.
+
+  LEAST SQUARES (what the data says):
+      tokens = 76.4 + chars x 0.20898
+      R2 0.9758   residual sd 8.9 tokens   1 token per 4.785 chars
+
+  WHAT SHIPS IS A BOUND, NOT THE FIT. A budget that underestimates spends
+  room the request does not have, so the shipped estimator is deliberately
+  above the fit everywhere:
+
+      estimateTokens(text) = 90 + ceil(chars / 4.5)
+
+      never underestimates      TRUE   over all 79 calls
+      minimum slack             1 tokens
+      maximum slack             44 tokens
+      mean overestimate         10.4%
+
+  CALIBRATED ON SINGLE-NOTE PROMPTS AND USED ON CLUSTER PROMPTS, which are
+  ~10x longer. That is an extrapolation, and it is checked on every call:
+  the endpoint returns estimatedPromptTokens beside the API's actual figure
+  and their difference as estimatorSlackTokens.
+
+==============================================================================
+C. HOW OFTEN THE CONTEXT BUDGET BINDS, OVER THE 30 GOLDEN CLUSTERS
+==============================================================================
+
+  budget                     1800 tokens for the assembled user message
+  strategy                   whole notes, dropped from the tail of the ranked list
+
+  clusters where it binds    5 of 30   16.7%
+  neighbours dropped         9 of 240
+  per-cluster distribution   25 cluster(s) lose 0, 3 cluster(s) lose 1, 1 cluster(s) lose 2, 1 cluster(s) lose 4
+
+  SIZE OF A CLUSTER, IN WORDS:
+      seed alone            mean 100
+      seed + 8 neighbours   mean 1001   p50 965   p95 1473   max 2058
+
+  COST, WHICH IS WHAT THE BUDGET IS ACTUALLY FOR. The per-minute limit is
+  charged on prompt + max_tokens whatever the model writes (§29.6):
+
+      mean cluster prompt        1412 tokens
+      mean single-note prompt    290 tokens
+      ratio                      4.9x   (the same clusters are 10.0x in WORDS)
+
+      reserved per study pack    3460 tokens   (prompt + max_tokens 2048)
+      study packs per day        57   against the 200000 organisation cap
+      calls per minute           2.31   against the 8000/min limit
+
+  THE RATIO IS THE NUMBER THAT SURPRISED ME. A cluster is 10x the seed in
+  WORDS but under 5x in prompt tokens, because the instruction block and
+  system message are a fixed floor a single-note call pays in full. Both of
+  this phase's wrong predictions come from missing that. §30.9.
+
+==============================================================================
+D. WHAT THIS DOES NOT ESTABLISH
+==============================================================================
+
+  - NOTHING about what the model returns for a study pack. Section C is
+    context assembly, which is deterministic. Conformance, citation rates,
+    output length and latency are unmeasured: the generation half has never
+    been run. docs/EVALUATION.md §30.8.
+  - The budget is argued from a RATE LIMIT, not from a quality measurement.
+    Nothing here says 1800 tokens of cluster makes a better study pack than
+    900 or 3600. That sweep has not been run.
+  - The clusters are Stack Exchange questions shaped as Notes. The "<=500-note
+    user slice" the app retrieves over has no referent on this corpus (§12.2).
+
