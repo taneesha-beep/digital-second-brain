@@ -1,0 +1,84 @@
+{
+  "phase": "5.2",
+  "what": "Generation golden set — 30 seed documents. Neighbours are DERIVED and are one arm, not the definition.",
+  "selection": {
+    "population": "data/splits/cooking.dev.txt — all 2,304 dev queries",
+    "whyDev": "roadmap 5.7 needs qrels for the seeds; test is spent (EVALUATION.md §19.9)",
+    "rule": "word count over title+body, 5 quintiles, 6 evenly spaced per quintile by ascending numeric id",
+    "whyStratified": "the defect 5.3 baselines is truncation, which moves along the length axis",
+    "deterministic": true,
+    "seeds": 30,
+    "strata": [
+      {
+        "quintile": 1,
+        "population": 460,
+        "words": {
+          "min": 11,
+          "max": 48
+        },
+        "picked": 6
+      },
+      {
+        "quintile": 2,
+        "population": 460,
+        "words": {
+          "min": 48,
+          "max": 71
+        },
+        "picked": 6
+      },
+      {
+        "quintile": 3,
+        "population": 460,
+        "words": {
+          "min": 71,
+          "max": 99
+        },
+        "picked": 6
+      },
+      {
+        "quintile": 4,
+        "population": 460,
+        "words": {
+          "min": 99,
+          "max": 147
+        },
+        "picked": 6
+      },
+      {
+        "quintile": 5,
+        "population": 464,
+        "words": {
+          "min": 147,
+          "max": 902
+        },
+        "picked": 6
+      }
+    ]
+  },
+  "neighbours": {
+    "status": "DERIVED — rebuilt per run by 5.4 and 5.7",
+    "retriever": "v4-bm25",
+    "digest": "ba72e1992870c8850d7d937369508ba1545e9f3731e7659fd5e11550eeecaa4c",
+    "k": 8,
+    "indexedOver": 27325,
+    "notAUserSlice": "the app indexes <=500 notes; this indexes the whole corpus. EVALUATION.md §12.2, §28.2"
+  },
+  "inputs": {
+    "corpus": {
+      "file": "data/corpus/cooking.jsonl",
+      "sha256": "db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd",
+      "documents": 27325
+    },
+    "split": {
+      "file": "data/splits/cooking.dev.txt",
+      "sha256": "38ff8bae954bee19ef7033662ce7f473db6453a2363bd63b2736d2ea4325dadf",
+      "queries": 2304
+    }
+  },
+  "output": {
+    "file": "data/gen-eval/clusters.jsonl",
+    "sha256": "3a0bf51d72d017758908827cd1993eb9973fc91ba6c0913bce77a895c76a7783",
+    "bytes": 189446
+  }
+}
