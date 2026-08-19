@@ -388,7 +388,32 @@ async function run(clusters) {
 
   const existing = readJsonl(LEDGER());
   const done = new Set(existing.filter((r) => r.ok).map(keyOf));
-  const todo = cells.filter((c) => !done.has(keyOf(c)));
+  let todo = cells.filter((c) => !done.has(keyOf(c)));
+
+  // --take N DELIBERATELY SHORTENS THE RUN; --max-calls REFUSES A LONG ONE.
+  //
+  // Two different jobs and they must not be one flag. --max-calls is a guard
+  // against spending more than intended and so REFUSES rather than truncating —
+  // silently doing less than asked is how a partial run gets mistaken for a
+  // complete one. --take is the opposite: an explicit statement that a prefix
+  // is what is wanted.
+  //
+  // Because cells are issued REPEAT-MAJOR, a prefix is not an arbitrary subset:
+  // --take 150 is exactly the BALANCED FIRST PASS, 30 seeds x 5 features at one
+  // draw each, which is the population §28's sections B-G report over and
+  // therefore the only population a 5.3-vs-5.5 comparison may use.
+  const take = arg('take', null);
+  if (take !== null) {
+    const n = Number(take);
+    if (!Number.isInteger(n) || n < 1) {
+      console.error(`--take must be a positive integer; got "${take}"`);
+      process.exit(1);
+    }
+    if (n < todo.length) {
+      console.log(`  --take ${n}: running a PREFIX of ${todo.length} remaining cells.`);
+      todo = todo.slice(0, n);
+    }
+  }
 
   console.log(`${VARIANTS[variant].label}\n`);
   if (variant === 'v1') {
@@ -488,7 +513,14 @@ async function run(clusters) {
 
       // A 429 STOPS THE RUN. Retrying is 7.2's and would change what latency
       // means here. The ledger already holds everything completed.
-      if (failure.status === 429) {
+      //
+      // MATCHED ON THE MESSAGE AS WELL AS THE STATUS, because the first v2 run
+      // burned 21 attempts into a rate limit discovering that it had to be.
+      // services/llm.service.js translated every SDK error into a sentence and
+      // dropped `status`, so `failure.status === 429` was never true. 5.5 fixed
+      // the service to carry the status forward; this second condition is the
+      // belt-and-braces, and it is the one that would have caught it.
+      if (failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '')) {
         console.log('\n  429 — STOPPING. Re-run to resume from the ledger; nothing completed is lost.\n');
         break;
       }
@@ -517,11 +549,24 @@ async function run(clusters) {
         console.log(`  ...token window low (${remaining} left), pausing ${Math.round(waitMs / 1000)} s`);
         await sleep(waitMs + 1000);
       }
-    } else if (observation && Number.isFinite(observation.totalTokens)) {
-      spent.push({ at: Date.now(), tokens: observation.totalTokens });
+    } else if (observation && Number.isFinite(observation.promptTokens)) {
+      // CHARGED ON THE RESERVATION, NOT ON USAGE — MEASURED, AND IT COST A RUN.
+      //
+      // The first v2 attempt paced against `totalTokens` actually used and hit
+      // 429s anyway. A controlled probe explains why: a call with
+      // max_tokens 64 whose completion was 54 tokens decremented
+      // `x-ratelimit-remaining-tokens` by exactly 64. Groq charges the
+      // per-minute token budget on what the call RESERVES.
+      //
+      // So the cost of a call is prompt + max_tokens regardless of how much the
+      // model actually writes, and RAISING max_tokens HALVES THROUGHPUT under
+      // this limit even when output length barely moves. That is an operational
+      // cost of 5.5's fix that no measurement in §28 could have predicted,
+      // because §28 never varied the ceiling. §29.6.
+      spent.push({ at: Date.now(), tokens: observation.promptTokens + maxTokens });
       const waitMs = throttleFor(spent);
       if (waitMs > 0) {
-        console.log(`  ...${tokensInWindow(spent)} tokens in the last minute of ${TOKENS_PER_MIN}, pausing ${Math.round(waitMs / 1000)} s`);
+        console.log(`  ...${tokensInWindow(spent)} reserved tokens in the last minute of ${TOKENS_PER_MIN}, pausing ${Math.round(waitMs / 1000)} s`);
         await sleep(waitMs);
       }
     }
@@ -620,6 +665,26 @@ function report(clusters, manifest) {
   const maxTokensUsed = Number(mixed('max_tokens', (p) => p.maxTokens));
   const temperatureUsed = Number(mixed('temperature', (p) => p.temperature));
 
+  // BALANCED, NOT MERELY FIRST-DRAW. A seed is kept only if ALL FIVE features
+  // completed for it, so every feature is measured over the SAME seeds.
+  //
+  // 5.3 could take repeat===0 directly because its first pass was complete: all
+  // 150 cells landed before the quota bit. 5.5's did not — it stopped at 76 —
+  // and 76 rows spread unevenly across seeds is §28.11's weighting bug wearing
+  // different clothes: the per-feature rates would be computed over different
+  // seed sets, so a feature's number would partly reflect WHICH seeds its calls
+  // happened to reach before the run died. Balance is enforced rather than
+  // assumed. §29.6.
+  const seedFeatureCount = new Map();
+  for (const r of completed.filter((x) => x.repeat === 0)) {
+    const k = String(r.seedId);
+    seedFeatureCount.set(k, (seedFeatureCount.get(k) || new Set()).add(r.feature));
+  }
+  const balancedSeeds = new Set(
+    [...seedFeatureCount.entries()].filter(([, fs]) => fs.size === ALL_FEATURES.length).map(([k]) => k)
+  );
+  const firstPass = completed.filter((r) => r.repeat === 0 && balancedSeeds.has(String(r.seedId)));
+
   const out = [];
   const w = (s = '') => out.push(s);
 
@@ -704,9 +769,28 @@ function report(clusters, manifest) {
   w(`    cells with 2 draws               ${withN(2)}`);
   w(`    cells with 3 draws               ${withN(3)}`);
   w('');
-  w('  So every rate in sections B-G is over a COMPLETE first pass: all 30 seeds x');
-  w('  all 5 features. Section H, which needs repeats, is over the cells that got');
-  w('  two, and says so.');
+  w('');
+  w(`    seeds with all ${ALL_FEATURES.length} features    ${balancedSeeds.size} of ${clusters.length}   <- SECTIONS B-G ARE OVER THESE`);
+  if (balancedSeeds.size < clusters.length) {
+    w('');
+    w('    THE FIRST PASS IS INCOMPLETE, so sections B-G run over the seeds that');
+    w('    have EVERY feature rather than over every row that landed. Rows for a');
+    w('    partially-covered seed are dropped from those sections — otherwise each');
+    w('    feature would be scored over a different seed set, and a per-feature');
+    w('    rate would partly reflect which calls happened to land before the run');
+    w('    stopped. That is §28.11\'s weighting bug in a new shape.');
+    const q = new Map();
+    for (const c of clusters) {
+      if (!balancedSeeds.has(String(c.seedId))) continue;
+      q.set(c.quintile, (q.get(c.quintile) || 0) + 1);
+    }
+    w('');
+    w(`    retained by length quintile   ${[...q.entries()].sort().map(([k, v]) => `Q${k}:${v}`).join('  ')}`);
+    w('    The golden set is 6 per quintile, so check this spread before quoting');
+    w('    any rate: the defect being measured moves along the length axis.');
+  }
+  w('');
+  w('  Section H, which needs repeats, is over the cells that got two, and says so.');
   w(`  API calls attempted    ${attempts}`);
   w(`  API calls completed    ${okRows.length}`);
   w(`  API failures           ${failures.length}`);
@@ -737,7 +821,7 @@ function report(clusters, manifest) {
   //
   // The extra draws are not discarded — they are what section H measures, and
   // the pooled figure is printed beside the headline so nothing is hidden.
-  const firstPass = completed.filter((r) => r.repeat === 0);
+  // firstPass / balancedSeeds are computed above section A, which needs them.
   const featureRows = new Map(ALL_FEATURES.map((f) => [f, firstPass.filter((r) => r.feature === f)]));
   const featureRowsAll = new Map(ALL_FEATURES.map((f) => [f, completed.filter((r) => r.feature === f)]));
 

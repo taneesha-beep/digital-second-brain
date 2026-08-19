@@ -147,26 +147,47 @@ exports.processNote = async (contentText, feature) => {
   } catch (err) {
     const msg = String(err.message || '');
 
+    // THE MAPPED ERROR CARRIES THE STATUS FORWARD (Phase 5.5).
+    //
+    // This used to `throw new Error(friendlyString)` and nothing else, so the
+    // HTTP status was destroyed at the point of translation. A caller could
+    // read a sentence and could not branch on it — which is the same defect as
+    // discarding `usage` and `finish_reason`: machine-readable state traded for
+    // a human string, with no way to get it back.
+    //
+    // Found by the 5.5 measurement run, which is a caller that must stop on a
+    // 429 and cannot afford to guess. It kept issuing calls into a rate limit
+    // because every error arrived indistinguishable from every other. The route
+    // ignores these fields and still returns 500 with `message`, so nothing
+    // user-visible changes.
+    const fail = (message) => {
+      const e = new Error(message);
+      e.status = err.status ?? null;
+      e.code = (err.error && err.error.error && err.error.error.code) || err.code || null;
+      e.cause = err;
+      return e;
+    };
+
     if (msg.includes('401') || msg.includes('invalid_api_key')) {
-      throw new Error('Invalid Groq API key — check GROQ_API_KEY in your .env file');
+      throw fail('Invalid Groq API key — check GROQ_API_KEY in your .env file');
     }
     if (msg.includes('429') || msg.includes('rate_limit')) {
-      throw new Error('Groq rate limit hit — wait a few seconds and try again');
+      throw fail('Groq rate limit hit — wait a few seconds and try again');
     }
     if (msg.includes('503') || msg.includes('unavailable')) {
-      throw new Error('Groq service temporarily unavailable — try again in a moment');
+      throw fail('Groq service temporarily unavailable — try again in a moment');
     }
     // The branch this mapping did not have, and the one a user actually hit.
     // A retired model fell through to the generic "AI processing failed: 404",
     // which explains nothing to anyone. Phase 5.0.
     if (msg.includes('404') || msg.includes('model_not_found')) {
-      throw new Error(
+      throw fail(
         `Groq model "${MODEL}" is not available to this key — it may have been ` +
         'retired. Run `npm run gen:probe` to see which models the key can reach.'
       );
     }
 
-    throw new Error(`AI processing failed: ${msg}`);
+    throw fail(`AI processing failed: ${msg}`);
   }
 };
 

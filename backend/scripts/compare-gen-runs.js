@@ -89,7 +89,7 @@ function paramsOf(row) {
   };
 }
 
-/** First completed draw per (seed, feature) — the balanced pass, one call each. */
+/** First completed draw per (seed, feature) — one call each, repeat 0 only. */
 function firstPass(rows) {
   const seen = new Map();
   for (const r of rows.filter((x) => x.ok && x.repeat === 0)) {
@@ -97,6 +97,13 @@ function firstPass(rows) {
     if (!seen.has(k)) seen.set(k, r);
   }
   return [...seen.values()];
+}
+
+/** Seeds for which EVERY feature completed. Anything else is not comparable. */
+function completeSeeds(rows) {
+  const byS = new Map();
+  for (const r of rows) byS.set(String(r.seedId), (byS.get(String(r.seedId)) || new Set()).add(r.feature));
+  return new Set([...byS.entries()].filter(([, f]) => f.size === ALL_FEATURES.length).map(([k]) => k));
 }
 
 const verdictOf = (r) => classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature);
@@ -153,8 +160,8 @@ function main() {
     process.exit(1);
   }
 
-  const a = firstPass(v1all);
-  const b = firstPass(v2all);
+  let a = firstPass(v1all);
+  let b = firstPass(v2all);
 
   // --- the four equalities -------------------------------------------------
   const pa = [...new Set(a.map((r) => paramsOf(r).model))];
@@ -185,18 +192,30 @@ function main() {
     process.exit(1);
   }
 
-  const seedsA = [...new Set(a.map((r) => String(r.seedId)))].sort();
-  const seedsB = [...new Set(b.map((r) => String(r.seedId)))].sort();
-  const sameSeeds = seedsA.length === seedsB.length && seedsA.every((s, i) => s === seedsB[i]);
-  if (!sameSeeds) {
-    console.error('REFUSING: the two runs do not cover the same seeds.');
-    console.error(`  gen-v1 ${seedsA.length} seeds, gen-v2 ${seedsB.length} seeds`);
+  // PAIRED ON THE SEEDS BOTH RUNS COVER COMPLETELY.
+  //
+  // Not a refusal, because a partial run is the normal outcome under a daily
+  // quota this project cannot see (§28.6) — 5.3 stopped at 234 of 330 and 5.5
+  // at 76 of 150. Refusing would make an interim comparison impossible exactly
+  // when it is most useful. Instead the two sides are intersected down to the
+  // seeds each covers across ALL FIVE features, so every figure below is a
+  // PAIRED comparison on identical inputs, and the intersection is reported
+  // loudly enough that nobody mistakes it for the full golden set.
+  const both = [...completeSeeds(a)].filter((s) => completeSeeds(b).has(s)).sort();
+  if (both.length === 0) {
+    console.error('REFUSING: no seed is covered by both runs across all five features.');
     process.exit(1);
   }
+  const keep = new Set(both);
+  const droppedA = new Set(a.map((r) => String(r.seedId))).size - keep.size;
+  const droppedB = new Set(b.map((r) => String(r.seedId))).size - keep.size;
+  a = a.filter((r) => keep.has(String(r.seedId)));
+  b = b.filter((r) => keep.has(String(r.seedId)));
 
   const out = [];
   const w = (s = '') => out.push(s);
   const noise = splitRate(v1all);
+  const oldCeil = ta[0];
 
   w('gen-v1 -> gen-v2: WHAT RAISING max_tokens DID (Phase 5.5)');
   w('='.repeat(78));
@@ -206,9 +225,23 @@ function main() {
   w(`    max_tokens        ${ta[0]}  ->  ${tb[0]}      THE CHANGE`);
   w(`    model             ${model}   both sides, checked`);
   w(`    temperature       ${tempA[0]}   both sides, checked`);
-  w(`    seeds             ${seedsA.length}   identical set, checked element by element`);
+  w(`    seeds             ${both.length}   PAIRED — the seeds both runs cover across all 5 features`);
   w(`    grader            scripts/lib/gen-schema.js   one predicate, both sides`);
   w(`    n                 1   balanced first pass only, both sides`);
+  w('');
+  if (droppedA > 0 || droppedB > 0) {
+    w('');
+    w(`  THIS IS A PARTIAL RE-MEASURE — ${both.length} OF THE 30 GOLDEN SEEDS.`);
+    w('');
+    w(`    dropped from gen-v1   ${droppedA} seeds        dropped from gen-v2   ${droppedB} seeds`);
+    w('');
+    w('    The gen-v2 run stopped on Groq\'s daily token cap before completing its');
+    w('    first pass. Every seed retained is covered by BOTH runs across all five');
+    w('    features, so this is a paired comparison on identical inputs — but it is');
+    w('    a smaller sample than the baseline\'s, and the length stratification the');
+    w('    golden set was built for is correspondingly thinner. Completing it needs');
+    w('    another day\'s quota, not another decision.');
+  }
   w('');
   w('  A NOTE ON WHAT "SAME MODEL" BUYS AND WHAT IT DOES NOT. Both runs named the');
   w('  same model string. That string is NOT A PINNED INPUT (§28.9) — no checksum');
@@ -260,14 +293,30 @@ function main() {
   w('  §28.5: eli5 truncated at 6.7% with no schema, so the fix would repair it');
   w('  with no number moving anywhere. This is that number.');
   w('');
-  w('  feature       gen-v1    gen-v2     delta   schema?');
-  w('  ' + '-'.repeat(60));
+  w(`  feature       gen-v1    gen-v2     delta   would-truncate-at-${oldCeil}   schema?`);
+  w('  ' + '-'.repeat(76));
   for (const f of ALL_FEATURES) {
     const x = one(a, f);
     const y = one(b, f);
     const d = y.truncated - x.truncated;
-    w(`  ${f.padEnd(12)} ${showPct(x.truncated)}  ${showPct(y.truncated)}  ${`${d >= 0 ? '+' : ''}${(d * 100).toFixed(1)}pt`.padStart(8)}   ${SCHEMAS[f] ? 'yes' : 'NO — invisible to conformance'}`);
+    const cf = rate(b.filter((r) => r.feature === f && r.completionTokens > oldCeil).length,
+      b.filter((r) => r.feature === f).length);
+    w(`  ${f.padEnd(12)} ${showPct(x.truncated)}  ${showPct(y.truncated)}  ${`${d >= 0 ? '+' : ''}${(d * 100).toFixed(1)}pt`.padStart(8)}   ${showPct(cf)}              ${SCHEMAS[f] ? 'yes' : 'NO — invisible'}`);
   }
+  w('');
+  w(`  THE LAST COLUMN IS THE ONE THAT EXPLAINS THE RESULT, and it is a`);
+  w(`  COUNTERFACTUAL: how many gen-v2 completions used more than ${oldCeil} tokens and`);
+  w('  therefore COULD NOT have fitted under the old ceiling. A completion that');
+  w('  used N tokens is a lower bound on what that call needed, so this is the');
+  w('  share of calls where the ceiling was GENUINELY binding on a fresh draw.');
+  w('');
+  w('  Read it against the first column. Where the two disagree, the difference is');
+  w('  WITHIN-CELL VARIANCE, not repair: the same seed and prompt at temperature');
+  w(`  ${tempA[0]} does not produce the same length twice, and §28.8 measured 32.1% of`);
+  w('  examQs cells flipping their verdict on a re-draw. A cell that truncated in');
+  w('  gen-v1 and came back short in gen-v2 was not fixed by the ceiling — it was');
+  w('  a different draw. The ceiling is what GUARANTEES the calls that genuinely');
+  w('  exceed it, and the counterfactual is how many those are.');
   w('');
 
   // --- failure causes ------------------------------------------------------

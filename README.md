@@ -163,7 +163,7 @@ assumed, and a limitation nobody writes down is one nobody fixes:
 │  /api/notes   CRUD; on save fires two background jobs:       │
 │                 saveVersion()  ·  computeAndSaveLinks()      │
 │  /api/graph   Cytoscape elements, per-note and global        │
-│  /api/llm     Groq llama-3.3-70b-versatile, five features    │
+│  /api/llm     Groq openai/gpt-oss-120b, five features        │
 │  /api/search  keyword · tag · keyword-expansion              │
 │  /api/upload  multer + pdf-parse                             │
 │  /api/export  single note → pdf | markdown | text            │
@@ -209,7 +209,7 @@ failures currently only reach `console.error`.
 | Auth | JWT, bcryptjs |
 | Uploads | multer, pdf-parse |
 | PDF generation | pdfkit (server-side) |
-| LLM | Groq — `llama-3.3-70b-versatile` |
+| LLM | Groq — `openai/gpt-oss-120b` |
 | Keyword extraction | Hand-written TF-IDF, no NLP library |
 | Tests | Jest |
 
