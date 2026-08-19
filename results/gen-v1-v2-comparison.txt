@@ -6,14 +6,14 @@ gen-v1 -> gen-v2: WHAT RAISING max_tokens DID (Phase 5.5)
     max_tokens        1024  ->  2048      THE CHANGE
     model             openai/gpt-oss-120b   both sides, checked
     temperature       0.4   both sides, checked
-    seeds             14   PAIRED — the seeds both runs cover across all 5 features
+    seeds             15   PAIRED — the seeds both runs cover across all 5 features
     grader            scripts/lib/gen-schema.js   one predicate, both sides
     n                 1   balanced first pass only, both sides
 
 
-  THIS IS A PARTIAL RE-MEASURE — 14 OF THE 30 GOLDEN SEEDS.
+  THIS IS A PARTIAL RE-MEASURE — 15 OF THE 30 GOLDEN SEEDS.
 
-    dropped from gen-v1   16 seeds        dropped from gen-v2   3 seeds
+    dropped from gen-v1   15 seeds        dropped from gen-v2   2 seeds
 
     The gen-v2 run stopped on Groq's daily token cap before completing its
     first pass. Every seed retained is covered by BOTH runs across all five
@@ -40,9 +40,9 @@ A. SHAPE CONFORMANCE — THE HEADLINE
   --------------------------------------------------------------------
   flashcards    100.0%   100.0%    +0.0pt    0.0% of 28 repeated cells flipped
   concepts      100.0%   100.0%    +0.0pt    3.6% of 28 repeated cells flipped
-  examQs         50.0%   100.0%   +50.0pt    32.1% of 28 repeated cells flipped
+  examQs         46.7%   100.0%   +53.3pt    32.1% of 28 repeated cells flipped
   --------------------------------------------------------------------
-  ALL JSON       83.3%   100.0%   +16.7pt    42 vs 42 calls
+  ALL JSON       82.2%   100.0%   +17.8pt    45 vs 45 calls
 
   THE NOISE FLOOR IS NOT DECORATION. A movement smaller than the flip rate
   beside it is not distinguishable from drawing the same cell twice, and the
@@ -62,7 +62,7 @@ B. TRUNCATION — finish_reason === "length", ALL FIVE FEATURES
   summarize       0.0%     0.0%    +0.0pt      0.0%              NO — invisible
   flashcards      0.0%     0.0%    +0.0pt      0.0%              yes
   concepts        0.0%     0.0%    +0.0pt      0.0%              yes
-  examQs         42.9%     0.0%   -42.9pt     28.6%              yes
+  examQs         46.7%     0.0%   -46.7pt     26.7%              yes
   eli5            0.0%     0.0%    +0.0pt      0.0%              NO — invisible
 
   THE LAST COLUMN IS THE ONE THAT EXPLAINS THE RESULT, and it is a
@@ -85,9 +85,9 @@ C. WHY THE REMAINING FAILURES FAIL
 
   Precedence committed in scripts/lib/gen-schema.js before any run.
 
-  gen-v1 — 7 failures
-    truncated          6     85.7%
-    malformed          1     14.3%
+  gen-v1 — 8 failures
+    truncated          7     87.5%
+    malformed          1     12.5%
 
   gen-v2 — 0 failures
     none
@@ -99,15 +99,15 @@ D. TOKENS AND LATENCY — WHAT THE FIX COST
   feature       out(mean)        out(p95)         reasoning(mean)   latency p95
                 v1      v2       v1      v2       v1     v2         v1      v2
   --------------------------------------------------------------------------
-  summarize      218     220     352    277      64     62      1128   1902
-  flashcards     588     637     823    903     293    330      2208   2223
-  concepts       401     387     663    659     156    141      1776   2021
-  examQs         956     968    1024   1744     183    156      2718   4167
-  eli5           638     598    1019    874      94     93      2619   3334
+  summarize      218     220     352    277      61     59      1128   1902
+  flashcards     594     624     823    903     297    316      2208   2223
+  concepts       403     384     663    659     156    140      1776   2021
+  examQs         961     964    1024   1744     178    153      2718   4167
+  eli5           646     602    1019    874      92     90      2619   3334
   --------------------------------------------------------------------------
 
-  total tokens   gen-v1  in 17069  out 39212  = 56281
-                 gen-v2  in 17069  out 39337  = 56406
+  total tokens   gen-v1  in 18735  out 42326  = 61061
+                 gen-v2  in 18735  out 41918  = 60653
 
   REASONING TOKENS ARE THE COLUMN TO READ FIRST. They count against
   max_tokens and are not in the output, so if they scale with the BUDGET
@@ -126,9 +126,9 @@ E. THE CONTROL — THE THREE FEATURES THAT SHOULD NOT HAVE MOVED
   candidate nobody can otherwise detect is THE MODEL DRIFTING BEHIND ITS
   STRING (§28.9). This is the cheapest instrument this project has for that.
 
-  flashcards   shape  100.0% ->  100.0%   out  588 ->  637 (+8.3%)   held
-  concepts     shape  100.0% ->  100.0%   out  401 ->  387 (-3.6%)   held
-  summarize    shape     n/a ->     n/a   out  218 ->  220 (+1.2%)   held
+  flashcards   shape  100.0% ->  100.0%   out  594 ->  624 (+5.0%)   held
+  concepts     shape  100.0% ->  100.0%   out  403 ->  384 (-4.6%)   held
+  summarize    shape     n/a ->     n/a   out  218 ->  220 (+1.0%)   held
 
   Threshold: shape must not move at all, mean output tokens must stay within
   10%. Both committed in results/gen-v2-predictions.txt BEFORE the run.

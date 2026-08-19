@@ -466,9 +466,21 @@ async function run(clusters) {
       observation = await issue(contentText, cell.feature);
       completed += 1;
     } catch (err) {
+      // THE PROVIDER'S OWN MESSAGE, NOT JUST THE MAPPED ONE.
+      //
+      // services/llm.service.js translates errors into sentences a user can
+      // act on — "Groq rate limit hit — wait a few seconds and try again" —
+      // which is right for the UI and useless for a ledger: it cannot tell a
+      // per-minute limit from a daily one, and the daily one carries
+      // "Limit 200000, Used 199838, Requested 2120, try again in 14m5.856s".
+      // That is the whole diagnosis, and 5.5 threw it away twice before
+      // recording it. The mapped error keeps the original on `cause`.
+      const raw = err && err.cause ? String(err.cause.message || '') : '';
       failure = {
         message: String(err && err.message).slice(0, 400),
-        status: err && err.status ? err.status : null
+        status: err && err.status ? err.status : null,
+        providerMessage: raw ? raw.replace(/\s+/g, ' ').slice(0, 600) : null,
+        retryAfterMs: parseRetryHint(raw || String((err && err.message) || ''))
       };
     }
 
@@ -521,7 +533,18 @@ async function run(clusters) {
       // the service to carry the status forward; this second condition is the
       // belt-and-braces, and it is the one that would have caught it.
       if (failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '')) {
-        console.log('\n  429 — STOPPING. Re-run to resume from the ledger; nothing completed is lost.\n');
+        // WHICH limit, and how long until it frees. A daily cap and a
+        // per-minute one call for completely different responses — wait a
+        // minute, or come back tomorrow — and "429" alone distinguishes
+        // neither.
+        const daily = /tokens per day|TPD/i.test(failure.providerMessage || '');
+        console.log(`\n  429 on the ${daily ? 'DAILY (TPD)' : 'per-minute'} limit — STOPPING.`);
+        if (failure.providerMessage) console.log(`  ${failure.providerMessage.slice(0, 300)}`);
+        if (failure.retryAfterMs) {
+          console.log(`  frees in ~${Math.round(failure.retryAfterMs / 60000)} min for ONE call; a full`);
+          console.log('  resume needs a block of the rolling window to age out.');
+        }
+        console.log('  Nothing completed is lost — re-run the same command to resume.\n');
         break;
       }
     }
@@ -606,6 +629,12 @@ function throttleFor(spent) {
   if (used < TOKENS_PER_MIN * TOKEN_TARGET) return 0;
   if (spent.length === 0) return 0;
   return Math.max(0, spent[0].at + 60000 - Date.now()) + 500;
+}
+
+/** "Please try again in 14m5.856s" -> ms, or null. The provider's own estimate. */
+function parseRetryHint(text) {
+  const m = /try again in ((?:\d+m)?[\d.]+s)/i.exec(String(text || ''));
+  return m ? parseResetMs(m[1]) : null;
 }
 
 /** Groq resets look like "7.66s" or "2m59.56s". Returns ms, or null. */
