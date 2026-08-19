@@ -80,15 +80,26 @@ const REPO = path.resolve(__dirname, '..', '..');
 const OUT_DIR = path.join(REPO, 'results', 'parity');
 const { APP_RETRIEVER, LINK_CAP } = noteCorpus;
 
-/** The fixture content as the Note records routes/notes.js would have saved. */
-function asNotes(docs) {
-  return docs.map((doc) => ({
-    _id: doc.id,
-    user: USER,
-    title: doc.title,
-    contentText: doc.body
-  }));
-}
+/**
+ * The fixture content as the Note records routes/notes.js would have saved.
+ *
+ * ONE DEFINITION FROM 4.6, after three sessions declined the merge. This was a
+ * byte-identical copy of parity-v1.js's, which is where measure-writes.js has
+ * taken it since 4.2. 4.3 and 4.4 refused because merging would edit a file two
+ * committed parity hashes depend on for no measured benefit; 4.5 refused on a
+ * stronger ground — CI's debut had to establish its baseline on UNMODIFIED
+ * files. That reason expired when 4.5 merged, and 4.6 is editing parity-v1.js
+ * anyway for demonstration C, so the two files move together in one commit with
+ * f09360a7… re-run rather than read.
+ *
+ * The second reason 4.5 gave still stands and is about a different consumer:
+ * tests/integration.app.test.js cannot use this at all, because it builds `_id`
+ * from a fixture string and that suite needs real ObjectIds.
+ *
+ * Re-exported below, because tests/retrieval.app-parity.test.js:254 reaches for
+ * `parityApp.asNotes` and the merge is not an excuse to move a test's handhold.
+ */
+const { asNotes } = parityV1;
 
 /** The eval path: the fixture straight into the retriever, as run-eval.js does. */
 function runHarness(docs, params = {}) {

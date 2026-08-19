@@ -3,10 +3,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # WHAT THIS RUNS, AND WHY EACH LINE IS HERE RATHER THAN "npm test" ALONE.
 #
-#   npm test          419 -> the suite, including an integration suite that only
-#                     exists when a real MongoDB is reachable. See MONGO_TEST_URI
-#                     below and tests/ci-scope.test.js, which FAILS the run if
-#                     this workflow promises a database and does not deliver one.
+#   npm test          the suite, including an integration suite that only exists
+#                     when a real MongoDB is reachable. See MONGO_TEST_URI below
+#                     and tests/ci-scope.test.js, which FAILS the run if this
+#                     workflow promises a database and does not deliver one.
+#                     NO COUNT HERE, DELIBERATELY, AND THIS LINE HELD A STALE ONE
+#                     FOR A SESSION. It said 419, which was the pre-4.5 total, in
+#                     the file 4.5 itself wrote — and the count is ENVIRONMENT-
+#                     DEPENDENT anyway, so any single number is true of exactly
+#                     one machine. §25.4 removed a count from README.md for the
+#                     same reason; neither checker scans this file either. The
+#                     current figures live in docs/EVALUATION.md §26.10 with the
+#                     environment beside each.
 #   parity:v1         83f9e35e... regenerated, not read. §21.6's lesson is that a
 #   parity:app        f09360a7... parity test reading its own committed output is
 #                     not a parity test, and this repo had one for twenty
