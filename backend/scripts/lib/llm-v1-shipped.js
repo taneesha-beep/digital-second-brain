@@ -81,7 +81,21 @@ const PROMPTS = {
     'Explain the following notes as if explaining to a 12-year-old. Use simple words, short sentences, and fun analogies. No jargon.'
 };
 
-/** VERBATIM from llm.service.js:17. */
+/**
+ * VERBATIM from llm.service.js:17 — AND IT NO LONGER RESOLVES.
+ *
+ * Measured 19 Aug 2026: this string returns HTTP 404 `model_not_found` on every
+ * call, and it is absent from the 13 models the key can reach. The key itself
+ * authenticates — `models.list()` succeeds — so this is a retirement, not an
+ * auth failure. `results/gen-model-retired.txt` is the probe.
+ *
+ * THE CONSTANT STAYS EXACTLY AS SHIPPED. It is the record of what the app
+ * asks for, and `tests/gen-shipped-parity.test.js` checks it against
+ * llm.service.js. What changed is that callShipped() now takes a `model`
+ * override defaulting to this value, so a measurement can name a live model
+ * explicitly and every ledger row records which one answered. Editing this
+ * constant would delete the evidence that the shipped app is broken.
+ */
 const MODEL = 'llama-3.3-70b-versatile';
 
 /** VERBATIM from llm.service.js:43-45. */
@@ -115,10 +129,19 @@ function applyShippedStrip(text, feature) {
  * @param {Object} groq            an instantiated groq-sdk client
  * @param {string} contentText
  * @param {string} feature
+ * @param {Object} [opts]
+ * @param {string} [opts.model]    ONE VARIABLE, overridable, because the shipped
+ *                                 string is retired (see MODEL above). Defaults
+ *                                 to the shipped value so the default path stays
+ *                                 the shipped path. Everything else — prompts,
+ *                                 system message, temperature, max_tokens, the
+ *                                 strip — has NO override and cannot be varied
+ *                                 from here, which is what keeps a substituted
+ *                                 run a one-variable change.
  * @returns {Promise<Object>} the observation, including `rawText` (pre-strip)
  *          and `text` (post-strip, === what processNote would have returned).
  */
-async function callShipped(groq, contentText, feature) {
+async function callShipped(groq, contentText, feature, { model = MODEL } = {}) {
   const prompt = PROMPTS[feature];
   if (!prompt) {
     throw new Error(
@@ -127,7 +150,7 @@ async function callShipped(groq, contentText, feature) {
   }
 
   const params = {
-    model: MODEL,
+    model,
     messages: [
       { role: 'system', content: SYSTEM_MESSAGE },
       { role: 'user', content: `${prompt}\n\nNotes:\n${contentText}` }
@@ -171,7 +194,16 @@ async function callShipped(groq, contentText, feature) {
     promptTokens: usage.prompt_tokens ?? null,
     completionTokens: usage.completion_tokens ?? null,
     totalTokens: usage.total_tokens ?? null,
-    model: completion.model || MODEL,
+    // REASONING TOKENS COUNT AGAINST max_tokens AND ARE NOT IN `content`.
+    // Measured on openai/gpt-oss-120b before the run: 710 completion tokens of
+    // which 134 were reasoning, with clean JSON in `content` and the chain in a
+    // separate `reasoning` field. So they do not pollute the schema verdict and
+    // they DO consume the 1024 ceiling — which makes them a confound on the
+    // truncation rate, and capturing them here is what turns that confound into
+    // a measured column rather than a caveat. §28.7.
+    reasoningTokens: usage.completion_tokens_details?.reasoning_tokens ?? null,
+    modelRequested: model,
+    model: completion.model || model,
     id: completion.id || null,
     rateLimit: readRateLimit(headers)
   };

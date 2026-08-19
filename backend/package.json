@@ -39,7 +39,8 @@
     "measure:keywords": "node scripts/measure-keyword-stability.js",
     "characterize:graph": "node scripts/characterize-graph.js",
     "gen:clusters": "node scripts/build-gen-clusters.js",
-    "gen:baseline": "node scripts/measure-gen-baseline.js"
+    "gen:baseline": "node scripts/measure-gen-baseline.js",
+    "gen:probe": "node scripts/probe-groq-model.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -4,9 +4,31 @@
 /**
  * measure-gen-baseline.js — Phase 5.3. The generation baseline, `gen-v1`.
  *
- *   npm run gen:baseline -- --run      make calls (needs GROQ_API_KEY, spends quota)
+ *   npm run gen:baseline -- --run --model openai/gpt-oss-120b
  *   npm run gen:baseline -- --report   recompute the report from the ledger, no calls
  *   npm run gen:baseline               plan only: print what --run would do
+ *
+ * ---------------------------------------------------------------------------
+ * --model IS REQUIRED FOR A RUN, AND THAT IS A FINDING RATHER THAN AN OPTION
+ * ---------------------------------------------------------------------------
+ *
+ * The shipped string `llama-3.3-70b-versatile` (llm.service.js:17) RETURNS 404
+ * `model_not_found` — measured 19 Aug 2026, `results/gen-model-retired.txt`.
+ * The true "before" is therefore not runnable: the configuration this session
+ * exists to baseline does not execute at all, for anyone, today.
+ *
+ * So exactly ONE variable is changed, deliberately and loudly. Prompts, the
+ * system message, `temperature: 0.4`, `max_tokens: 1024` and the fence-strip
+ * are byte-identical — llm-v1-shipped.js exposes no override for any of them —
+ * and the model is named on the command line, recorded in every ledger row, and
+ * printed in every section header of the report.
+ *
+ * WHY SUBSTITUTE RATHER THAN STOP: 5.5 cannot be measured against a dead model
+ * either, so a dead-model baseline is useless to the phase it exists for. The
+ * defect being priced is structural — 6, 8 and 5 requested items against a
+ * 1024-token ceiling — and that survives the substitution. THE RATE DOES NOT:
+ * every figure below is a figure about the substituted model, and is labelled
+ * one everywhere it appears.
  *
  * THE ONLY SCRIPT IN THIS REPOSITORY THAT SPENDS MONEY-EQUIVALENT QUOTA AND
  * THE ONLY ONE WHOSE OUTPUT CANNOT BE REGENERATED. Both facts change how it is
@@ -211,6 +233,15 @@ async function run(clusters) {
 
   const delayMs = Number(arg('delay', DEFAULT_DELAY_MS));
   const maxCalls = Number(arg('max-calls', DEFAULT_MAX_CALLS));
+  const model = arg('model', null);
+
+  if (!model) {
+    console.error('--model IS REQUIRED. The shipped string is retired:');
+    console.error(`  ${shipped.MODEL} -> 404 model_not_found  (results/gen-model-retired.txt)`);
+    console.error('Naming the model on the command line is what keeps a substituted run a');
+    console.error('ONE-VARIABLE change instead of a silent one. e.g. --model openai/gpt-oss-120b');
+    process.exit(1);
+  }
 
   const bySeed = new Map(clusters.map((c) => [c.seedId, c]));
   const cells = planCells(clusters);
@@ -220,6 +251,10 @@ async function run(clusters) {
   const todo = cells.filter((c) => !done.has(keyOf(c)));
 
   console.log('PHASE 5.3 — GENERATION BASELINE, gen-v1\n');
+  console.log(`  shipped model     ${shipped.MODEL}   RETIRED — 404 model_not_found`);
+  console.log(`  model in use      ${model}   THE ONE VARIABLE CHANGED`);
+  console.log(`  held fixed        prompts, system message, temperature ${shipped.TEMPERATURE}, max_tokens ${shipped.MAX_TOKENS}, the strip`);
+  console.log('');
   console.log(`  cells planned     ${cells.length}`);
   console.log(`  already complete  ${done.size}   (from ${existing.length} ledger rows)`);
   console.log(`  to call now       ${todo.length}`);
@@ -253,7 +288,7 @@ async function run(clusters) {
     let failure = null;
 
     try {
-      observation = await shipped.callShipped(groq, contentText, cell.feature);
+      observation = await shipped.callShipped(groq, contentText, cell.feature, { model });
       completed += 1;
     } catch (err) {
       failure = {
@@ -272,7 +307,9 @@ async function run(clusters) {
         finishReason: observation.finishReason,
         promptTokens: observation.promptTokens,
         completionTokens: observation.completionTokens,
+        reasoningTokens: observation.reasoningTokens,
         totalTokens: observation.totalTokens,
+        modelRequested: observation.modelRequested,
         model: observation.model,
         // rawText ONLY. `text` is applyShippedStrip(rawText, feature), which is
         // committed code — §8.5's rule: do not commit derived data twice.
@@ -349,11 +386,42 @@ function report(clusters, manifest) {
   for (const r of okRows) if (!byCell.has(keyOf(r))) byCell.set(keyOf(r), r);
   const completed = [...byCell.values()];
 
+  // A LEDGER MIXING TWO MODELS WOULD SILENTLY AVERAGE TWO SYSTEMS, which is the
+  // one-variable rule failing inside the reporting rather than inside the
+  // experiment. Refused rather than warned about: the resumable ledger makes
+  // this easy to do by accident — re-run with a different --model and the rows
+  // append to the same file.
+  const modelsUsed = [...new Set(okRows.map((r) => r.modelRequested || r.model))].sort();
+  if (modelsUsed.length > 1) {
+    console.error('REFUSING: the ledger mixes more than one model, so no rate over it means anything.');
+    for (const m of modelsUsed) {
+      console.error(`  ${m}   ${okRows.filter((r) => (r.modelRequested || r.model) === m).length} rows`);
+    }
+    console.error('Move results/gen-baseline.calls.jsonl aside and re-run for one model.');
+    process.exit(1);
+  }
+  const modelUsed = modelsUsed[0];
+
   const out = [];
   const w = (s = '') => out.push(s);
 
   w('PHASE 5.3 — GENERATION BASELINE (gen-v1): the shipped prompts, single-note,');
   w('measured before anything is changed.');
+  w('');
+  w('  THE SHIPPED MODEL IS RETIRED AND THIS IS A SUBSTITUTED RUN.');
+  w('');
+  w(`    llm.service.js:17 asks for   ${shipped.MODEL}`);
+  w('                                 -> HTTP 404 model_not_found, 19 Aug 2026');
+  w('                                 -> results/gen-model-retired.txt');
+  w(`    this run used                ${modelUsed}`);
+  w('');
+  w('  ONE VARIABLE CHANGED. Prompts, system message, temperature ' + shipped.TEMPERATURE + ', max_tokens');
+  w('  ' + shipped.MAX_TOKENS + ' and the fence-strip are byte-identical to the shipped file, checked by');
+  w('  tests/gen-shipped-parity.test.js. THE STRUCTURAL DEFECT SURVIVES the swap —');
+  w('  6, 8 and 5 requested items against a 1024-token ceiling is a property of the');
+  w('  prompts. EVERY RATE BELOW IS A RATE ABOUT ' + modelUsed + ' AND NOT');
+  w('  ABOUT THE MODEL THE APP ASKS FOR, which cannot be measured because it does');
+  w('  not run.');
   w('');
   w('  DOES NOT REGENERATE BYTE-IDENTICALLY, AND FOR TWO INDEPENDENT REASONS.');
   w('  (1) It carries wall times — the same reason results/provenance-query.txt and');
@@ -381,6 +449,26 @@ function report(clusters, manifest) {
   w('');
   w(`  cells planned          ${cells.length}    30 seeds x (3 JSON features x n=3 + 2 prose x n=1)`);
   w(`  cells completed        ${completed.length}`);
+  w('');
+  w('  THE RUN STOPPED ON A DAILY TOKEN CAP, AND THE COVERAGE THAT SURVIVED IS THE');
+  w('  COVERAGE THAT WAS DESIGNED TO. Calls are issued REPEAT-MAJOR — every cell\'s');
+  w('  first draw before any cell\'s second — precisely so a run cut short yields a');
+  w('  COMPLETE n=1 pass rather than complete coverage of some seeds and none of');
+  w('  others. What landed:');
+  w('');
+  const drawCounts = new Map();
+  for (const r of completed) {
+    const k = `${r.seedId}|${r.feature}`;
+    drawCounts.set(k, (drawCounts.get(k) || 0) + 1);
+  }
+  const withN = (n) => [...drawCounts.values()].filter((v) => v === n).length;
+  w(`    distinct (seed, feature) cells   ${drawCounts.size} of 150   <- COMPLETE n=1`);
+  w(`    cells with 2 draws               ${withN(2)}`);
+  w(`    cells with 3 draws               ${withN(3)}`);
+  w('');
+  w('  So every rate in sections B-G is over a COMPLETE first pass: all 30 seeds x');
+  w('  all 5 features. Section H, which needs repeats, is over the cells that got');
+  w('  two, and says so.');
   w(`  API calls attempted    ${attempts}`);
   w(`  API calls completed    ${okRows.length}`);
   w(`  API failures           ${failures.length}`);
@@ -401,7 +489,19 @@ function report(clusters, manifest) {
 
   // ---- B. conformance ------------------------------------------------------
 
-  const featureRows = new Map(ALL_FEATURES.map((f) => [f, completed.filter((r) => r.feature === f)]));
+  // SECTIONS B-G RUN OVER THE FIRST DRAW ONLY — EXACTLY ONE CALL PER CELL.
+  //
+  // The run completed 150 first draws and 84 second draws, so pooling all 234
+  // would let 84 cells count twice and 66 once. That is an unequal weighting
+  // artefact of WHERE THE QUOTA RAN OUT, not a property of the system, and it
+  // would put a silent thumb on every rate in the report. The first pass is
+  // complete and balanced: 30 seeds x 5 features, one draw each.
+  //
+  // The extra draws are not discarded — they are what section H measures, and
+  // the pooled figure is printed beside the headline so nothing is hidden.
+  const firstPass = completed.filter((r) => r.repeat === 0);
+  const featureRows = new Map(ALL_FEATURES.map((f) => [f, firstPass.filter((r) => r.feature === f)]));
+  const featureRowsAll = new Map(ALL_FEATURES.map((f) => [f, completed.filter((r) => r.feature === f)]));
 
   w('');
   w('='.repeat(78));
@@ -441,7 +541,7 @@ function report(clusters, manifest) {
     );
   }
 
-  const jsonRows = completed.filter((r) => !PROSE_FEATURES.includes(r.feature));
+  const jsonRows = firstPass.filter((r) => !PROSE_FEATURES.includes(r.feature));
   const jsonV = jsonRows.map((r) => ({
     feature: r.feature, row: r,
     ...classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature).schema
@@ -572,15 +672,52 @@ function report(clusters, manifest) {
       `${String(pct(outTok, 95) ?? 'n/a').padStart(8)}  ${String(outTok.length ? Math.max(...outTok) : 'n/a').padStart(8)}`
     );
   }
-  const allIn = completed.filter((r) => r.promptTokens !== null).map((r) => r.promptTokens);
-  const allOut = completed.filter((r) => r.completionTokens !== null).map((r) => r.completionTokens);
+  const allIn = firstPass.filter((r) => r.promptTokens !== null).map((r) => r.promptTokens);
+  const allOut = firstPass.filter((r) => r.completionTokens !== null).map((r) => r.completionTokens);
   w('  ' + '-'.repeat(70));
-  w(`  ${'ALL'.padEnd(11)}  ${String(completed.length).padStart(5)}   ${String(num(mean(allIn), 0)).padStart(8)}  ${String(num(mean(allOut), 0)).padStart(9)}`);
+  w(`  ${'ALL'.padEnd(11)}  ${String(firstPass.length).padStart(5)}   ${String(num(mean(allIn), 0)).padStart(8)}  ${String(num(mean(allOut), 0)).padStart(9)}`);
   w('');
   w(`  total tokens this run          in ${allIn.reduce((a, b) => a + b, 0)}   out ${allOut.reduce((a, b) => a + b, 0)}`);
   w(`  cost                           $0 — Groq free tier`);
   w(`  ceiling that produced the      max_tokens: ${shipped.MAX_TOKENS}  (llm.service.js:53)`);
   w(`    out(max) column above`);
+
+  // ---- F2. the reasoning-token confound, MEASURED rather than named --------
+
+  const reasoning = firstPass.filter((r) => r.reasoningTokens !== null && r.reasoningTokens !== undefined);
+  if (reasoning.length > 0) {
+    w('');
+    w('  ' + '-'.repeat(70));
+    w('  REASONING TOKENS — A CONFOUND ON SECTION D, MEASURED RATHER THAN NAMED');
+    w('  ' + '-'.repeat(70));
+    w('');
+    w(`  ${modelUsed} emits a reasoning chain in a SEPARATE`);
+    w('  `reasoning` field, so it does NOT pollute the JSON and section B is clean.');
+    w('  But reasoning tokens COUNT AGAINST completion_tokens and therefore against');
+    w('  max_tokens: 1024 — so they consume ceiling that a non-reasoning model would');
+    w('  have spent on content, and section D\'s truncation rate is inflated by');
+    w('  exactly this much relative to one.');
+    w('');
+    w('  feature      calls   reasoning(mean)  (p95)   share of the 1024 ceiling');
+    w('  ' + '-'.repeat(68));
+    for (const feature of ALL_FEATURES) {
+      const rs = reasoning.filter((r) => r.feature === feature).map((r) => r.reasoningTokens);
+      if (rs.length === 0) continue;
+      w(
+        `  ${feature.padEnd(11)}  ${String(rs.length).padStart(5)}   ${String(num(mean(rs), 0)).padStart(14)}  ` +
+        `${String(pct(rs, 95)).padStart(6)}   ${showPct(rate(mean(rs), shipped.MAX_TOKENS))}`
+      );
+    }
+    const allR = reasoning.map((r) => r.reasoningTokens);
+    w('  ' + '-'.repeat(68));
+    w(`  ${'ALL'.padEnd(11)}  ${String(allR.length).padStart(5)}   ${String(num(mean(allR), 0)).padStart(14)}  ${String(pct(allR, 95)).padStart(6)}   ${showPct(rate(mean(allR), shipped.MAX_TOKENS))}`);
+    w('');
+    w('  SO SECTION D IS AN UPPER BOUND on what the shipped prompts would truncate');
+    w('  at on a non-reasoning model, and the size of the overstatement is the last');
+    w('  column. This is the confound priced, not the confound avoided — which is');
+    w('  the better outcome, because avoiding it would have meant choosing a model');
+    w('  for the measurement\'s convenience rather than the app\'s.');
+  }
 
   // ---- G. latency ----------------------------------------------------------
 
@@ -608,7 +745,7 @@ function report(clusters, manifest) {
       `${p95 === null ? 'n/a' : (p95 < 4000 ? 'PASS' : 'FAIL')}`
     );
   }
-  const allMs = completed.map((r) => r.latencyMs);
+  const allMs = firstPass.map((r) => r.latencyMs);
   w('  ' + '-'.repeat(70));
   w(`  ${'ALL'.padEnd(11)}  ${String(allMs.length).padStart(5)}  ${String(pct(allMs, 50)).padStart(6)}  ${String(pct(allMs, 95)).padStart(6)}  ${String(Math.max(...allMs)).padStart(7)}`);
 
@@ -619,31 +756,44 @@ function report(clusters, manifest) {
   w('H. WITHIN-CELL VARIANCE — WHAT n=3 BOUGHT, AND WHETHER IT WAS WORTH IT');
   w('='.repeat(78));
   w('');
-  w('  A cell is one (seed, feature). At temperature 0.4 the three draws can');
+  w('  A cell is one (seed, feature). At temperature 0.4 repeated draws can');
   w('  disagree. THIS IS THE NUMBER 5.5 NEEDS: if cells flip on a re-draw, a small');
   w('  before/after difference is not attributable to the fix.');
   w('');
-  w('  feature      cells   all 3 conform   all 3 fail   SPLIT');
+  w('  n=3 WAS PLANNED AND THE QUOTA SET n INSTEAD. The run stopped on Groq\'s');
+  w('  200,000 tokens-per-day cap after a complete n=1 pass plus part of the second,');
+  w('  so NO CELL REACHED THREE DRAWS. The rows below are over cells with TWO, which');
+  w('  answers the same question with less resolution: two draws can disagree, and');
+  w('  the rate at which they do is what bounds 5.5\'s attributable difference.');
+  w('');
+  w('  feature      cells n>=2   both conform   both fail   SPLIT');
   w('  ' + '-'.repeat(62));
   let splitTotal = 0;
   let cellTotal = 0;
   for (const feature of Object.keys(SCHEMAS)) {
+    // featureRowsAll, NOT featureRows — this is the one section that needs the
+    // repeats, and featureRows is deliberately the first draw only.
     const bySeedId = new Map();
-    for (const r of featureRows.get(feature)) {
+    for (const r of featureRowsAll.get(feature)) {
       const v = classify(shipped.applyShippedStrip(r.rawText, feature), feature).schema;
       if (!bySeedId.has(r.seedId)) bySeedId.set(r.seedId, []);
       bySeedId.get(r.seedId).push(v.shape);
     }
-    const full = [...bySeedId.values()].filter((a) => a.length === REPEATS[feature]);
+    const full = [...bySeedId.values()].filter((a) => a.length >= 2);
     const allOk = full.filter((a) => a.every(Boolean)).length;
     const allNo = full.filter((a) => a.every((x) => !x)).length;
     const split = full.length - allOk - allNo;
     splitTotal += split;
     cellTotal += full.length;
-    w(`  ${feature.padEnd(11)}  ${String(full.length).padStart(5)}   ${String(allOk).padStart(13)}   ${String(allNo).padStart(10)}   ${String(split).padStart(5)}`);
+    w(`  ${feature.padEnd(11)}  ${String(full.length).padStart(10)}   ${String(allOk).padStart(12)}   ${String(allNo).padStart(9)}   ${String(split).padStart(5)}`);
   }
   w('  ' + '-'.repeat(62));
-  w(`  ${'ALL'.padEnd(11)}  ${String(cellTotal).padStart(5)}   unanimous ${cellTotal - splitTotal}   SPLIT ${splitTotal}   ${showPct(rate(splitTotal, cellTotal))} of cells`);
+  w(`  ${'ALL'.padEnd(11)}  ${String(cellTotal).padStart(10)}   unanimous ${cellTotal - splitTotal}   SPLIT ${splitTotal}   ${showPct(rate(splitTotal, cellTotal))} of cells`);
+  w('');
+  w('  A SPLIT CELL IS A CELL WHOSE CONFORMANCE IS NOT A PROPERTY OF ITS INPUT.');
+  w('  Read the ALL row as a floor on the noise 5.5 has to clear: with two draws');
+  w('  the observed split rate understates the three-draw rate, because three draws');
+  w('  have more chances to disagree.');
 
   // ---- I. by length quintile ----------------------------------------------
 
@@ -676,16 +826,16 @@ function report(clusters, manifest) {
 
   // ---- J. empty and degenerate --------------------------------------------
 
-  const empties = completed.filter((r) => classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature).empty);
-  const shorts = completed.filter((r) => classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature).veryShort);
+  const empties = firstPass.filter((r) => classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature).empty);
+  const shorts = firstPass.filter((r) => classify(shipped.applyShippedStrip(r.rawText, r.feature), r.feature).veryShort);
 
   w('');
   w('='.repeat(78));
   w('J. EMPTY AND DEGENERATE OUTPUT');
   w('='.repeat(78));
   w('');
-  w(`  empty completions              ${empties.length} of ${completed.length}   ${showPct(rate(empties.length, completed.length))}`);
-  w(`  under ${VERY_SHORT_CHARS} characters            ${shorts.length} of ${completed.length}   ${showPct(rate(shorts.length, completed.length))}`);
+  w(`  empty completions              ${empties.length} of ${firstPass.length}   ${showPct(rate(empties.length, firstPass.length))}`);
+  w(`  under ${VERY_SHORT_CHARS} characters            ${shorts.length} of ${firstPass.length}   ${showPct(rate(shorts.length, firstPass.length))}`);
   w('');
   w('  NEITHER IS CALLED A REFUSAL RATE. Whether the model declined is a semantic');
   w('  judgment and belongs to 5.6\'s judge; a character threshold cannot tell a');
@@ -704,7 +854,8 @@ function report(clusters, manifest) {
   w('');
   w(`  node                 ${process.version}`);
   w(`  platform             ${os.platform()} ${os.release()} ${os.arch()}`);
-  w(`  model string         ${shipped.MODEL}`);
+  w(`  model the app asks   ${shipped.MODEL}   RETIRED, 404`);
+  w(`  model requested      ${modelUsed}   the one substituted variable`);
   w(`  model reported       ${models.join(', ')}`);
   w(`  temperature          ${shipped.TEMPERATURE}          llm.service.js:52`);
   w(`  max_tokens           ${shipped.MAX_TOKENS}           llm.service.js:53`);
