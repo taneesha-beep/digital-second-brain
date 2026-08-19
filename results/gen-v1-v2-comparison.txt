@@ -1,0 +1,135 @@
+gen-v1 -> gen-v2: WHAT RAISING max_tokens DID (Phase 5.5)
+==============================================================================
+
+  ONE VARIABLE. Everything else is checked equal rather than asserted equal:
+
+    max_tokens        1024  ->  2048      THE CHANGE
+    model             openai/gpt-oss-120b   both sides, checked
+    temperature       0.4   both sides, checked
+    seeds             15   PAIRED — the seeds both runs cover across all 5 features
+    grader            scripts/lib/gen-schema.js   one predicate, both sides
+    n                 1   balanced first pass only, both sides
+
+
+  THIS IS A PARTIAL RE-MEASURE — 15 OF THE 30 GOLDEN SEEDS.
+
+    dropped from gen-v1   15 seeds        dropped from gen-v2   2 seeds
+
+    The gen-v2 run stopped on Groq's daily token cap before completing its
+    first pass. Every seed retained is covered by BOTH runs across all five
+    features, so this is a paired comparison on identical inputs — but it is
+    a smaller sample than the baseline's, and the length stratification the
+    golden set was built for is correspondingly thinner. Completing it needs
+    another day's quota, not another decision.
+
+  A NOTE ON WHAT "SAME MODEL" BUYS AND WHAT IT DOES NOT. Both runs named the
+  same model string. That string is NOT A PINNED INPUT (§28.9) — no checksum
+  exists for what serves it — so this rules out a DELIBERATE model change and
+  cannot rule out drift behind the name. The three features that never
+  approached the old ceiling are the control for exactly that; see the last
+  section.
+
+  DOES NOT REGENERATE BYTE-IDENTICALLY: it is derived from two ledgers that
+  do not (§28.9). Recomputed with `npm run gen:compare`.
+
+==============================================================================
+A. SHAPE CONFORMANCE — THE HEADLINE
+==============================================================================
+
+  feature       gen-v1    gen-v2     delta    noise floor (§28.8)
+  --------------------------------------------------------------------
+  flashcards    100.0%   100.0%    +0.0pt    0.0% of 28 repeated cells flipped
+  concepts      100.0%   100.0%    +0.0pt    3.6% of 28 repeated cells flipped
+  examQs         46.7%   100.0%   +53.3pt    32.1% of 28 repeated cells flipped
+  --------------------------------------------------------------------
+  ALL JSON       82.2%   100.0%   +17.8pt    45 vs 45 calls
+
+  THE NOISE FLOOR IS NOT DECORATION. A movement smaller than the flip rate
+  beside it is not distinguishable from drawing the same cell twice, and the
+  v1 figure UNDERSTATES it — those cells got two draws, and three draws have
+  more chances to disagree.
+
+==============================================================================
+B. TRUNCATION — finish_reason === "length", ALL FIVE FEATURES
+==============================================================================
+
+  INCLUDING THE TWO PROSE FEATURES, which no conformance metric can see.
+  §28.5: eli5 truncated at 6.7% with no schema, so the fix would repair it
+  with no number moving anywhere. This is that number.
+
+  feature       gen-v1    gen-v2     delta   would-truncate-at-1024   schema?
+  ----------------------------------------------------------------------------
+  summarize       0.0%     0.0%    +0.0pt      0.0%              NO — invisible
+  flashcards      0.0%     0.0%    +0.0pt      0.0%              yes
+  concepts        0.0%     0.0%    +0.0pt      0.0%              yes
+  examQs         46.7%     0.0%   -46.7pt     26.7%              yes
+  eli5            0.0%     0.0%    +0.0pt      0.0%              NO — invisible
+
+  THE LAST COLUMN IS THE ONE THAT EXPLAINS THE RESULT, and it is a
+  COUNTERFACTUAL: how many gen-v2 completions used more than 1024 tokens and
+  therefore COULD NOT have fitted under the old ceiling. A completion that
+  used N tokens is a lower bound on what that call needed, so this is the
+  share of calls where the ceiling was GENUINELY binding on a fresh draw.
+
+  Read it against the first column. Where the two disagree, the difference is
+  WITHIN-CELL VARIANCE, not repair: the same seed and prompt at temperature
+  0.4 does not produce the same length twice, and §28.8 measured 32.1% of
+  examQs cells flipping their verdict on a re-draw. A cell that truncated in
+  gen-v1 and came back short in gen-v2 was not fixed by the ceiling — it was
+  a different draw. The ceiling is what GUARANTEES the calls that genuinely
+  exceed it, and the counterfactual is how many those are.
+
+==============================================================================
+C. WHY THE REMAINING FAILURES FAIL
+==============================================================================
+
+  Precedence committed in scripts/lib/gen-schema.js before any run.
+
+  gen-v1 — 8 failures
+    truncated          7     87.5%
+    malformed          1     12.5%
+
+  gen-v2 — 0 failures
+    none
+
+==============================================================================
+D. TOKENS AND LATENCY — WHAT THE FIX COST
+==============================================================================
+
+  feature       out(mean)        out(p95)         reasoning(mean)   latency p95
+                v1      v2       v1      v2       v1     v2         v1      v2
+  --------------------------------------------------------------------------
+  summarize      218     220     352    277      61     59      1128   1902
+  flashcards     594     624     823    903     297    316      2208   2223
+  concepts       403     384     663    659     156    140      1776   2021
+  examQs         961     964    1024   1744     178    153      2718   4167
+  eli5           646     602    1019    874      92     90      2619   3334
+  --------------------------------------------------------------------------
+
+  total tokens   gen-v1  in 18735  out 42326  = 61061
+                 gen-v2  in 18735  out 41918  = 60653
+
+  REASONING TOKENS ARE THE COLUMN TO READ FIRST. They count against
+  max_tokens and are not in the output, so if they scale with the BUDGET
+  rather than with the content, doubling the ceiling partly feeds the chain
+  rather than the answer and the fix underdelivers. §29 scores that.
+
+==============================================================================
+E. THE CONTROL — THE THREE FEATURES THAT SHOULD NOT HAVE MOVED
+==============================================================================
+
+  flashcards, concepts and summarize never approached the 1024 ceiling:
+  their v1 truncation rates were 0.0% and their maximum outputs sat well
+  under it. Raising a cap they never hit cannot change them.
+
+  SO IF THEY MOVED, max_tokens WAS NOT THE ONLY THING THAT CHANGED — and the
+  candidate nobody can otherwise detect is THE MODEL DRIFTING BEHIND ITS
+  STRING (§28.9). This is the cheapest instrument this project has for that.
+
+  flashcards   shape  100.0% ->  100.0%   out  594 ->  624 (+5.0%)   held
+  concepts     shape  100.0% ->  100.0%   out  403 ->  384 (-4.6%)   held
+  summarize    shape     n/a ->     n/a   out  218 ->  220 (+1.0%)   held
+
+  Threshold: shape must not move at all, mean output tokens must stay within
+  10%. Both committed in results/gen-v2-predictions.txt BEFORE the run.
+

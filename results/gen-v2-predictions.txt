@@ -1,0 +1,201 @@
+PHASE 5.0 + 5.5 — PREDICTIONS, WRITTEN BEFORE THE FIRST API CALL
+==============================================================================
+
+  Committed in its own commit, before any measurement code runs, so the
+  ordering is checkable in git rather than asserted. Same device as
+  results/gen-predictions.txt (5.3) and results/test-predictions.txt (3.6).
+
+  DOES NOT REGENERATE. Authored prose, not a computed artifact.
+
+  Scored in docs/EVALUATION.md §29. Priors on this habit:
+    5.3          9 of 16
+    README pass  4 of 6
+    4.6          5 of 10
+    3.6          9 of 10
+
+
+THE CHANGE BEING PREDICTED
+==============================================================================
+
+  ONE experimental variable: max_tokens 1024 -> 2048 (llm.service.js).
+
+  A second change lands in the same commit and is NOT an experimental
+  variable: the model string moves from the retired `llama-3.3-70b-versatile`
+  to `openai/gpt-oss-120b`. That is Phase 5.0, and it is the model 5.3's
+  baseline already ran on — so BOTH SIDES OF THE COMPARISON ARE ON
+  gpt-oss-120b and the before/after stays one-variable. 5.3 substituted the
+  model to measure at all; 5.5 ships it.
+
+  Held byte-identical: all five prompts, the system message, the user message
+  template, temperature 0.4, the stripped-feature list, both strip regexes,
+  the 30 seeds in data/gen-eval/clusters.jsonl, and the grader in
+  scripts/lib/gen-schema.js.
+
+  Design: n=1 balanced first pass, 30 seeds x 5 features = 150 calls, which is
+  the same population §28's sections B-G report over.
+
+
+WHERE 2048 CAME FROM — AND IT IS NOT A ROUND NUMBER
+==============================================================================
+
+  The 14 truncated examQs calls are CENSORED: their true demand is not
+  observable, only extrapolable. Two estimators were built from the 5.3
+  ledger, from how many answers each call had begun before dying:
+
+    A  last begun item counted COMPLETE (biased low)   max demand 1638
+    B  last begun item counted HALF-WRITTEN            max demand 1944
+
+  Decomposed, over 30 seeds:
+
+    examQs content need    p50 792   p90 1480   p95 1804   max 1840
+    examQs reasoning       p50 176   p90  323   p95  503   max  737
+
+  2048 is the SMALLEST value clearing both estimators. It covers 30/30 under
+  the conservative one with 5% headroom.
+
+  It deliberately does NOT cover the worst-case pairing bound of 2577
+  (max content 1840 + max reasoning 737). Those maxima occurred on DIFFERENT
+  seeds, so pairing them is a bound nothing observed. Accepting that residual
+  is what makes prediction 4 below falsifiable: near-zero examQs truncation is
+  predicted, NOT certainly zero.
+
+  Smallest-sufficient is the right criterion for a CAP, because every token of
+  headroom above the clearing point is latency paid on exactly the calls being
+  repaired — see prediction 12.
+
+
+THE PREDICTIONS
+==============================================================================
+
+  SHAPE CONFORMANCE
+
+   1. examQs shape conformance     50.0%  ->  83-97%, point estimate ~90%
+                                   14 of 30 truncate today; 2048 covers all 14
+                                   estimated demands, but the estimates carry
+                                   real error and 1 non-truncation failure
+                                   already exists. Expect 1-4 of 30 to still
+                                   fail.
+
+   2. all-JSON shape conformance   83.3%  ->  94-99%, point estimate ~96.7%
+
+   3. flashcards shape             100.0% ->  100.0%   CONTROL
+      concepts shape               100.0% ->  100.0%   CONTROL
+                                   Max outputs 886 and 663 against a 1024
+                                   ceiling — it never bound them.
+
+  TRUNCATION (finish_reason === 'length')
+
+   4. examQs                       46.7%  ->  0-13%    (0-4 of 30)
+   5. eli5                         6.7%   ->  0-3.3%   (0-1 of 30)
+   6. flashcards                   0.0%   ->  0.0%     CONTROL
+      concepts                     0.0%   ->  0.0%     CONTROL
+      summarize                    0.0%   ->  0.0%     CONTROL
+
+  TOKENS
+
+   7. mean out examQs              945    ->  1100-1300
+   8. mean out eli5                665    ->  670-730
+   9. mean out summarize           220    ->  within +/-10%   CONTROL
+      mean out flashcards          602    ->  within +/-10%   CONTROL
+      mean out concepts            402    ->  within +/-10%   CONTROL
+  10. mean out, all features       567    ->  630-700
+  11. total tokens, 150 calls              ->  130,000-140,000
+                                   in ~39,500 unchanged (same seeds, same
+                                   prompts); only examQs and eli5 grow.
+
+  LATENCY
+
+  12. examQs p95                   2779ms ->  4000-4800 ms, BREACHING 6.5's
+                                   example <4s target.
+
+      §28.10 scored "6.5's budget breached somewhere" as WRONG — every feature
+      passed at worst p95 2779 ms. THAT PASS WAS AN ARTEFACT OF THE DEFECT.
+      The ceiling truncated examQs at roughly its median demand, which capped
+      its latency. Fixing truncation removes the cap. Measured on the 5.3
+      ledger:
+
+        latency_ms ~= 420 + 2.15 x completion_tokens   R^2 0.974, n=150
+
+      THERE IS NO CEILING THAT BOTH COMPLETES 5 DETAILED EXAM ANSWERS AND
+      STAYS UNDER 4 s on this model over this connection: demand reaches
+      ~1840 content tokens and 4 s buys ~1660. The two requirements are
+      incompatible. The cheaper resolution is to ask for less in the prompt,
+      which is a SECOND VARIABLE and not this session's.
+
+      6.5's <4s is written "Example shape — set your own targets", so it is a
+      reference figure rather than a committed SLO. Reported, not treated as a
+      blocker.
+
+  THE DEFECT THAT DOES NOT EXIST
+
+  13. fence-strip fires                0  ->  0
+                                   §28.4 measured zero in 90 JSON calls. No
+                                   reason for a token ceiling to change it.
+
+
+WHAT WOULD MAKE ME CONCLUDE THE FIX DID NOT WORK
+==============================================================================
+
+  Pre-committed, so it cannot be rationalised after the numbers land.
+
+  1. examQs conformance lands INSIDE [40%, 62%]. §28.8 measured 9 of 28 examQs
+     cells flipping on a re-draw, so that band is indistinguishable from noise
+     at n=1. Landing in it means the ceiling was not the binding defect.
+
+  2. examQs truncation stays ABOVE ~20%. That would mean the censored-demand
+     extrapolation is wrong in KIND, not in degree.
+
+  3. flashcards or concepts MOVE AT ALL, in either direction. They sat at 100%
+     with 0% truncation and the ceiling never bound them. If they move,
+     max_tokens was not the only thing that changed — either a second variable
+     leaked in, or THE MODEL DRIFTED BEHIND THE STRING. This is the built-in
+     control for §28.9's unpinnable-model problem and it costs nothing.
+
+  4. Mean output on summarize/flashcards/concepts moves by more than 10%.
+     Same control, continuous version.
+
+
+PRE-COMMITTED SPENDING RULE
+==============================================================================
+
+  Groq free tier is 200,000 tokens per DAY and NO x-ratelimit-* header exposes
+  it (§28.6). 5.3 died on that cap. The balance remaining on any given day is
+  not observable, so the run is capped rather than paced.
+
+    --max-calls 150, hard stop at the balanced first pass, resumable ledger.
+
+  IF examQs lands OUTSIDE [40%, 62%]  -> the first pass is sufficient, buy
+                                         nothing more.
+  IF examQs lands INSIDE  [40%, 62%]  -> buy ONE examQs-only second pass
+                                         (30 calls, ~40k tokens) to separate
+                                         "no effect" from "noise".
+
+  Committed here so an adaptive decision is not a post-hoc one.
+
+
+WHAT WILL SURPRISE ME
+==============================================================================
+
+  My hit rate is worst when reasoning about SHAPE rather than magnitude —
+  §28.10's gradient-versus-cliff error cost four predictions at once, spent
+  once per feature. Four candidates, most likely first:
+
+  1. REASONING TOKENS SCALE WITH THE BUDGET RATHER THAN THE CONTENT. §28.7
+     measured them at 16.6% of the 1024 ceiling. If a reasoning model expands
+     its chain to fill available space, doubling the ceiling partly feeds
+     REASONING rather than content and the fix underdelivers. Falsifiable:
+     examQs reasoning mean should stay ~215 if content-driven, or climb toward
+     ~430 if budget-driven. THIS IS THE ONE I WOULD BET ON.
+
+  2. THE RESIDUAL examQs FAILURES WILL NOT BE TRUNCATION. With the ceiling
+     lifted, the taxonomy underneath is essentially unmeasured — element-shape
+     and cardinality were masked. §28's cause table had exactly ONE
+     non-truncation failure to reason from.
+
+  3. eli5 MAY NOT GO TO ZERO. examQs has a hard target (5 items); prose has no
+     natural stopping point, so a bigger ceiling may buy a longer ramble that
+     truncates again.
+
+  4. THE LATENCY BREACH MAY BE WORSE THAN LINEAR. R^2 0.974 was fitted
+     entirely under 1024 tokens; prediction 12 extrapolates past the range
+     that produced it.

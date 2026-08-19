@@ -87,6 +87,35 @@ const PRECONDITIONS = {
       'data/qrels/cooking.qrels is absent. data/ is gitignored for size, so a fresh ' +
       'clone has no key until `npm run qrels:build` runs against a raw dump.',
     available: () => fs.existsSync(path.join(REPO, 'data', 'qrels', 'cooking.qrels'))
+  },
+
+  /**
+   * A Groq API key, for the ONE check that re-measures an external dependency
+   * (Phase 5.0). Added because §28.11 established that no change-triggered
+   * habit can catch a sentence a THIRD PARTY falsifies: `llama-3.3-70b-versatile`
+   * was retired with the repository untouched, all five AI features returned
+   * 500 for an unknown number of days, and `npm test` stayed green throughout.
+   *
+   * DELIBERATELY UNPROMISED IN CI, and that direction is checked.
+   * .github/workflows/ci.yml sets no GROQ_API_KEY and says so in a comment.
+   * ci-scope.test.js requires every unpromised precondition to be ABSENT under
+   * CI, so this passes there without the workflow changing and without the
+   * promised-skip ledger moving. Putting a live credential into CI on a
+   * recruiter-facing repository is a decision for the repository owner, not a
+   * side effect of adding a test.
+   *
+   * THE CHECK IT GATES COSTS NO QUOTA. It calls models.list(), which consumes
+   * no completion tokens — that is exactly how 5.3 separated a retirement from
+   * an auth failure (results/gen-model-retired.txt).
+   */
+  groq: {
+    name: 'groq',
+    env: 'GROQ_API_KEY',
+    reason:
+      'GROQ_API_KEY is not set. Export it to check that the model llm.service.js ' +
+      'names still resolves — `export GROQ_API_KEY=$(grep GROQ_API_KEY .env | cut -d= -f2)`. ' +
+      'Absent in CI by design: the workflow sets no key and does not promise this.',
+    available: () => Boolean(process.env.GROQ_API_KEY)
   }
 };
 

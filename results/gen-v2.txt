@@ -1,0 +1,315 @@
+PHASE 5.5 — CONFORMANCE RE-MEASURE (gen-v2): the same prompts, the same 30
+seeds, the same grader, the same model — and ONE changed parameter.
+
+    max_tokens                   1024 -> 2048
+    model                        openai/gpt-oss-120b   SAME AS THE BASELINE
+    temperature                  0.4   unchanged
+
+  THIS RAN THROUGH services/llm.service.js ITSELF, not through a frozen copy.
+  5.3 could not: processNote() returned the completion text and discarded
+  `usage` and `finish_reason`, so tokens and truncation were unobservable
+  through the only surface the app has (§28.3). 5.5 made it return them, so
+  the copy is no longer needed and THIS MEASUREMENT HAS NO SUBSTITUTED
+  VARIABLE AT ALL — a stronger position than the baseline, which had one.
+
+  The comparison is valid because both halves ran on the same model, and that
+  is CHECKED rather than remembered: a v2 run refuses to start when the live
+  model differs from the one the baseline ledger recorded. §29.4.
+
+  DOES NOT REGENERATE BYTE-IDENTICALLY, AND FOR TWO INDEPENDENT REASONS.
+  (1) It carries wall times — the same reason results/provenance-query.txt and
+      results/keyword-stability.txt do not (EVALUATION.md §23.10, §26.10).
+  (2) IT CARRIES MODEL OUTPUT, and no environment pinning fixes that: the model
+      behind the string "openai/gpt-oss-120b" is NOT A PINNED INPUT. The
+      corpus has a SHA-256 and the vectors have a manifest; that string has
+      neither. Every count, rate and percentage below is a measurement of one
+      run against whatever served that name on the date in the environment
+      section. §28.9.
+
+  Produced by:  cd backend && npm run gen:baseline -- --variant v2 --run
+  Recomputed:   cd backend && npm run gen:baseline -- --variant v2 --report
+  Per-call evidence: results/gen-v2.calls.jsonl (one row per API call,
+  carrying the raw model output, so a second reader disputes a row rather than
+  the analysis — §20.4's answer, applied to generation).
+
+==============================================================================
+A. WHAT WAS RUN, AND THE TWO DENOMINATORS
+==============================================================================
+
+  §5.3a records that trec_eval OMITS queries a retriever returned nothing for,
+  and that aggregating that divides by the wrong denominator. The same trap
+  arrives here. It is split rather than collapsed, and BOTH rates are printed:
+
+  cells planned          330    30 seeds x (3 JSON features x n=3 + 2 prose x n=1)
+  cells completed        78
+
+  THE RUN STOPPED ON A DAILY TOKEN CAP, AND THE COVERAGE THAT SURVIVED IS THE
+  COVERAGE THAT WAS DESIGNED TO. Calls are issued REPEAT-MAJOR — every cell's
+  first draw before any cell's second — precisely so a run cut short yields a
+  COMPLETE n=1 pass rather than complete coverage of some seeds and none of
+  others. What landed:
+
+    distinct (seed, feature) cells   78 of 150   <- COMPLETE n=1
+    cells with 2 draws               0
+    cells with 3 draws               0
+
+
+    seeds with all 5 features    15 of 30   <- SECTIONS B-G ARE OVER THESE
+
+    THE FIRST PASS IS INCOMPLETE, so sections B-G run over the seeds that
+    have EVERY feature rather than over every row that landed. Rows for a
+    partially-covered seed are dropped from those sections — otherwise each
+    feature would be scored over a different seed set, and a per-feature
+    rate would partly reflect which calls happened to land before the run
+    stopped. That is §28.11's weighting bug in a new shape.
+
+    retained by length quintile   Q1:3  Q2:3  Q3:3  Q4:3  Q5:3
+    The golden set is 6 per quintile, so check this spread before quoting
+    any rate: the defect being measured moves along the length axis.
+
+  Section H, which needs repeats, is over the cells that got two, and says so.
+  API calls attempted    114
+  API calls completed    78
+  API failures           36
+  DELIVERY RATE           68.4%   completed / attempted
+
+  An API failure (429, 5xx, socket) is EXCLUDED from conformance — no
+  completion exists, so nothing was generated to conform — and reported here
+  instead. A model that returned garbage is a ZERO, never an exclusion.
+
+    status 429          3
+    status no-status    33
+
+==============================================================================
+B. SCHEMA CONFORMANCE, PER FEATURE — THREE LEVELS, NOT ONE
+==============================================================================
+
+  parses       JSON.parse yields an Array. The bar AIPanel.jsx actually needs.
+  shape        every element carries EXACTLY the prompt's keys, all non-empty
+               strings. This is roadmap 5.4's wording and it is the headline.
+  cardinality  as many elements as the prompt asked for. REPORTED SEPARATELY:
+               a 5-element array where 6 were asked is conforming-but-short,
+               and folding it in would overstate the defect 5.5 fixes.
+
+  summarize and eli5 have NO schema. They are n/a, NOT 100% — inventing a
+  ceiling nobody defined would drag every cross-feature mean upward for free.
+
+  feature      calls   parses    shape   cardin.   items(mean/asked)
+  --------------------------------------------------------------------
+  summarize       15      n/a      n/a       n/a   n/a  (no schema)
+  flashcards      15   100.0%   100.0%    100.0%   6.00 / 6
+  concepts        15   100.0%   100.0%    100.0%   8.00 / 8
+  examQs          15   100.0%   100.0%    100.0%   5.00 / 5
+  eli5            15      n/a      n/a       n/a   n/a  (no schema)
+  --------------------------------------------------------------------
+  ALL JSON        45   100.0%   100.0%    100.0%
+
+==============================================================================
+C. WHY THE FAILURES FAILED — precedence committed in scripts/lib/gen-schema.js
+==============================================================================
+
+  0 of 45 JSON calls did not conform at SHAPE.
+
+  cause            n     of failures   of JSON calls
+  --------------------------------------------------------
+
+  truncated      the model never finished. This is max_tokens: 1024
+                 (llm.service.js:53) — Phase 5 defect 1.
+  wrapper        the payload parsed once prose or fence residue was sliced off.
+                 The strip at :59-60 removes FENCES and never a prose preamble
+                 — Phase 5 defect 2, and the half of it 5.5 owns.
+  element-shape  parsed to an array, wrong field names. Neither defect.
+
+==============================================================================
+D. TRUNCATION — finish_reason, WHICH THE SHIPPED FUNCTION THROWS AWAY
+==============================================================================
+
+  processNote() returns message.content and nothing else (llm.service.js:56),
+  so this column does not exist through the shipped surface. It is why
+  scripts/lib/llm-v1-shipped.js was cut. §28.3.
+
+  feature      calls   finish=length   finish=stop   other
+  ------------------------------------------------------------
+  summarize       15     0.0%        100.0%    0
+  flashcards      15     0.0%        100.0%    0
+  concepts        15     0.0%        100.0%    0
+  examQs          15     0.0%        100.0%    0
+  eli5            15     0.0%        100.0%    0
+
+  CROSS-CHECK — the text-shape classifier against the API's own finish_reason.
+  Two independent signals; agreement is a check on the classifier that costs
+  nothing and was not designed for.
+
+    JSON calls with both      45
+    agree                     45   100.0%
+    finish=length, parsed ok  0   truncated at a point that still parsed
+    finish!=length, unterm.   0   model stopped mid-array on its own
+
+==============================================================================
+E. THE FENCE-STRIP — HOW OFTEN IT FIRED, AND HOW OFTEN IT MATTERED
+==============================================================================
+
+  ALSO INVISIBLE THROUGH THE SHIPPED SURFACE: the strip rewrites the text
+  before any caller sees it, so its own rate cannot be measured from a
+  post-strip string. The frozen copy keeps rawText, which is what makes this
+  section exist at all.
+
+  JSON calls                     45
+  raw output contained a fence   0     0.0%
+  STRIP RESCUED THE CALL         0     0.0%   raw failed to parse, stripped parsed
+  fence residue AFTER stripping  0     0.0%
+
+==============================================================================
+F. TOKENS — THE MEASURED QUANTITY. COST IS A MULTIPLIER APPLIED AFTERWARD.
+==============================================================================
+
+  PRIMER §8.3: token counts are real regardless of price, and this ran on
+  Groq's free tier, so the dollar figure is $0. NO PRICE IS INVENTED HERE —
+  the counts are printed so any rate can be applied later, which is what the
+  ROADMAP's Cost/call column gets.
+
+  feature      calls    in(mean)  out(mean)  out(p50)  out(p95)  out(max)
+  ----------------------------------------------------------------------
+  summarize       15        239        220       216       277       277
+  flashcards      15        257        624       633       903       903
+  concepts        15        256        384       363       659       659
+  examQs          15        258        964       869      1744      1744
+  eli5            15        241        602       604       874       874
+  ----------------------------------------------------------------------
+  ALL             75        250        559
+
+  total tokens this run          in 18735   out 41918
+  cost                           $0 — Groq free tier
+  ceiling that produced the      max_tokens: 2048
+    out(max) column above
+
+  ----------------------------------------------------------------------
+  REASONING TOKENS — A CONFOUND ON SECTION D, MEASURED RATHER THAN NAMED
+  ----------------------------------------------------------------------
+
+  openai/gpt-oss-120b emits a reasoning chain in a SEPARATE
+  `reasoning` field, so it does NOT pollute the JSON and section B is clean.
+  But reasoning tokens COUNT AGAINST completion_tokens and therefore against
+  max_tokens: 1024 — so they consume ceiling that a non-reasoning model would
+  have spent on content, and section D's truncation rate is inflated by
+  exactly this much relative to one.
+
+  feature      calls   reasoning(mean)  (p95)   share of the 1024 ceiling
+  --------------------------------------------------------------------
+  summarize       15               59     138     2.9%
+  flashcards      15              316     504    15.4%
+  concepts        15              140     390     6.8%
+  examQs          15              153     350     7.5%
+  eli5            15               90     275     4.4%
+  --------------------------------------------------------------------
+  ALL             75              152     366     7.4%
+
+  SO SECTION D IS AN UPPER BOUND on what the shipped prompts would truncate
+  at on a non-reasoning model, and the size of the overstatement is the last
+  column. This is the confound priced, not the confound avoided — which is
+  the better outcome, because avoiding it would have meant choosing a model
+  for the measurement's convenience rather than the app's.
+
+==============================================================================
+G. LATENCY — UNCONTROLLED, AND NETWORK-BOUND
+==============================================================================
+
+  §12.4's convention: an uncontrolled laptop, and roadmap 6.5 still owns the
+  controlled figure. THIS ONE IS WEAKER THAN §12.4's — a retrieval p95 is CPU
+  on this machine, and this is a round trip to someone else's GPU over a home
+  connection. It is a property of one network on one afternoon.
+
+  ROADMAP 6.5 budgets the LLM call at < 4 s. Marked pass/fail per feature,
+  BEFORE Study Pack's larger context exists.
+
+  feature      calls     p50      p95      max    6.5 budget (p95 < 4000 ms)
+  ----------------------------------------------------------------------
+  summarize       15     999    1902     1902    PASS
+  flashcards      15    1778    2223     2223    PASS
+  concepts        15    1274    2021     2021    PASS
+  examQs          15    2301    4167     4167    FAIL
+  eli5            15    1767    3334     3334    PASS
+  ----------------------------------------------------------------------
+  ALL             75    1627    3209     4167
+
+==============================================================================
+H. WITHIN-CELL VARIANCE — WHAT n=3 BOUGHT, AND WHETHER IT WAS WORTH IT
+==============================================================================
+
+  A cell is one (seed, feature). At temperature 0.4 repeated draws can
+  disagree. THIS IS THE NUMBER 5.5 NEEDS: if cells flip on a re-draw, a small
+  before/after difference is not attributable to the fix.
+
+  n=3 WAS PLANNED AND THE QUOTA SET n INSTEAD. The run stopped on Groq's
+  200,000 tokens-per-day cap after a complete n=1 pass plus part of the second,
+  so NO CELL REACHED THREE DRAWS. The rows below are over cells with TWO, which
+  answers the same question with less resolution: two draws can disagree, and
+  the rate at which they do is what bounds 5.5's attributable difference.
+
+  feature      cells n>=2   both conform   both fail   SPLIT
+  --------------------------------------------------------------
+  flashcards            0              0           0       0
+  concepts              0              0           0       0
+  examQs                0              0           0       0
+  --------------------------------------------------------------
+  ALL                   0   unanimous 0   SPLIT 0      n/a of cells
+
+  A SPLIT CELL IS A CELL WHOSE CONFORMANCE IS NOT A PROPERTY OF ITS INPUT.
+  Read the ALL row as a floor on the noise 5.5 has to clear: with two draws
+  the observed split rate understates the three-draw rate, because three draws
+  have more chances to disagree.
+
+==============================================================================
+I. CONFORMANCE BY SEED LENGTH — THE AXIS THE GOLDEN SET WAS STRATIFIED ON
+==============================================================================
+
+  5.2 stratified on word count BECAUSE truncation moves along this axis. This
+  is the check that the stratification was aimed at the right thing.
+
+  THE 30 SEEDS' OWN LENGTH DISTRIBUTION IS AN ARTEFACT OF THE SAMPLING and is
+  not evidence about the corpus — §20.2's cost, inherited. The rates below are
+  within-quintile and are not weighted into any overall figure.
+
+  quintile  words(seeds)   JSON calls   shape    finish=length
+  ----------------------------------------------------------------
+         1         23-35            9   100.0%     0.0%
+         2         51-68            9   100.0%     0.0%
+         3         73-98            9   100.0%     0.0%
+         4       104-140            9   100.0%     0.0%
+         5       158-265            9   100.0%     0.0%
+
+==============================================================================
+J. EMPTY AND DEGENERATE OUTPUT
+==============================================================================
+
+  empty completions              0 of 75     0.0%
+  under 40 characters            0 of 75     0.0%
+
+  NEITHER IS CALLED A REFUSAL RATE. Whether the model declined is a semantic
+  judgment and belongs to 5.6's judge; a character threshold cannot tell a
+  refusal from a terse answer, and naming it one would be a rate with no
+  measurement under it.
+
+==============================================================================
+K. ENVIRONMENT
+==============================================================================
+
+  node                 v25.8.1
+  platform             darwin 25.6.0 arm64
+  model the app asks   openai/gpt-oss-120b   and it resolves — npm run gen:probe
+  model requested      openai/gpt-oss-120b   NOT substituted; this is the shipped call
+  model reported       openai/gpt-oss-120b
+  temperature          0.4
+  max_tokens           2048
+  issued by            services/llm.service.js (live)
+  first call           2026-08-19T14:29:08.038Z
+  last call            2026-08-19T15:13:42.743Z
+  golden set           data/gen-eval/clusters.jsonl  sha256 3a0bf51d72d017758908827cd1993eb9973fc91ba6c0913bce77a895c76a7783
+  corpus               db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd
+  ledger               results/gen-v2.calls.jsonl  114 rows  sha256 2f23cc20945a1b51fae59efe748a7e008c5e4a05b4e21c916fc0da39e9cb6e3f
+
+  THE MODEL IS THE ONE INPUT WITH NO CHECKSUM. "model reported" above is what
+  the API said it served, which is a string it chose, not a hash of weights.
+  Re-running this next month may produce different numbers with every input
+  in this repository unchanged, and nothing here could detect that.
+
