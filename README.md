@@ -1,11 +1,16 @@
 # 🧠 Digital Second Brain
 
-> A full-stack note-taking app whose notes link themselves. Every note is scored
-> against the rest of your collection on save, and the resulting relationships are
-> rendered as an interactive knowledge graph.
+> A full-stack note-taking app whose notes link themselves. On save, every note is
+> scored against the rest of your collection and its strongest matches become its
+> related notes. A separate keyword graph makes the whole collection browsable.
 
-**[🔗 Live demo](https://taneesha-digital-second-brain.vercel.app/login)** ·
 [![CI](https://github.com/taneesha-beep/digital-second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/taneesha-beep/digital-second-brain/actions/workflows/ci.yml)
+
+> **This document describes the code on `main`, and nothing is currently deployed.**
+> There was a hosted demo; its backend is gone, so the link has been removed rather
+> than left pointing at a frontend that cannot log anyone in. Everything below is
+> true of this repository at the commit you are reading, which is also what CI runs
+> — not of any running instance. To try it, see **Running locally**.
 
 > **What the badge covers, so a green tick is not read as more than it is.**
 > The backend test suite, including integration tests against a real MongoDB;
@@ -17,20 +22,22 @@
 > drivers and the graph characterization — which need a multi-hundred-megabyte
 > Stack Exchange corpus that is not in the repository; metric validation against
 > `pytrec_eval`, which needs a pinned Python environment; and the LLM features,
-> which need an API key. Those are run by hand and are listed with their commands
-> in `docs/EVALUATION.md`. A green tick means **the checked subset passed**, not
-> that the project is fully tested.
+> which need an API key. Those are run by hand, from the drivers in
+> `backend/scripts/`. A green tick means **the checked subset passed**, not that
+> the project is fully tested.
 
 ---
 
 ## What it does
 
-- **Auto-links notes.** On save, a note's keywords are extracted and compared against
-  every other note you own. Notes sharing enough terms become connected — no manual
-  tagging, no backlink syntax.
-- **Visualises the result.** A per-note graph and a whole-collection graph, both
-  rendered with Cytoscape.js, with keyword nodes you can expand to see why two notes
-  are related.
+- **Auto-links notes.** On save, a note is scored against the rest of your collection
+  with BM25 over the full text, and its top 8 matches become its related notes — no
+  manual tagging, no backlink syntax.
+- **Visualises the collection.** A per-note graph and a whole-collection graph, both
+  rendered with Cytoscape.js, with keyword nodes you can expand into the terms
+  surrounding them. **These graphs are built from each note's extracted keywords, not
+  from the link scores above** — two notes appear connected in the global view when
+  they share a keyword. The scored links are what the related-notes panel shows.
 - **Generates study material with an LLM.** Summaries, flashcards, key concepts,
   exam-style questions, and ELI5 explanations, from the note you have open.
 - **Keeps full version history.** Every edit snapshots the previous content; any
@@ -58,36 +65,71 @@ idf(term)   = log((N + 1) / (df + 1)) + 1
 ```
 
 where `df` is the number of the user's *other* notes containing the term and `N` is
-the size of that corpus. The smoothing keeps the score finite when a term appears in
-no other note, which is the common case for a small collection. The top 10 terms
-become the note's keywords.
+the size of that corpus — up to 500 notes, oldest first. The smoothing keeps the score
+finite when a term appears in no other note, which is the common case for a small
+collection. The top 10 terms become the note's keywords, and they are **stored on the
+note** at that moment; see the third limitation below.
 
 The length bonus is a heuristic, not a standard IR weighting — it biases toward
 longer, more specific terms.
 
 ### 2. Scoring the links
 
-Two notes are compared by the **overlap coefficient** over their keyword sets:
+**What runs today: Okapi BM25 over the full text**, through the same retrieval code the
+evaluation harness calls, so the app and the measurements cannot drift apart. A note is
+scored against the rest of the collection as a query against a corpus, and the top **8**
+are kept. It does not read the stored keywords from step 1 at all — those feed the graph
+and search instead.
+
+There is **no score threshold**. BM25's score has no fixed scale, so a cutoff on it would
+mean nothing; the cap of 8 is the only filter, and it is a rank cutoff.
+
+**What it replaced, kept here because it is the baseline everything is measured against.**
+The original scoring was the **overlap coefficient** over the two notes' keyword sets:
 
 ```
 strength(A, B) = |keywords(A) ∩ keywords(B)| / max(|keywords(A)|, 1)
 ```
 
-Pairs scoring above `0.15` are kept, sorted by strength, and capped at the **8**
-strongest. The link is then written to both notes so the relationship is navigable
-from either end.
+Pairs above `0.15` were kept, sorted, and capped at 8. With 10 keywords that threshold is
+exactly *"share at least 2 words out of 10."* That version is preserved at tag
+`v0-pre-reorientation` and is still executed on every CI run, as the reference side of a
+byte-for-byte parity proof — so the "before" it defines cannot quietly rot.
+
+**Links are stored once per pair, not once per direction.** BM25 is asymmetric —
+`score(A→B) ≠ score(B→A)` — so a row keeps both numbers, each rewritten only by its own
+note's save, and the single weight for the pair is derived from them on read rather than
+stored. Every stored direction also records which retriever version and which parameters
+produced it. One consequence worth knowing: a note's related-notes set is the union of
+"notes it ranked" and "notes that ranked it", so it can exceed 8.
 
 ### 3. Known limitations of the above
 
-Stated plainly, because they are the reason this part of the codebase is being
-reworked:
+Stated plainly, because this part of the codebase is being measured rather than
+assumed, and a limitation nobody writes down is one nobody fixes:
 
-- **The threshold and the cap are unvalidated.** `0.15` and `8` were chosen by hand
-  and have never been measured against any notion of a correct answer.
-- **The overlap coefficient is asymmetric.** `strength(A, B) ≠ strength(B, A)`, so
-  the weight stored on an edge depends on which note was saved last.
-- **Keyword extraction degrades on short notes and on code-heavy text**, where
-  identifiers and boilerplate dominate the term distribution.
+- **The cap of 8 is a product constant, not a tuned one.** The original `0.15` and `8`
+  *were* measured — swept exhaustively against the external judgments, where the best
+  available setting beat the shipped guess by an amount whose confidence interval
+  straddles zero. So the guesses were fine, which is a result rather than a
+  disappointment: the point was that nobody could say. The threshold is now gone
+  entirely; the cap survives untuned because a rank cutoff is the only kind of floor a
+  scale-free score admits.
+- **A note's keywords are a snapshot of the collection as it stood when that note was
+  last saved.** The IDF above is computed over the notes that existed at save time and
+  nothing recomputes it afterwards, so two notes with identical text saved at different
+  times get different keywords — and the earliest notes in a collection are worst
+  affected, because an almost-empty corpus gives every term the same IDF and the ranking
+  collapses toward the longest words present. *Which* notes form that corpus is now
+  specified; *when* is not, and cannot be fixed from that function: any stored value
+  derived from a moving corpus is a function of when it was derived, and the only
+  remedies are to stop storing it or to recompute everything. Measured on Stack Exchange
+  questions shaped as notes, not on a real notebook.
+- **Keyword extraction is believed to degrade on short notes and on code-heavy text**,
+  where identifiers and boilerplate dominate the term distribution. **This one is
+  unmeasured** — it is stated as the expectation it is, and the error analysis that
+  looked hardest at short documents found the opposite failure (dilution by long quoted
+  material) for a different component.
 - **The whole-collection graph used to compare every pair of notes.** It is now built
   from a single inverted index, and the cost is `O(N·K)` to build the index plus
   `O(Σ df²)` to emit edges from it — output-sensitive, and still quadratic if one
@@ -132,11 +174,16 @@ reworked:
                             │  Mongoose 8
                             ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                     MongoDB Atlas                            │
+│                          MongoDB                             │
 │  users         { name, username, email, password }           │
 │  notes         { title, content, contentText, tags,          │
-│                  keywords, embedding, linkedNotes[],         │
-│                  color, category, user }                     │
+│                  keywords, color, category, user,            │
+│                  linkedNotes[] — DEPRECATED, never written,  │
+│                  embedding — unused }                        │
+│  notelinks     { user, noteA, noteB,                         │
+│                  scoreAB / scoreBA, and per direction the    │
+│                  retriever version + params digest }         │
+│                  one row per unordered pair, unique index    │
 │  noteversions  { noteId, versionNumber, content, ... }       │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -191,13 +238,15 @@ published SHA-256:
 docker compose run corpus
 ```
 
-That one needs the raw dump in `data/raw/`, which is not in the repository — see
-`docs/EVALUATION.md` for where it comes from.
+That one needs the raw Stack Exchange dump in `data/raw/`, which is not in the repository:
+it is hundreds of megabytes and is fetched from the public `archive.org` Stack Exchange
+data dumps. The build script is `backend/scripts/build-corpus.js`.
 
 ### With Node directly
 
-**Prerequisites:** Node 18+, a MongoDB connection string, a Groq API key
-(free at `console.groq.com`).
+**Prerequisites:** Node — CI and the Docker image both pin **25.8.1**, which is the only
+version anything is tested against; a MongoDB connection string; and a Groq API key for
+the LLM features (free at `console.groq.com`), which everything else runs without.
 
 ```bash
 git clone https://github.com/taneesha-beep/digital-second-brain.git
@@ -237,7 +286,8 @@ MongoDB and **skip themselves loudly when one is not configured** — they never
 for its absence, and the run prints what it skipped and why:
 
 ```bash
-docker run -d --rm --name dsb-mongo -p 27017:27017 mongo:7
+docker run -d --rm --name dsb-mongo -p 27017:27017 \
+  mongo:7@sha256:9bdaeb6dac6e7e762e84e2f84103d1f9bb078fa1ba6bde8bb9d2274f655ad173
 MONGO_TEST_URI=mongodb://127.0.0.1:27017/dsb_integration_test npm test
 ```
 
@@ -257,11 +307,11 @@ All routes require `Authorization: Bearer <token>` except the two under `/api/au
 | POST | `/api/auth/login` | Log in, returns a JWT |
 | GET | `/api/notes` | All notes for the current user |
 | POST | `/api/notes` | Create a note |
-| GET | `/api/notes/:id` | One note, with linked notes populated |
+| GET | `/api/notes/:id` | One note. Related notes are **not** included — use `/links` below |
 | PUT | `/api/notes/:id` | Update; re-extracts keywords and re-links |
 | DELETE | `/api/notes/:id` | Delete and clean up inbound links |
 | GET | `/api/notes/graph` | Global graph for the current user |
-| GET | `/api/notes/:id/links` | Linked notes, strongest first |
+| GET | `/api/notes/:id/links` | Related notes: the ones this note ranked first, by its own score, then the ones that ranked it |
 | DELETE | `/api/notes/:id/relations/:relatedId` | Remove one link, both directions |
 | GET | `/api/notes/:id/versions` | Version list |
 | GET | `/api/notes/:id/versions/:versionNumber` | One version |
@@ -274,7 +324,9 @@ All routes require `Authorization: Bearer <token>` except the two under `/api/au
 | GET | `/api/export/:noteId?format=` | `pdf`, `markdown`, or `text` |
 
 The graph endpoints return `{ elements: [...] }` in Cytoscape's own format, not
-`{ nodes, links }`.
+`{ nodes, links }`. `/api/graph/global` returns a sibling `meta` alongside it, naming the
+keywords a document-frequency cutoff suppressed — so a missing edge can be told apart from
+an absent relationship. Nothing renders `meta`; it exists to be read.
 
 `mode=semantic` is a misnomer inherited from an earlier design: it extracts keywords
 from the query and scores notes on keyword, title, and body matches. There are no
@@ -284,10 +336,23 @@ embeddings behind it. The `embedding` field on the note schema is likewise unuse
 
 ## Project status
 
-The retrieval layer described under **How the linking works** is being reworked into
-a measured system: the same scoring code evaluated against external human relevance
-judgments, with the threshold and cap tuned against a held-out set rather than
-guessed. The limitations listed above are the starting point for that work.
+**The retrieval layer is measured rather than assumed, and that work is done.** Six
+scoring implementations — lexical overlap, Jaccard, TF-IDF cosine, BM25, dense embeddings,
+and a hybrid of the last two — were each evaluated against external human relevance
+judgments taken from Stack Exchange moderation data, so the answer key was written by
+strangers for unrelated reasons rather than by me about my own notes. Metrics were
+validated against `pytrec_eval`, the NIST reference implementation, and every comparison
+between implementations carries a paired-bootstrap confidence interval.
+
+Two results worth stating because they are not the flattering ones: dense embeddings won,
+which contradicts the prediction written down before the run; and the hybrid **lost** to
+embeddings alone, on both the tuning and the held-out split, despite being the standard
+recommendation. The app ships **BM25** rather than the winner — the embedding model needs
+a vector stored and kept in sync per note, a backfill, and a few hundred megabytes of
+runtime, and it cannot explain why it matched.
+
+Work continuing: connecting retrieval to the LLM features with checkable citations,
+request tracing, and a failure-mode catalog with measured frequencies.
 
 ---
 
