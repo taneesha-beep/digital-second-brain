@@ -602,6 +602,50 @@ async function run(clusters) {
   console.log(`\n  attempts ${attempts}   completed ${completed}   delivery ${((completed / attempts) * 100).toFixed(1)}%   ${mins} min\n`);
 }
 
+
+/**
+ * What a planned run would COST, printed at the only moment it can change a
+ * decision: before --run.
+ *
+ * TWO SESSIONS LOST A RUN TO THIS. 5.3 stopped at 234 of 330 cells and 5.5 at
+ * 78 of 150, both on a daily cap neither had estimated against. The plan output
+ * said "would call 252" and nothing else, which is true and useless — 252 calls
+ * is roughly three times the daily budget, and nothing said so.
+ *
+ * ESTIMATED ON THE RESERVATION, NOT ON EXPECTED USAGE, because that is how the
+ * per-minute window is charged (§29.6) and it is the conservative direction for
+ * the daily one. The prompt term is measured from the existing ledger when there
+ * is one, so the estimate sharpens as evidence accumulates rather than staying a
+ * guess.
+ */
+function printQuotaEstimate(calls, variant) {
+  if (calls <= 0) return;
+  const maxTokens = variant === 'v2' ? liveService.MAX_TOKENS : shipped.MAX_TOKENS;
+
+  const prior = readJsonl(LEDGER()).filter((r) => r.ok && Number.isFinite(r.promptTokens));
+  const promptMean = prior.length
+    ? Math.round(prior.reduce((a, r) => a + r.promptTokens, 0) / prior.length)
+    : 270;
+  const perCall = promptMean + maxTokens;
+  const reserved = calls * perCall;
+
+  console.log('');
+  console.log('  QUOTA — THE BINDING CONSTRAINT, ESTIMATED BEFORE SPENDING');
+  console.log(`    per call        ~${perCall} reserved   (prompt ~${promptMean}${prior.length ? `, measured over ${prior.length} rows` : ', assumed'} + max_tokens ${maxTokens})`);
+  console.log(`    this run        ~${reserved} tokens reserved for ${calls} calls`);
+  console.log(`    daily limit     ${DAILY_TOKEN_LIMIT}, per ORGANISATION, rolling 24h`);
+  if (reserved > DAILY_TOKEN_LIMIT) {
+    console.log('');
+    console.log(`    *** THIS RUN CANNOT FIT IN ONE DAY. It is ~${(reserved / DAILY_TOKEN_LIMIT).toFixed(1)}x the daily budget.`);
+    console.log('    Use --take N to buy a deliberate prefix. Because cells are issued');
+    console.log('    REPEAT-MAJOR, --take 150 is exactly the balanced first pass.');
+  }
+  console.log('');
+  console.log('    Check what is actually left first:  npm run gen:quota');
+  console.log('    A NEW API KEY DOES NOT RESET IT — the cap is per organisation.');
+  console.log('');
+}
+
 /**
  * The per-minute token limit, MEASURED rather than quoted: 5.3 read
  * `x-ratelimit-limit-tokens: 8000` off a live response (§28.6). It is here as a
@@ -611,6 +655,8 @@ async function run(clusters) {
  * cannot know its exact phase, so aiming at the limit means crossing it.
  */
 const TOKENS_PER_MIN = 8000;
+/** Measured from the 429 body, free tier. Per ORGANISATION, rolling 24h. */
+const DAILY_TOKEN_LIMIT = 200000;
 const TOKEN_TARGET = 0.85;
 
 /** Tokens spent in the trailing 60 s, dropping anything older in place. */
@@ -1260,7 +1306,8 @@ async function main() {
     console.log(`  already complete  ${done.size}`);
     console.log(`  would call        ${cells.length - done.size}`);
     console.log(`  pacing            serial, ${DEFAULT_DELAY_MS} ms apart, no retries`);
-    console.log(`  ceiling           ${DEFAULT_MAX_CALLS}\n`);
+    console.log(`  ceiling           ${DEFAULT_MAX_CALLS}`);
+    printQuotaEstimate(cells.length - done.size, variantName());
     return;
   }
 
