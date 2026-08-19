@@ -63,8 +63,38 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
-// Same four documents as check:claims, so "it passed the checks" has one
-// domain — but NOT the same verdict rule, and the difference is the point.
+// README.md IS IN THIS LIST AND IS NOT IN check:claims'. Phase 4.6's README
+// pass, and the asymmetry is decided rather than sloppy.
+//
+// It is the ONLY PUBLISHED DOCUMENT — everything under docs/ is gitignored —
+// and until now it was scanned by NEITHER tool. That gap has fired twice: 4.4
+// updated four documents and left README saying the global graph "compares
+// every pair of notes", which survived four sessions until a manual read found
+// it; the README pass then found eight more false claims, six of them outside
+// the section anyone re-reads.
+//
+// WHAT ADDING IT HERE ACTUALLY BUYS, STATED NARROWLY, BECAUSE IT IS LESS THAN
+// THE MOTIVATION ABOVE IMPLIES: rules 1 and 2 check that commands run and paths
+// resolve. NOT ONE of the eight claims was a command or a path — they were
+// false sentences about behaviour, and no checker in this repo can see those.
+// So this guards a DIFFERENT class from the one that prompted it: a renamed
+// script or a moved file silently breaking the instructions a stranger follows.
+// Worth one line; not worth mistaking for the fix.
+//
+// TWO LIMITS A READER SHOULD HAVE. Rule 2 resolves against the WORKING TREE, so
+// it cannot see that a path is gitignored — README's two references to
+// docs/EVALUATION.md resolved here and were dead for everyone else, and the
+// README pass removed them by hand rather than by this tool. And adding any
+// writeup slightly LOOSENS rule 3, whose reverse coverage counts a file as
+// documented if its basename appears anywhere.
+//
+// check:claims deliberately does NOT gain README: §25.4 removed a test count
+// from it precisely so that the published file holds no figure that rots, and
+// the right rule there is "no decimals", which is not a thing that checker says.
+//
+// Same five documents as check:claims plus README, so "it passed the checks"
+// has one domain — but NOT the same verdict rule, and the difference is the
+// point.
 //
 //   current          the document describes what EXISTS. An unresolved path is
 //                    staleness and it FAILS. This is where all three recorded
@@ -79,6 +109,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // because a reader types a command out of any document without asking which
 // phase wrote it. Commands that do not exist yet go on PLANNED_SCRIPTS.
 const WRITEUPS = [
+  { file: 'README.md', mode: 'current' },
   { file: 'docs/EVALUATION.md', mode: 'current' },
   { file: 'docs/PRIMER.md', mode: 'current' },
   { file: 'docs/ROADMAP.md', mode: 'forward-looking' },
