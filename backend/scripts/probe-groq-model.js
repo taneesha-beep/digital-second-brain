@@ -2,31 +2,48 @@
 'use strict';
 
 /**
- * probe-groq-model.js — Phase 5.3.
+ * probe-groq-model.js — Phase 5.3, TURNED INTO A CHECK AT 5.0.
  *
- *   npm run gen:probe                 print the probe
- *   npm run gen:probe -- --write      also write results/gen-model-retired.txt
+ *   npm run gen:probe                 check the LIVE model; exit 1 if it is gone
+ *   npm run gen:probe -- --write      also write results/gen-model-resolves.txt
  *
  * WRITTEN BECAUSE THE BASELINE RUN FAILED ON ITS FIRST CALL, and the failure
- * turned out to be the session's headline finding rather than a harness bug.
+ * turned out to be 5.3's headline finding rather than a harness bug:
+ * `llama-3.3-70b-versatile` had been retired, so all five AI features returned
+ * a 500 to every user, and nothing in this repository could have noticed — no
+ * test, no checker, no CI step and no eval touched the model string, and
+ * `npm test` passed with the feature completely dead.
  *
- * `services/llm.service.js:17` hardcodes `llama-3.3-70b-versatile`. On 19 Aug
- * 2026 that string returns HTTP 404 `model_not_found` for every one of the five
- * shipped features. The key is fine — `models.list()` succeeds — so this is a
- * RETIREMENT, not an auth failure and not a rate limit.
+ * ---------------------------------------------------------------------------
+ * WHAT 5.0 CHANGED, AND IT IS THE DIFFERENCE BETWEEN A PROBE AND A CHECK
+ * ---------------------------------------------------------------------------
  *
- * THE CONSEQUENCE IS NOT ABOUT THE EVAL. Every one of the five AI features
- * returns a 500 to any user, today, and has since Groq withdrew the model.
- * Nothing in this repository could have noticed: no test, no checker, no CI
- * step and no eval touches the model string, and `npm test` passes with the
- * feature completely dead.
+ * 5.3's version hardcoded the retired string through `llm-v1-shipped.MODEL`, so
+ * it could only ever re-report a finding that was already made. It now reads
+ * the LIVE model from `services/llm.service.js` — which 5.0 exported for this
+ * purpose — and EXITS NON-ZERO when that string is not reachable. That is
+ * ROADMAP 5.0's Done criterion: "a check that fails when the model string stops
+ * resolving".
  *
- * THIS PROBE IS THE ONE THING HERE THAT IS WORTH RE-RUNNING LATER. Its output
- * is a fact about a third party on a date, so it does not regenerate — the
- * model list will move again. It is committed as the evidence for a claim, in
- * the class of the `curl` transcript §27.1 used to establish that the Railway
- * backend serves nothing. §27.6's rule: A CLOSED QUESTION IS AN ASSERTION WITH
- * NO EXPIRY, and a hardcoded model id is exactly that shape.
+ * It cannot run in CI: it needs a network and a key. The companion that runs
+ * under `npm test` when a key is exported is `tests/gen-model-resolves.test.js`,
+ * and the residual gap — neither is automatic — is stated there and in §29.3.
+ *
+ * ---------------------------------------------------------------------------
+ * IT WRITES A DIFFERENT FILE FROM THE ONE 5.3 WROTE, DELIBERATELY
+ * ---------------------------------------------------------------------------
+ *
+ * `results/gen-model-retired.txt` is the evidence that the shipped app was dead
+ * on 19 Aug 2026. Now that the live model resolves, re-running with --write
+ * would OVERWRITE that evidence with a success — deleting the record of the
+ * defect by fixing it. So the retirement transcript is left frozen, in the
+ * class of the `curl` transcript §27.1 used against the Railway host, and this
+ * writes `results/gen-model-resolves.txt` instead.
+ *
+ * NEITHER FILE REGENERATES. Both are facts about a third party on a date, and
+ * the model list will move again — which is the point of writing them down.
+ * §27.6's rule: A CLOSED QUESTION IS AN ASSERTION WITH NO EXPIRY, and a
+ * hardcoded model id is exactly that shape.
  */
 
 const fs = require('fs');
@@ -35,10 +52,11 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Groq = require('groq-sdk');
-const shipped = require('./lib/llm-v1-shipped');
+const shippedV1 = require('./lib/llm-v1-shipped');
+const live = require('../services/llm.service');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const OUT = path.join(REPO, 'results', 'gen-model-retired.txt');
+const OUT = path.join(REPO, 'results', 'gen-model-resolves.txt');
 
 async function main() {
   const apiKey = process.env.GROQ_API_KEY;
@@ -50,10 +68,15 @@ async function main() {
   const out = [];
   const w = (s = '') => out.push(s);
 
-  w('THE SHIPPED MODEL STRING IS RETIRED — Phase 5.3, 19 Aug 2026');
+  // Set false by any step that fails. THE EXIT CODE IS THE POINT of this
+  // script existing at 5.0 rather than 5.3: a probe reports, a check fails.
+  let ok = true;
+
+  w('DOES THE MODEL THE APP ASKS FOR STILL RESOLVE? — Phase 5.0');
   w('='.repeat(74));
   w('');
-  w('  services/llm.service.js:17   const MODEL = \'llama-3.3-70b-versatile\';');
+  w(`  services/llm.service.js      const MODEL = '${live.MODEL}';`);
+  w(`  retired at 5.3, kept frozen  '${shippedV1.MODEL}'  -> results/gen-model-retired.txt`);
   w('');
   w('  DOES NOT REGENERATE. This is a fact about a third party on a date, in the');
   w('  class of §27.1\'s curl transcript against the Railway host. The model list');
@@ -75,59 +98,87 @@ async function main() {
     w('');
     w('   The key does not authenticate, so nothing below distinguishes a retired');
     w('   model from a bad key. Fix the key before reading any further.');
-    finish(out);
+    finish(out, false);
     return;
   }
 
   w('');
-  w('2. IS THE SHIPPED MODEL AMONG THEM?');
+  w('2. IS THE MODEL THE APP ASKS FOR AMONG THEM?');
   w('');
-  const present = models.includes(shipped.MODEL);
-  w(`   ${shipped.MODEL}   ${present ? 'PRESENT' : 'ABSENT'}`);
+  const present = models.includes(live.MODEL);
+  if (!present) ok = false;
+  w(`   ${live.MODEL}   ${present ? 'PRESENT' : 'ABSENT'}`);
+  w('');
+  w(`   the string 5.3 found retired, for contrast:`);
+  w(`   ${shippedV1.MODEL}   ${models.includes(shippedV1.MODEL) ? 'PRESENT — 5.3 IS STALE, re-read it' : 'ABSENT, as at 5.3'}`);
   w('');
   for (const id of models) w(`     ${id}`);
 
   w('');
   w('3. WHAT DOES A REAL CALL DO?');
   w('');
-  w('   One call, the shipped prompt for `summarize`, the shipped temperature and');
-  w('   max_tokens, against the shipped model string.');
+  w('   One call, the shipped prompt for `summarize`, against the LIVE model.');
+  w('');
+  w('   The frozen v1 copy issues it, with its `model` override pointed at the');
+  w('   live string. Its max_tokens stays 1024 — the frozen copy exposes no');
+  w('   override for it and must not gain one. That does not weaken this check:');
+  w('   what is being tested is whether the MODEL resolves, and a ceiling of');
+  w('   1024 answers that as well as 2048 does. A truncated summarize would');
+  w('   still be a 200.');
   w('');
   try {
-    await shipped.callShipped(groq, 'How should I cook bacon in an oven?', 'summarize');
-    w('   200 OK — the model answered. THIS PROBE IS STALE; re-read it.');
+    const obs = await shippedV1.callShipped(
+      groq, 'How should I cook bacon in an oven?', 'summarize',
+      { model: live.MODEL }
+    );
+    w(`   200 OK — the model answered.`);
+    w(`   finish_reason            ${obs.finishReason}`);
+    w(`   completion tokens        ${obs.completionTokens}`);
+    w(`   latency                  ${obs.latencyMs} ms`);
   } catch (err) {
+    ok = false;
     w(`   status                   ${err.status}`);
     w(`   message                  ${String(err.message).replace(/\s+/g, ' ').slice(0, 220)}`);
   }
 
   w('');
-  w('4. WHAT THIS MEANS FOR THE APP, WHICH IS NOT AN EVAL QUESTION');
+  w('4. VERDICT');
   w('');
-  w('   POST /api/llm/:noteId/:feature returns 500 for all five features. The');
-  w('   error mapping at llm.service.js:64-77 handles 401, 429 and 503 and has no');
-  w('   branch for 404, so the user-visible string is the generic');
-  w('   "AI processing failed: 404 ...".');
+  if (ok) {
+    w('   PASS — the model services/llm.service.js names is reachable and answers.');
+    w('   POST /api/llm/:noteId/:feature can serve all five features.');
+  } else {
+    w('   FAIL — the app asks for a model it cannot reach, so all five AI features');
+    w('   return 500 to every user RIGHT NOW. This is the exact state 5.3 found');
+    w('   (results/gen-model-retired.txt) and it needs a product decision: pick a');
+    w('   model from the list above, change llm.service.js, and re-measure §29 on');
+    w('   the new one or the before/after means nothing.');
+  }
   w('');
-  w('   NOTHING IN THIS REPOSITORY COULD HAVE CAUGHT IT. No test, no checker, no');
-  w('   CI step and no eval reads the model string; `npm test` passes green with');
-  w('   the feature entirely dead. check:blocks verifies that commands run and');
-  w('   paths resolve — a retired third-party identifier is neither.');
-  w('');
-  w('   Fixing it is a PRODUCT decision (which model the app should ship) and is');
-  w('   deliberately not taken by this measurement session. ROADMAP Phase 5.');
+  w('   Nothing else in this repository checks this. `npm test` passes green with');
+  w('   the feature entirely dead unless GROQ_API_KEY is exported, which is what');
+  w('   tests/gen-model-resolves.test.js needs. check:blocks verifies that');
+  w('   commands run and paths resolve — a retired third-party identifier is');
+  w('   neither. §29.3.');
   w('');
 
-  finish(out);
+  finish(out, ok);
 }
 
-function finish(out) {
+/**
+ * Print, optionally write, and SET THE EXIT CODE. The exit code is what makes
+ * this a check rather than a probe — ROADMAP 5.0's Done criterion asks for
+ * something that FAILS when the model string stops resolving, and a script that
+ * prints "ABSENT" and exits 0 does not fail anything.
+ */
+function finish(out, ok) {
   const text = `${out.join('\n')}\n`;
   process.stdout.write(text);
   if (process.argv.includes('--write')) {
     fs.writeFileSync(OUT, text);
     console.log(`\nwrote ${path.relative(REPO, OUT)}`);
   }
+  if (!ok) process.exitCode = 1;
 }
 
 if (require.main === module) main().catch((err) => { console.error(err); process.exit(1); });

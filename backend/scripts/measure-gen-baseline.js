@@ -2,14 +2,57 @@
 'use strict';
 
 /**
- * measure-gen-baseline.js — Phase 5.3. The generation baseline, `gen-v1`.
+ * measure-gen-baseline.js — Phase 5.3 (`gen-v1`), EXTENDED AT 5.5 (`gen-v2`).
  *
- *   npm run gen:baseline -- --run --model openai/gpt-oss-120b
- *   npm run gen:baseline -- --report   recompute the report from the ledger, no calls
- *   npm run gen:baseline               plan only: print what --run would do
+ *   npm run gen:baseline -- --run --model openai/gpt-oss-120b     the 5.3 baseline
+ *   npm run gen:baseline -- --report                              recompute, no calls
+ *   npm run gen:baseline                                          plan only
+ *
+ *   npm run gen:v2 -- --run       the 5.5 re-measure, through the LIVE service
+ *   npm run gen:v2 -- --report
  *
  * ---------------------------------------------------------------------------
- * --model IS REQUIRED FOR A RUN, AND THAT IS A FINDING RATHER THAN AN OPTION
+ * TWO VARIANTS, AND THE DIFFERENCE BETWEEN THEM IS WHICH CODE ISSUES THE CALL
+ * ---------------------------------------------------------------------------
+ *
+ *   --variant v1   calls scripts/lib/llm-v1-shipped.js, the FROZEN COPY, with
+ *                  --model REQUIRED because the string it holds is retired.
+ *                  This is what produced results/gen-baseline.txt.
+ *
+ *   --variant v2   calls services/llm.service.js DIRECTLY — the live shipped
+ *                  function — and takes NO --model and NO parameter overrides
+ *                  at all. Phase 5.5 made processNote() return `usage` and
+ *                  `finish_reason` instead of discarding them, which is the
+ *                  entire reason the frozen copy had to exist (§28.3). With
+ *                  that fixed, measuring a copy would be measuring the wrong
+ *                  thing when the real one is available.
+ *
+ * SO v2 HAS NO SUBSTITUTED VARIABLE AT ALL, where v1 had one. That is a
+ * STRONGER position than the baseline's, not a weaker one — but the comparison
+ * is only valid because both ran on the same model, which is checked rather
+ * than remembered (see the guard in run()).
+ *
+ * ---------------------------------------------------------------------------
+ * THE LEDGER IS SELF-DESCRIBING, AND AT 5.3 IT WAS NOT
+ * ---------------------------------------------------------------------------
+ *
+ * 5.3's rows recorded the model and the report REFUSED a ledger mixing two of
+ * them — "a ledger mixing two models would silently average two systems". That
+ * guard was one field short: rows recorded NEITHER `max_tokens` NOR
+ * `temperature`, so re-running at a different ceiling would have appended to
+ * the same file and averaged two systems in exactly the way the model guard
+ * exists to prevent. Found while building 5.5, which is the session that would
+ * have done it.
+ *
+ * Rows now carry `maxTokens`, `temperature` and `variant`; the report REFUSES a
+ * ledger that mixes any of them, and derives the ceiling it reports against
+ * FROM THE LEDGER rather than from whatever the current source happens to say.
+ * A report describes the run it reports on. Rows written before 5.5 carry no
+ * such fields and are read as the values that were shipped then — see
+ * `paramsOf()`, which says so at the site.
+ *
+ * ---------------------------------------------------------------------------
+ * --model IS REQUIRED FOR A v1 RUN, AND THAT IS A FINDING RATHER THAN AN OPTION
  * ---------------------------------------------------------------------------
  *
  * The shipped string `llama-3.3-70b-versatile` (llm.service.js:17) RETURNS 404
@@ -142,13 +185,32 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Groq = require('groq-sdk');
 const shipped = require('./lib/llm-v1-shipped');
+const liveService = require('../services/llm.service');
 const { classify, SCHEMAS, PROSE_FEATURES, ALL_FEATURES, VERY_SHORT_CHARS } = require('./lib/gen-schema');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const CLUSTERS = path.join(REPO, 'data', 'gen-eval', 'clusters.jsonl');
 const CLUSTER_MANIFEST = path.join(REPO, 'data', 'gen-eval', 'clusters.manifest.json');
-const LEDGER = path.join(REPO, 'results', 'gen-baseline.calls.jsonl');
-const REPORT = path.join(REPO, 'results', 'gen-baseline.txt');
+/**
+ * Where each variant's artifacts live. SEPARATE FILES, NOT A SHARED ONE.
+ *
+ * The 5.3 ledger is the "before" and CLAUDE.md's fourth trap says a before is
+ * unrecoverable. A resumable ledger appends, so pointing a v2 run at the v1
+ * file is a one-flag mistake that would destroy it. Physically separate paths
+ * make that impossible rather than merely discouraged.
+ */
+const VARIANTS = {
+  v1: {
+    ledger: path.join(REPO, 'results', 'gen-baseline.calls.jsonl'),
+    report: path.join(REPO, 'results', 'gen-baseline.txt'),
+    label: 'PHASE 5.3 — GENERATION BASELINE, gen-v1'
+  },
+  v2: {
+    ledger: path.join(REPO, 'results', 'gen-v2.calls.jsonl'),
+    report: path.join(REPO, 'results', 'gen-v2.txt'),
+    label: 'PHASE 5.5 — CONFORMANCE RE-MEASURE, gen-v2'
+  }
+};
 
 /**
  * n = 3 for the three JSON features, n = 1 for the two prose ones.
@@ -180,6 +242,37 @@ function arg(name, fallback) {
   return i === -1 || i === process.argv.length - 1 ? fallback : process.argv[i + 1];
 }
 const has = (name) => process.argv.includes(`--${name}`);
+
+/** Which variant this invocation is about. Defaults to the 5.3 baseline. */
+function variantName() {
+  const v = arg('variant', 'v1');
+  if (!VARIANTS[v]) {
+    console.error(`--variant must be one of ${Object.keys(VARIANTS).join(', ')}; got "${v}"`);
+    process.exit(1);
+  }
+  return v;
+}
+const LEDGER = () => VARIANTS[variantName()].ledger;
+const REPORT = () => VARIANTS[variantName()].report;
+
+/**
+ * The call parameters a ledger row was produced under.
+ *
+ * ROWS WRITTEN BEFORE 5.5 CARRY NEITHER FIELD, and they are read as 1024 / 0.4
+ * — the values `llm-v1-shipped.js` holds and that llm.service.js shipped when
+ * they were written. That is a backfill of a KNOWN constant, not a guess: the
+ * frozen copy is the record of what those numbers were, and
+ * tests/gen-shipped-parity.test.js pins them. Written down here rather than
+ * left implicit, because a silent default is how a wrong denominator gets in.
+ */
+function paramsOf(row) {
+  return {
+    model: row.modelRequested || row.model || null,
+    maxTokens: row.maxTokens ?? shipped.MAX_TOKENS,
+    temperature: row.temperature ?? shipped.TEMPERATURE,
+    variant: row.variant || 'v1'
+  };
+}
 
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
@@ -233,32 +326,88 @@ async function run(clusters) {
 
   const delayMs = Number(arg('delay', DEFAULT_DELAY_MS));
   const maxCalls = Number(arg('max-calls', DEFAULT_MAX_CALLS));
-  const model = arg('model', null);
+  const variant = variantName();
 
-  if (!model) {
-    console.error('--model IS REQUIRED. The shipped string is retired:');
-    console.error(`  ${shipped.MODEL} -> 404 model_not_found  (results/gen-model-retired.txt)`);
-    console.error('Naming the model on the command line is what keeps a substituted run a');
-    console.error('ONE-VARIABLE change instead of a silent one. e.g. --model openai/gpt-oss-120b');
-    process.exit(1);
+  // --- what issues the call, and under what parameters ----------------------
+  //
+  // v1 takes the model from the command line because its own string is dead.
+  // v2 takes EVERYTHING from services/llm.service.js and accepts no overrides,
+  // because the point of v2 is to measure what actually ships.
+  let model;
+  let maxTokens;
+  let temperature;
+  let issue;
+
+  if (variant === 'v1') {
+    model = arg('model', null);
+    if (!model) {
+      console.error('--model IS REQUIRED for --variant v1. The string it holds is retired:');
+      console.error(`  ${shipped.MODEL} -> 404 model_not_found  (results/gen-model-retired.txt)`);
+      console.error('Naming the model on the command line is what keeps a substituted run a');
+      console.error('ONE-VARIABLE change instead of a silent one. e.g. --model openai/gpt-oss-120b');
+      process.exit(1);
+    }
+    maxTokens = shipped.MAX_TOKENS;
+    temperature = shipped.TEMPERATURE;
+    const groqV1 = new Groq({ apiKey, maxRetries: 0 });
+    issue = (contentText, feature) => shipped.callShipped(groqV1, contentText, feature, { model });
+  } else {
+    if (arg('model', null)) {
+      console.error('--model IS REFUSED for --variant v2. v2 measures what services/llm.service.js');
+      console.error('actually ships; a model override would make the measurement describe a');
+      console.error('configuration nobody runs. Change llm.service.js if you mean to change it.');
+      process.exit(1);
+    }
+    model = liveService.MODEL;
+    maxTokens = liveService.MAX_TOKENS;
+    temperature = liveService.TEMPERATURE;
+    issue = (contentText, feature) => liveService.processNote(contentText, feature);
+
+    // THE COMPARABILITY GUARD, MECHANISED RATHER THAN REMEMBERED.
+    //
+    // ROADMAP 5.0: "5.5 must re-measure against the same model 5.3 used or the
+    // before/after is meaningless." That is a sentence in a document, and a
+    // sentence cannot stop a run. This can: if the live model is not the one
+    // the v1 ledger recorded, the two halves of §29's comparison are two
+    // variables apart and the run refuses to start.
+    const v1Rows = readJsonl(VARIANTS.v1.ledger).filter((r) => r.ok);
+    const v1Models = [...new Set(v1Rows.map((r) => paramsOf(r).model))];
+    if (v1Rows.length > 0 && !(v1Models.length === 1 && v1Models[0] === model)) {
+      console.error('REFUSING: the live model does not match the baseline this will be compared to.');
+      console.error(`  baseline ledger  ${v1Models.join(', ') || '(none)'}   results/gen-baseline.calls.jsonl`);
+      console.error(`  llm.service.js   ${model}`);
+      console.error('Re-measuring on a different model makes 5.5 a TWO-variable change and the');
+      console.error('5.3 baseline unusable — and the true gen-v1 is permanently unmeasurable, so');
+      console.error('there is no second chance to re-baseline. EVALUATION.md §29.4.');
+      process.exit(1);
+    }
   }
 
   const bySeed = new Map(clusters.map((c) => [c.seedId, c]));
   const cells = planCells(clusters);
 
-  const existing = readJsonl(LEDGER);
+  const existing = readJsonl(LEDGER());
   const done = new Set(existing.filter((r) => r.ok).map(keyOf));
   const todo = cells.filter((c) => !done.has(keyOf(c)));
 
-  console.log('PHASE 5.3 — GENERATION BASELINE, gen-v1\n');
-  console.log(`  shipped model     ${shipped.MODEL}   RETIRED — 404 model_not_found`);
-  console.log(`  model in use      ${model}   THE ONE VARIABLE CHANGED`);
-  console.log(`  held fixed        prompts, system message, temperature ${shipped.TEMPERATURE}, max_tokens ${shipped.MAX_TOKENS}, the strip`);
+  console.log(`${VARIANTS[variant].label}\n`);
+  if (variant === 'v1') {
+    console.log(`  shipped model     ${shipped.MODEL}   RETIRED — 404 model_not_found`);
+    console.log(`  model in use      ${model}   THE ONE VARIABLE CHANGED`);
+    console.log(`  issued by         scripts/lib/llm-v1-shipped.js (frozen copy)`);
+  } else {
+    console.log(`  model in use      ${model}   from llm.service.js, matches the baseline`);
+    console.log(`  max_tokens        ${maxTokens}   THE ONE VARIABLE CHANGED (was ${shipped.MAX_TOKENS})`);
+    console.log(`  issued by         services/llm.service.js — THE LIVE FUNCTION, no copy`);
+  }
+  console.log(`  held fixed        prompts, system message, temperature ${temperature}, the strip` +
+    (variant === 'v1' ? `, max_tokens ${maxTokens}` : ''));
   console.log('');
   console.log(`  cells planned     ${cells.length}`);
   console.log(`  already complete  ${done.size}   (from ${existing.length} ledger rows)`);
   console.log(`  to call now       ${todo.length}`);
-  console.log(`  pacing            serial, ${delayMs} ms between calls, header-driven pause`);
+  console.log(`  pacing            serial, ${delayMs} ms between calls, ` +
+    (variant === 'v1' ? 'header-driven pause' : `self-paced under ${TOKENS_PER_MIN}/min from usage`));
   console.log(`  ceiling           --max-calls ${maxCalls}`);
   console.log(`  retries           NONE — a 429 pauses the run; the ledger resumes it\n`);
 
@@ -271,13 +420,14 @@ async function run(clusters) {
     return;
   }
 
-  const groq = new Groq({ apiKey, maxRetries: 0 });
-  const stream = fs.createWriteStream(LEDGER, { flags: 'a' });
+  const stream = fs.createWriteStream(LEDGER(), { flags: 'a' });
   const append = (row) => stream.write(`${JSON.stringify(row)}\n`);
 
   let attempts = 0;
   let completed = 0;
   const started = Date.now();
+  /** Rolling {at, tokens} for v2's self-paced token window. See throttleFor(). */
+  const spent = [];
 
   for (const cell of todo) {
     const cluster = bySeed.get(cell.seedId);
@@ -288,7 +438,7 @@ async function run(clusters) {
     let failure = null;
 
     try {
-      observation = await shipped.callShipped(groq, contentText, cell.feature, { model });
+      observation = await issue(contentText, cell.feature);
       completed += 1;
     } catch (err) {
       failure = {
@@ -309,12 +459,19 @@ async function run(clusters) {
         completionTokens: observation.completionTokens,
         reasoningTokens: observation.reasoningTokens,
         totalTokens: observation.totalTokens,
-        modelRequested: observation.modelRequested,
+        modelRequested: observation.modelRequested || model,
         model: observation.model,
+        // THE PARAMETERS THIS ROW WAS PRODUCED UNDER. 5.3's rows carried the
+        // model and nothing else, so a re-run at a different ceiling would have
+        // appended to the same file and averaged two systems — the exact thing
+        // the model guard exists to prevent, one field short. See paramsOf().
+        variant,
+        maxTokens,
+        temperature,
         // rawText ONLY. `text` is applyShippedStrip(rawText, feature), which is
         // committed code — §8.5's rule: do not commit derived data twice.
         rawText: observation.rawText,
-        rateLimit: observation.rateLimit
+        rateLimit: observation.rateLimit || null
       });
       const v = classify(shipped.applyShippedStrip(observation.rawText, cell.feature), cell.feature);
       const mark = v.schema === null ? (v.empty ? 'EMPTY' : 'prose') : (v.schema.shape ? 'ok' : (v.schema.cause || 'fail'));
@@ -337,6 +494,21 @@ async function run(clusters) {
       }
     }
 
+    // --- pacing -------------------------------------------------------------
+    //
+    // v1 paced off the `x-ratelimit-*` HEADERS, which llm-v1-shipped.js surfaces
+    // via withResponse(). THE LIVE processNote DOES NOT RETURN HEADERS, and it
+    // is not going to: exposing HTTP response metadata through a service
+    // function to suit a measurement is the shape of change 5.3 refused to make.
+    //
+    // So v2 paces off `usage`, which the response BODY carries and processNote
+    // now returns. That is the same discipline by another route — measured
+    // pacing from what the API actually reported, not a figure quoted from a
+    // webpage — and it is strictly better informed than a fixed delay, because
+    // each call's exact cost is known the moment it lands.
+    //
+    // It does NOT see the 200,000-per-day cap. Nothing does (§28.6); that is
+    // what --max-calls is for.
     if (observation && observation.rateLimit) {
       const remaining = Number(observation.rateLimit['x-ratelimit-remaining-tokens']);
       const reset = observation.rateLimit['x-ratelimit-reset-tokens'];
@@ -344,6 +516,13 @@ async function run(clusters) {
         const waitMs = parseResetMs(reset) ?? 60000;
         console.log(`  ...token window low (${remaining} left), pausing ${Math.round(waitMs / 1000)} s`);
         await sleep(waitMs + 1000);
+      }
+    } else if (observation && Number.isFinite(observation.totalTokens)) {
+      spent.push({ at: Date.now(), tokens: observation.totalTokens });
+      const waitMs = throttleFor(spent);
+      if (waitMs > 0) {
+        console.log(`  ...${tokensInWindow(spent)} tokens in the last minute of ${TOKENS_PER_MIN}, pausing ${Math.round(waitMs / 1000)} s`);
+        await sleep(waitMs);
       }
     }
 
@@ -353,6 +532,35 @@ async function run(clusters) {
   stream.end();
   const mins = ((Date.now() - started) / 60000).toFixed(1);
   console.log(`\n  attempts ${attempts}   completed ${completed}   delivery ${((completed / attempts) * 100).toFixed(1)}%   ${mins} min\n`);
+}
+
+/**
+ * The per-minute token limit, MEASURED rather than quoted: 5.3 read
+ * `x-ratelimit-limit-tokens: 8000` off a live response (§28.6). It is here as a
+ * constant only because v2 cannot see the header it came from.
+ *
+ * Paced to 85% of it. The window Groq enforces is a sliding one and the client
+ * cannot know its exact phase, so aiming at the limit means crossing it.
+ */
+const TOKENS_PER_MIN = 8000;
+const TOKEN_TARGET = 0.85;
+
+/** Tokens spent in the trailing 60 s, dropping anything older in place. */
+function tokensInWindow(spent) {
+  const cutoff = Date.now() - 60000;
+  while (spent.length > 0 && spent[0].at < cutoff) spent.shift();
+  return spent.reduce((a, b) => a + b.tokens, 0);
+}
+
+/**
+ * How long to wait so the trailing minute stays under the target — long enough
+ * for the oldest entries to age out of the window, and no longer.
+ */
+function throttleFor(spent) {
+  const used = tokensInWindow(spent);
+  if (used < TOKENS_PER_MIN * TOKEN_TARGET) return 0;
+  if (spent.length === 0) return 0;
+  return Math.max(0, spent[0].at + 60000 - Date.now()) + 500;
 }
 
 /** Groq resets look like "7.66s" or "2m59.56s". Returns ms, or null. */
@@ -368,9 +576,10 @@ function parseResetMs(value) {
 // ---------------------------------------------------------------------------
 
 function report(clusters, manifest) {
-  const rows = readJsonl(LEDGER);
+  const variant = variantName();
+  const rows = readJsonl(LEDGER());
   if (rows.length === 0) {
-    console.error('The ledger is empty. Run `npm run gen:baseline -- --run` first.');
+    console.error(`The ledger is empty. Run \`npm run gen:baseline -- --variant ${variant} --run\` first.`);
     process.exit(1);
   }
 
@@ -386,56 +595,85 @@ function report(clusters, manifest) {
   for (const r of okRows) if (!byCell.has(keyOf(r))) byCell.set(keyOf(r), r);
   const completed = [...byCell.values()];
 
-  // A LEDGER MIXING TWO MODELS WOULD SILENTLY AVERAGE TWO SYSTEMS, which is the
-  // one-variable rule failing inside the reporting rather than inside the
-  // experiment. Refused rather than warned about: the resumable ledger makes
-  // this easy to do by accident — re-run with a different --model and the rows
-  // append to the same file.
-  const modelsUsed = [...new Set(okRows.map((r) => r.modelRequested || r.model))].sort();
-  if (modelsUsed.length > 1) {
-    console.error('REFUSING: the ledger mixes more than one model, so no rate over it means anything.');
-    for (const m of modelsUsed) {
-      console.error(`  ${m}   ${okRows.filter((r) => (r.modelRequested || r.model) === m).length} rows`);
+  // A LEDGER MIXING TWO CONFIGURATIONS WOULD SILENTLY AVERAGE TWO SYSTEMS,
+  // which is the one-variable rule failing inside the reporting rather than
+  // inside the experiment. Refused rather than warned about: the resumable
+  // ledger makes this easy to do by accident — re-run with a different setting
+  // and the rows append to the same file.
+  //
+  // 5.3 CHECKED ONLY THE MODEL, which was one field short. `max_tokens` is the
+  // whole variable 5.5 moves, so a ledger mixing 1024 and 2048 rows would have
+  // produced a conformance rate over two systems and looked entirely normal.
+  // Found while building 5.5 — the session that would have done it. §29.4.
+  const mixed = (label, get) => {
+    const values = [...new Set(okRows.map((r) => String(get(paramsOf(r)))))].sort();
+    if (values.length <= 1) return values[0];
+    console.error(`REFUSING: the ledger mixes more than one ${label}, so no rate over it means anything.`);
+    for (const v of values) {
+      console.error(`  ${label} ${v}   ${okRows.filter((r) => String(get(paramsOf(r))) === v).length} rows`);
     }
-    console.error('Move results/gen-baseline.calls.jsonl aside and re-run for one model.');
-    process.exit(1);
-  }
-  const modelUsed = modelsUsed[0];
+    console.error(`Move ${path.relative(REPO, LEDGER())} aside and re-run for one ${label}.`);
+    return process.exit(1);
+  };
+
+  const modelUsed = mixed('model', (p) => p.model);
+  const maxTokensUsed = Number(mixed('max_tokens', (p) => p.maxTokens));
+  const temperatureUsed = Number(mixed('temperature', (p) => p.temperature));
 
   const out = [];
   const w = (s = '') => out.push(s);
 
-  w('PHASE 5.3 — GENERATION BASELINE (gen-v1): the shipped prompts, single-note,');
-  w('measured before anything is changed.');
-  w('');
-  w('  THE SHIPPED MODEL IS RETIRED AND THIS IS A SUBSTITUTED RUN.');
-  w('');
-  w(`    llm.service.js:17 asks for   ${shipped.MODEL}`);
-  w('                                 -> HTTP 404 model_not_found, 19 Aug 2026');
-  w('                                 -> results/gen-model-retired.txt');
-  w(`    this run used                ${modelUsed}`);
-  w('');
-  w('  ONE VARIABLE CHANGED. Prompts, system message, temperature ' + shipped.TEMPERATURE + ', max_tokens');
-  w('  ' + shipped.MAX_TOKENS + ' and the fence-strip are byte-identical to the shipped file, checked by');
-  w('  tests/gen-shipped-parity.test.js. THE STRUCTURAL DEFECT SURVIVES the swap —');
-  w('  6, 8 and 5 requested items against a 1024-token ceiling is a property of the');
-  w('  prompts. EVERY RATE BELOW IS A RATE ABOUT ' + modelUsed + ' AND NOT');
-  w('  ABOUT THE MODEL THE APP ASKS FOR, which cannot be measured because it does');
-  w('  not run.');
+  if (variant === 'v1') {
+    w('PHASE 5.3 — GENERATION BASELINE (gen-v1): the shipped prompts, single-note,');
+    w('measured before anything is changed.');
+    w('');
+    w('  THE SHIPPED MODEL IS RETIRED AND THIS IS A SUBSTITUTED RUN.');
+    w('');
+    w(`    llm.service.js asked for     ${shipped.MODEL}`);
+    w('                                 -> HTTP 404 model_not_found, 19 Aug 2026');
+    w('                                 -> results/gen-model-retired.txt');
+    w(`    this run used                ${modelUsed}`);
+    w('');
+    w(`  ONE VARIABLE CHANGED. Prompts, system message, temperature ${temperatureUsed}, max_tokens`);
+    w(`  ${maxTokensUsed} and the fence-strip are byte-identical to the shipped file, checked by`);
+    w('  tests/gen-shipped-parity.test.js. THE STRUCTURAL DEFECT SURVIVES the swap —');
+    w('  6, 8 and 5 requested items against a 1024-token ceiling is a property of the');
+    w('  prompts. EVERY RATE BELOW IS A RATE ABOUT ' + modelUsed + ' AND NOT');
+    w('  ABOUT THE MODEL THE APP ASKS FOR, which cannot be measured because it does');
+    w('  not run.');
+  } else {
+    w('PHASE 5.5 — CONFORMANCE RE-MEASURE (gen-v2): the same prompts, the same 30');
+    w('seeds, the same grader, the same model — and ONE changed parameter.');
+    w('');
+    w(`    max_tokens                   ${shipped.MAX_TOKENS} -> ${maxTokensUsed}`);
+    w(`    model                        ${modelUsed}   SAME AS THE BASELINE`);
+    w(`    temperature                  ${temperatureUsed}   unchanged`);
+    w('');
+    w('  THIS RAN THROUGH services/llm.service.js ITSELF, not through a frozen copy.');
+    w('  5.3 could not: processNote() returned the completion text and discarded');
+    w('  `usage` and `finish_reason`, so tokens and truncation were unobservable');
+    w('  through the only surface the app has (§28.3). 5.5 made it return them, so');
+    w('  the copy is no longer needed and THIS MEASUREMENT HAS NO SUBSTITUTED');
+    w('  VARIABLE AT ALL — a stronger position than the baseline, which had one.');
+    w('');
+    w('  The comparison is valid because both halves ran on the same model, and that');
+    w('  is CHECKED rather than remembered: a v2 run refuses to start when the live');
+    w('  model differs from the one the baseline ledger recorded. §29.4.');
+  }
   w('');
   w('  DOES NOT REGENERATE BYTE-IDENTICALLY, AND FOR TWO INDEPENDENT REASONS.');
   w('  (1) It carries wall times — the same reason results/provenance-query.txt and');
   w('      results/keyword-stability.txt do not (EVALUATION.md §23.10, §26.10).');
-  w('  (2) IT CARRIES MODEL OUTPUT, and no environment pinning fixes that: the model');
-  w('      behind the string "llama-3.3-70b-versatile" is NOT A PINNED INPUT. The');
+  w(`  (2) IT CARRIES MODEL OUTPUT, and no environment pinning fixes that: the model`);
+  w(`      behind the string "${modelUsed}" is NOT A PINNED INPUT. The`);
   w('      corpus has a SHA-256 and the vectors have a manifest; that string has');
   w('      neither. Every count, rate and percentage below is a measurement of one');
   w('      run against whatever served that name on the date in the environment');
   w('      section. §28.9.');
   w('');
-  w('  Produced by:  cd backend && npm run gen:baseline -- --run');
-  w('  Recomputed:   cd backend && npm run gen:baseline -- --report');
-  w('  Per-call evidence: results/gen-baseline.calls.jsonl (one row per API call,');
+  w(`  Produced by:  cd backend && npm run gen:baseline -- --variant ${variant} --run`);
+  w(`  Recomputed:   cd backend && npm run gen:baseline -- --variant ${variant} --report`);
+  w(`  Per-call evidence: ${path.relative(REPO, LEDGER())} (one row per API call,`);
   w('  carrying the raw model output, so a second reader disputes a row rather than');
   w('  the analysis — §20.4\'s answer, applied to generation).');
   w('');
@@ -679,7 +917,7 @@ function report(clusters, manifest) {
   w('');
   w(`  total tokens this run          in ${allIn.reduce((a, b) => a + b, 0)}   out ${allOut.reduce((a, b) => a + b, 0)}`);
   w(`  cost                           $0 — Groq free tier`);
-  w(`  ceiling that produced the      max_tokens: ${shipped.MAX_TOKENS}  (llm.service.js:53)`);
+  w(`  ceiling that produced the      max_tokens: ${maxTokensUsed}`);
   w(`    out(max) column above`);
 
   // ---- F2. the reasoning-token confound, MEASURED rather than named --------
@@ -705,12 +943,12 @@ function report(clusters, manifest) {
       if (rs.length === 0) continue;
       w(
         `  ${feature.padEnd(11)}  ${String(rs.length).padStart(5)}   ${String(num(mean(rs), 0)).padStart(14)}  ` +
-        `${String(pct(rs, 95)).padStart(6)}   ${showPct(rate(mean(rs), shipped.MAX_TOKENS))}`
+        `${String(pct(rs, 95)).padStart(6)}   ${showPct(rate(mean(rs), maxTokensUsed))}`
       );
     }
     const allR = reasoning.map((r) => r.reasoningTokens);
     w('  ' + '-'.repeat(68));
-    w(`  ${'ALL'.padEnd(11)}  ${String(allR.length).padStart(5)}   ${String(num(mean(allR), 0)).padStart(14)}  ${String(pct(allR, 95)).padStart(6)}   ${showPct(rate(mean(allR), shipped.MAX_TOKENS))}`);
+    w(`  ${'ALL'.padEnd(11)}  ${String(allR.length).padStart(5)}   ${String(num(mean(allR), 0)).padStart(14)}  ${String(pct(allR, 95)).padStart(6)}   ${showPct(rate(mean(allR), maxTokensUsed))}`);
     w('');
     w('  SO SECTION D IS AN UPPER BOUND on what the shipped prompts would truncate');
     w('  at on a non-reasoning model, and the size of the overstatement is the last');
@@ -854,16 +1092,22 @@ function report(clusters, manifest) {
   w('');
   w(`  node                 ${process.version}`);
   w(`  platform             ${os.platform()} ${os.release()} ${os.arch()}`);
-  w(`  model the app asks   ${shipped.MODEL}   RETIRED, 404`);
-  w(`  model requested      ${modelUsed}   the one substituted variable`);
+  if (variant === 'v1') {
+    w(`  model the app asks   ${shipped.MODEL}   RETIRED, 404`);
+    w(`  model requested      ${modelUsed}   the one substituted variable`);
+  } else {
+    w(`  model the app asks   ${modelUsed}   and it resolves — npm run gen:probe`);
+    w(`  model requested      ${modelUsed}   NOT substituted; this is the shipped call`);
+  }
   w(`  model reported       ${models.join(', ')}`);
-  w(`  temperature          ${shipped.TEMPERATURE}          llm.service.js:52`);
-  w(`  max_tokens           ${shipped.MAX_TOKENS}           llm.service.js:53`);
+  w(`  temperature          ${temperatureUsed}`);
+  w(`  max_tokens           ${maxTokensUsed}`);
+  w(`  issued by            ${variant === 'v1' ? 'scripts/lib/llm-v1-shipped.js (frozen copy)' : 'services/llm.service.js (live)'}`);
   w(`  first call           ${dates[0]}`);
   w(`  last call            ${dates[dates.length - 1]}`);
   w(`  golden set           data/gen-eval/clusters.jsonl  sha256 ${manifest.output.sha256}`);
   w(`  corpus               ${manifest.inputs.corpus.sha256}`);
-  w(`  ledger               results/gen-baseline.calls.jsonl  ${rows.length} rows  sha256 ${sha256(fs.readFileSync(LEDGER, 'utf8'))}`);
+  w(`  ledger               ${path.relative(REPO, LEDGER())}  ${rows.length} rows  sha256 ${sha256(fs.readFileSync(LEDGER(), 'utf8'))}`);
   w('');
   w('  THE MODEL IS THE ONE INPUT WITH NO CHECKSUM. "model reported" above is what');
   w('  the API said it served, which is a string it chose, not a hash of weights.');
@@ -874,8 +1118,8 @@ function report(clusters, manifest) {
   const text = `${out.join('\n')}\n`;
   process.stdout.write(text);
   if (has('write') || has('run')) {
-    fs.writeFileSync(REPORT, text);
-    console.log(`\nwrote ${path.relative(REPO, REPORT)}`);
+    fs.writeFileSync(REPORT(), text);
+    console.log(`\nwrote ${path.relative(REPO, REPORT())}`);
   } else {
     console.log('\n(pass --write to save results/gen-baseline.txt)');
   }
@@ -895,8 +1139,8 @@ async function main() {
 
   if (!has('run')) {
     const cells = planCells(clusters);
-    const done = new Set(readJsonl(LEDGER).filter((r) => r.ok).map(keyOf));
-    console.log('PHASE 5.3 — PLAN ONLY. Pass --run to spend quota.\n');
+    const done = new Set(readJsonl(LEDGER()).filter((r) => r.ok).map(keyOf));
+    console.log(`${VARIANTS[variantName()].label} — PLAN ONLY. Pass --run to spend quota.\n`);
     console.log(`  seeds             ${clusters.length}`);
     console.log(`  repeats           ${JSON.stringify(REPEATS)}`);
     console.log(`  cells planned     ${cells.length}`);
