@@ -357,8 +357,17 @@ recommendation. The app ships **BM25** rather than the winner — the embedding 
 a vector stored and kept in sync per note, a backfill, and a few hundred megabytes of
 runtime, and it cannot explain why it matched.
 
-Work continuing: connecting retrieval to the LLM features with checkable citations,
-request tracing, and a failure-mode catalog with measured frequencies.
+Retrieval now reaches the LLM features: a study pack is generated from a note **and its
+retrieved neighbours**, and every item it produces carries a citation to the source note
+it came from, checked programmatically against the context that was actually sent. That
+check runs over a committed per-call ledger and needs no API key. Its coverage of the
+evaluation set is **partial** — the free-tier daily token cap is the binding constraint —
+so the citation rates it reports are not yet quoted as a property of the whole set.
+
+Work continuing: an independent judge model for groundedness with a human agreement
+score beside it, the same generation run repeated across retrievers to test whether
+better retrieval measurably improves output, request tracing, and a failure-mode catalog
+with measured frequencies.
 
 ---
 

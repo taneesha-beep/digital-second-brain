@@ -155,9 +155,14 @@ const QUOTED = new Map([
 ]);
 
 // Scripts a writeup names for a phase that has not run yet.
-const PLANNED_SCRIPTS = new Map([
-  ['eval:gen', 'Phase 5.4 — the generation eval harness, ROADMAP 5.4']
-]);
+//
+// `eval:gen` LIVED HERE AND CAME OUT AT 5.4, WHICH IS THE ENTRY WORKING. It was
+// added when ROADMAP named a command no phase had built; the phase built it, so
+// the forgiveness is withdrawn and the script is now checked like any other. An
+// entry left here after its phase ships is a permanent exemption for a command
+// that exists — which would let a later rename break a stranger's instructions
+// silently, the exact class rule 1 guards.
+const PLANNED_SCRIPTS = new Map([]);
 
 // Paths a writeup names that the READER is supposed to create. Not planned, not
 // quoted-as-wrong — correct instructions about a file that must not be in the

@@ -1,0 +1,268 @@
+PHASE 5.4 — PROGRAMMATIC GENERATION METRICS
+
+  Four metrics, no judge model: schema conformance, citation validity,
+  citation support, empty/refusal rate. Computed over COMMITTED LEDGERS —
+  this script issues no API call, needs no key and reads nothing under
+  data/, so it runs anywhere and costs nothing to re-run.
+
+  Produced by:  cd backend && npm run eval:gen -- --write
+
+==============================================================================
+A. WHAT IS BEING COMPARED, AND WHY TWO COLUMNS ARE STRUCTURALLY EMPTY
+==============================================================================
+
+  gen-v1   single-note  235 ledger rows
+           Phase 5.3 baseline. Five single-note features, max_tokens 1024, frozen copy.
+  gen-v2   single-note  188 ledger rows
+           Phase 5.5 re-measure. Same prompts and model, max_tokens 2048, LIVE service.
+  gen-v5   study-pack   10 ledger rows
+           Phase 5.4. Study Pack: seed + v4-bm25 neighbours, one call, a citation per item.
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !! gen-v5 IS PARTIAL: 9 OF 30 GOLDEN SEEDS.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  EVERY gen-v5 FIGURE BELOW IS OVER THAT FRACTION AND MAY NOT BE QUOTED AS
+  A PROPERTY OF THE GOLDEN SET. This is not a formality. 5.5 reported a
+  15-of-30 result with its partiality stated loudly at every site, drew a
+  headline conclusion from it, and THE OTHER HALF OF THE SET OVERTURNED
+  THAT CONCLUSION — the ceiling it called "mostly variance" turned out to
+  be binding on 43.3% against 46.7%, a gap of 3.4 points rather than 20.
+  §29.5's ↳. A sample described honestly is not the same as a sample large
+  enough, and this one is thinner than the one that failed.
+
+  The run stopped on the 200,000/day ORGANISATION cap. Resume with:
+    npm run gen:v5 -- --run        (nothing completed is lost)
+
+  ROADMAP 5.4 ASKS FOR "ALL FOUR METRICS POPULATED FOR gen-v1" AND THAT IS
+  NOT POSSIBLE. gen-v1 and gen-v2 are SINGLE-NOTE generation and produce no
+  citations at all — §28.12: "they need generated citations, and single-note
+  generation produces none." There is no run to make and no prompt to fix:
+  the five control prompts have no `source` field and adding one would edit
+  the A/B control that results/gen-baseline.txt and results/gen-v2.txt
+  measure.
+
+  So the citation columns read `n/a - no citations` for the two single-note
+  runs. THAT IS NOT A GAP IN THE DATA, IT IS A PROPERTY OF THE
+  CONFIGURATION, and it is the device gen-schema.js already uses for
+  `summarize` and `eli5`, which have no schema: n/a rather than 100%,
+  because scoring an undefined thing as perfect invents a ceiling nobody
+  defined and drags every average upward for free.
+
+  Rejected: scoring gen-v1 at 100% or 0%; assigning its items a citation
+  post-hoc by best lexical overlap (that is this file's own support metric
+  used as the assignment rule — it would read 100% by construction and
+  measure nothing, §30.5); and re-running the control prompts on cluster
+  text, which still yields no citations and doubles the quota.
+
+==============================================================================
+B. THE FOUR METRICS
+==============================================================================
+
+  run       schema conf   citation valid   citation support   empty rate
+  ----------------------------------------------------------------------
+  gen-v1          83.3%       n/a - none         n/a - none         0.0%
+  gen-v2          94.4%       n/a - none         n/a - none         0.0%
+  gen-v5         100.0%           100.0%              0.284         0.0%
+
+  `n/a - none` is "this configuration emits no citations", not "not measured".
+  Schema conformance for the single-note runs is over their JSON features
+  only; `summarize` and `eli5` have no schema and are n/a there too.
+
+  DELIVERY IS PRINTED BESIDE CONFORMANCE, NEVER INSTEAD OF IT (§5.3a):
+
+  run       attempted   completed   delivery   scored   seeds
+  ----------------------------------------------------------
+  gen-v1          235         234      99.6%      150      30
+  gen-v2          188         151      80.3%      150      30
+  gen-v5           10           9      90.0%        9       9
+
+  `scored` is below `completed` where a run kept only balanced first draws:
+  a seed counts only if every feature completed for it, so each feature is
+  measured over the same seeds. §29.6.
+
+==============================================================================
+C. CITATION VALIDITY — gen-v5 ONLY
+==============================================================================
+
+  Does the note a generated item cites exist in the context that was sent?
+  Mechanical: the label is resolved against the notes on the ledger row.
+
+    items returned            126 of 126 expected
+    valid                      126    100.0%
+    out-of-range                 0      0.0%   a note that was not there
+    missing                      0      0.0%   no usable `source` at all
+
+    notes cited per pack        7.78 of  8.67 in context   coverage   90.1%
+
+    THIS MOSTLY MEASURES OUT-OF-RANGE LABELS, NOT FABRICATED IDENTIFIERS.
+    §30.5 chose small integers over 24-hex ObjectIds — ~1 token per item
+    against ~10, and a model copies a small integer more reliably — and
+    recorded the cost there: this is an easier test than raw ids would be.
+    The MIS-ATTRIBUTION mode is untouched by it and is section D's.
+
+==============================================================================
+D. CITATION SUPPORT — A PROXY, AND IT SHIPS WITH ITS NULL
+==============================================================================
+
+  Lexical containment of the claim's terms in the cited note's terms:
+  |claim n note| / |claim|. Tokenizer is utils/keywords.js — the app's own,
+  retriever-INDEPENDENT so 5.7 can vary the retriever without moving the
+  measuring instrument, and not a fourth tokenizer.
+
+    items scored               126
+    unscorable                   0   valid citation, no terms after stopwords
+
+    mean                        0.284
+    median                      0.273
+    p10                         0.133
+    rate >= 0.3                 40.5%
+    rate >= 0.5                  6.3%   <- the PRE-COMMITTED cut
+    rate >= 0.7                  0.0%
+
+  THE NULL. The same claims scored against the notes in the SAME prompt
+  they did NOT cite. Without it a support figure has no scale at all.
+
+    mean vs CITED note          0.284
+    mean vs OTHER notes         0.123
+    GAP                         0.161   <- the number that says whether
+                                        a citation carries information
+
+    cited note is the argmax    69.8%
+
+    by slot:
+      flashcards  n=  54   cited   0.303   other   0.127   gap   0.176
+      concepts    n=  72   cited   0.270   other   0.121   gap   0.150
+
+    items citing the SEED       15.1%   label 1 of  8.7 notes
+      A pack that leans on the seed used the cluster less than `notesCited`
+      suggests. This is the sharper version of that number.
+
+    argmax IS NOT A CORRECTNESS RATE. A model may legitimately cite a note
+    that is not the best lexical match — that is the paraphrase mode below,
+    seen from the other side. It is a countable event, not a verdict.
+
+  WHAT THIS NUMBER IS NOT, AND BOTH DIRECTIONS ARE REAL:
+    - a correct PARAPHRASE sharing no vocabulary scores zero, and that is
+      NOT a hallucination;
+    - a claim built from generic vocabulary scores high against ANY note in
+      the cluster, so a high score is not evidence of support either.
+  5.6's judge is what actually answers the question. This is the cheap
+  programmatic proxy that needs no judge, which is the whole point of 5.4.
+
+==============================================================================
+E. SCHEMA CONFORMANCE AND EMPTY/REFUSAL — gen-v5
+==============================================================================
+
+    shape conformance          100.0%   object envelope, both arrays, exact keys
+    cardinality (6 and 8)      100.0%   reported SEPARATELY, not a schema failure
+    truncated at 2048            0.0%   finish_reason === 'length'
+
+    A 0% TRUNCATION RATE HERE IS NOT A COMFORTABLE ZERO. The worst call
+    returned 1951 completion tokens against a 2048 ceiling — 95.3% of it,
+    with the whole run bunched just under the cap. `max_tokens` is INHERITED
+    from a value §29.2 derived for `examQs` demand and never re-derived for a
+    study pack (§30.9), and this says it is close to binding rather than
+    comfortably clear. Read the rate with the headroom beside it.
+
+    empty response               0.0%
+    empty PACK (0 items)         0.0%   parsed fine, returned nothing
+    very short (<40 chars)       0.0%   A FLAG FOR A HUMAN, NOT A REFUSAL RATE
+
+    `veryShort` is not called a refusal. Detecting "the model declined" is
+    a semantic judgment and belongs to 5.6's judge; a length threshold
+    cannot tell a refusal from a terse answer. gen-schema.js's rule.
+
+==============================================================================
+F. OPERATIONAL — gen-v5
+==============================================================================
+
+    latency p50 / p95           5305 /  29702 ms
+      §29.2's linear model (420 + 2.15 x completion) predicts ~4,400 ms at this
+      output length and matched §30.8's single call to 2.9%. It does NOT hold
+      across this run: five calls land near the prediction and four are 12-30 s.
+      That spread is provider-side, not output length, so p95 here is a figure
+      about one afternoon on one home connection. 6.5 owns the controlled one.
+    mean prompt tokens          1367
+    mean completion tokens      1828
+    mean reasoning tokens       1048     57.3% of the completion
+    total ACTUAL tokens        28752   what the DAILY cap charged (§30.1)
+    total RESERVED tokens      30731   what the PER-MINUTE gate charged
+    actual / reserved           0.94
+
+    THAT RATIO IS 0.40 FOR THE SINGLE-NOTE RUN (§30.1) AND IT IS NOT A
+    PROPERTY OF THE API. It is how much of `max_tokens` a feature actually
+    uses: single-note calls spent ~900 of 2048, a study pack spends ~1,850.
+    So pricing a cluster run at the single-note ratio underestimates it by
+    roughly 2.4x. §30.1's instruction — price in ACTUAL tokens — is right;
+    the constant carried into it has to come from the same population.
+
+    THE ESTIMATOR CHECKING ITSELF, on every call, for free:
+      slack min / mean         -63 / 7.3 tokens
+      never underestimates    NO — THE BOUND IS BROKEN   over 9 calls
+
+    neighbours dropped for budget   3 across 9 clusters
+    seeds by length quintile        Q1:2  Q2:2  Q3:2  Q4:2  Q5:1
+
+==============================================================================
+G. WHAT THESE NUMBERS CANNOT SAY
+==============================================================================
+
+  NOT THE GOLDEN SET. 9 of 30 seeds, stopped by the daily cap. The
+  quintile spread is printed in section F precisely because the golden set
+  is 6 per quintile and a partial run has no mechanism protecting that
+  balance — the seeds are called in file order, which is by id, and any
+  stratification a prefix happens to have is luck rather than design.
+
+  NO NOISE FLOOR EXISTS FOR ANY gen-v5 FIGURE. n = 1 per seed measures
+  BETWEEN-SEED variation only. §28.8 measured 32.1% of `examQs` cells
+  flipping verdict on a re-draw at this temperature and nothing here
+  establishes the equivalent for a study pack. So no figure in sections
+  C-F may be compared against a later one until repeats are bought.
+
+  NO BEFORE. Study Pack has no single-note counterpart with citations, so
+  every gen-v5 figure is a first measurement rather than a delta. §28.2
+  records the confound that makes gen-v1 an unusable "before" for it, and
+  §30.2 names the four variables involved.
+
+  CITATION SUPPORT IS A PROXY (section D) and is labelled one everywhere.
+
+  THE NEIGHBOURS ARE RETRIEVED OVER 27,325 CORPUS DOCUMENTS, not over a
+  <=500-note user slice. §12.2's gap, and the seeds are Stack Exchange
+  questions shaped as Notes rather than anybody's notebook.
+
+  NOT A COMPARISON ACROSS RETRIEVERS. That is 5.7, and it is what the
+  retriever parameter on buildCluster() and the stamped digest exist for.
+
+==============================================================================
+H. PER-FEATURE DETAIL — THE SINGLE-NOTE RUNS
+==============================================================================
+
+  Recomputed from the ledgers by gen-schema.js UNCHANGED, so these agree
+  with results/gen-baseline.txt and results/gen-v2.txt rather than restating
+  them. §29.4's same-grader guarantee is what makes that true.
+
+  gen-v1   30 balanced seeds
+    feature       n   schema conf   truncated   empty
+    --------------------------------------------------
+    summarize    30           n/a        0.0%    0.0%
+    flashcards   30        100.0%        0.0%    0.0%
+    concepts     30        100.0%        0.0%    0.0%
+    examQs       30         50.0%       46.7%    0.0%
+    eli5         30           n/a        6.7%    0.0%
+    failure causes: truncated 14, malformed 1
+
+  gen-v2   30 balanced seeds
+    feature       n   schema conf   truncated   empty
+    --------------------------------------------------
+    summarize    30           n/a        0.0%    0.0%
+    flashcards   30        100.0%        0.0%    0.0%
+    concepts     30         96.7%        0.0%    0.0%
+    examQs       30         86.7%        3.3%    0.0%
+    eli5         30           n/a        0.0%    0.0%
+    failure causes: malformed 2, element-shape 2, truncated 1
+
+  `summarize` and `eli5` show n/a for schema because they have no schema.
+  Their truncation IS measured — §28.5 recorded a prose truncation that no
+  conformance metric in this project could see, and this is the column.
+
