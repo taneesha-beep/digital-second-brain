@@ -449,7 +449,32 @@ async function run(state) {
         });
         break;
       } catch (err) {
-        const raw = err && err.cause ? String(err.cause.message || '') : '';
+        /**
+         * THE BODY IS ON `err.message` HERE, NOT ON `err.cause`, AND READING ONLY
+         * `err.cause` COST THIS RUN ~20 HOURS OF WALL TIME.
+         *
+         * `run-studypack-eval.js` reads `err.cause.message` and is RIGHT to: its
+         * calls go through services/studyPack.service.js, which wraps the SDK
+         * error so the status survives (§29.6's third defect and its fix). This
+         * runner calls the Groq SDK DIRECTLY — there is no wrapper — so
+         * `err.cause` is `undefined` and the copied line yielded `''`.
+         *
+         * WHAT THAT BROKE IS THE CLASSIFICATION, NOT THE RETRY. `retryAfterMs`
+         * already fell back to `err.message`, so the backoff read the provider's
+         * hint correctly; only `daily` was computed from the empty string, so
+         * EVERY refusal looked like per-minute backpressure. §32.8 fixed a runner
+         * that "computed which limit it was, printed it, and then ignored it";
+         * this one could not compute it at all, and the two halves of the same
+         * error object disagreeing is what hid it.
+         *
+         * THE SYMPTOM WAS NOT AN ERROR. A daily refusal was slept off and
+         * retried, and because the daily cap refills at 2.3148 tokens/s a
+         * ~700-token call succeeds after ~300 s — so the run kept 100% delivery
+         * and no failed rows while dropping from 11.4 calls/minute to 0.2.
+         * Measured: `tokens per day (TPD): Limit 200000, Used 199450,
+         * Requested 915. Please try again in 2m37.68s`.
+         */
+        const raw = String((err && err.cause && err.cause.message) || (err && err.message) || '');
         failure = {
           message: String(err && err.message).slice(0, 400),
           status: err && err.status ? err.status : null,
@@ -461,8 +486,19 @@ async function run(state) {
 
       const rateLimited = failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '');
       const daily = /tokens per day|TPD/i.test(failure.providerMessage || '');
+      const perMinute = /tokens per minute|TPM|requests per minute|RPM/i.test(failure.providerMessage || '');
 
-      if (rateLimited && !daily && tpmPauses < MAX_TPM_PAUSES) {
+      /**
+       * AN UNCLASSIFIABLE 429 STOPS. It does not get retried as backpressure.
+       *
+       * The bug above defaulted the unknown case to "per-minute", which is the
+       * expensive direction: a daily refusal then gets slept off at the refill
+       * rate forever. Requiring a POSITIVE per-minute match makes the default
+       * the safe one — stop, record the body, let the operator read it — and
+       * §32.8's rule survives: a TPM refusal is the operator's pacing and is
+       * retried, a TPD refusal IS the finding and is recorded.
+       */
+      if (rateLimited && perMinute && !daily && tpmPauses < MAX_TPM_PAUSES) {
         tpmPauses += 1;
         spent.push({ at: Date.now(), tokens: reservation });
         const backoff = (failure.retryAfterMs || 1000) + TPM_PAUSE_MARGIN_MS;
@@ -527,7 +563,8 @@ async function run(state) {
 
       if (failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '')) {
         const daily = /tokens per day|TPD/i.test(failure.providerMessage || '');
-        console.log(`\n  429 on the ${daily ? 'DAILY (TPD)' : 'per-minute'} limit — STOPPING` +
+        const known = daily || /tokens per minute|TPM|requests per minute|RPM/i.test(failure.providerMessage || '');
+        console.log(`\n  429 on the ${daily ? 'DAILY (TPD)' : known ? 'per-minute' : 'UNCLASSIFIED'} limit — STOPPING` +
           `${daily ? '' : ` after ${tpmPauses} TPM pauses`}.`);
         if (failure.providerMessage) console.log(`  ${failure.providerMessage.slice(0, 300)}`);
         if (failure.retryAfterMs) {
