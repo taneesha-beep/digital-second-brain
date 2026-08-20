@@ -41,7 +41,7 @@ A. WHAT WAS RUN, AND THE TWO DENOMINATORS
   arrives here. It is split rather than collapsed, and BOTH rates are printed:
 
   cells planned          330    30 seeds x (3 JSON features x n=3 + 2 prose x n=1)
-  cells completed        79
+  cells completed        151
 
   THE RUN STOPPED ON A DAILY TOKEN CAP, AND THE COVERAGE THAT SURVIVED IS THE
   COVERAGE THAT WAS DESIGNED TO. Calls are issued REPEAT-MAJOR — every cell's
@@ -49,29 +49,18 @@ A. WHAT WAS RUN, AND THE TWO DENOMINATORS
   COMPLETE n=1 pass rather than complete coverage of some seeds and none of
   others. What landed:
 
-    distinct (seed, feature) cells   79 of 150   <- COMPLETE n=1
-    cells with 2 draws               0
+    distinct (seed, feature) cells   150 of 150   <- COMPLETE n=1
+    cells with 2 draws               1
     cells with 3 draws               0
 
 
-    seeds with all 5 features    15 of 30   <- SECTIONS B-G ARE OVER THESE
-
-    THE FIRST PASS IS INCOMPLETE, so sections B-G run over the seeds that
-    have EVERY feature rather than over every row that landed. Rows for a
-    partially-covered seed are dropped from those sections — otherwise each
-    feature would be scored over a different seed set, and a per-feature
-    rate would partly reflect which calls happened to land before the run
-    stopped. That is §28.11's weighting bug in a new shape.
-
-    retained by length quintile   Q1:3  Q2:3  Q3:3  Q4:3  Q5:3
-    The golden set is 6 per quintile, so check this spread before quoting
-    any rate: the defect being measured moves along the length axis.
+    seeds with all 5 features    30 of 30   <- SECTIONS B-G ARE OVER THESE
 
   Section H, which needs repeats, is over the cells that got two, and says so.
-  API calls attempted    116
-  API calls completed    79
+  API calls attempted    188
+  API calls completed    151
   API failures           37
-  DELIVERY RATE           68.1%   completed / attempted
+  DELIVERY RATE           80.3%   completed / attempted
 
   An API failure (429, 5xx, socket) is EXCLUDED from conformance — no
   completion exists, so nothing was generated to conform — and reported here
@@ -96,22 +85,25 @@ B. SCHEMA CONFORMANCE, PER FEATURE — THREE LEVELS, NOT ONE
 
   feature      calls   parses    shape   cardin.   items(mean/asked)
   --------------------------------------------------------------------
-  summarize       15      n/a      n/a       n/a   n/a  (no schema)
-  flashcards      15   100.0%   100.0%    100.0%   6.00 / 6
-  concepts        15   100.0%   100.0%    100.0%   8.00 / 8
-  examQs          15   100.0%   100.0%    100.0%   5.00 / 5
-  eli5            15      n/a      n/a       n/a   n/a  (no schema)
+  summarize       30      n/a      n/a       n/a   n/a  (no schema)
+  flashcards      30   100.0%   100.0%    100.0%   6.00 / 6
+  concepts        30   100.0%    96.7%     96.7%   8.03 / 8
+  examQs          30    90.0%    86.7%     90.0%   5.00 / 5
+  eli5            30      n/a      n/a       n/a   n/a  (no schema)
   --------------------------------------------------------------------
-  ALL JSON        45   100.0%   100.0%    100.0%
+  ALL JSON        90    96.7%    94.4%     95.6%
 
 ==============================================================================
 C. WHY THE FAILURES FAILED — precedence committed in scripts/lib/gen-schema.js
 ==============================================================================
 
-  0 of 45 JSON calls did not conform at SHAPE.
+  5 of 90 JSON calls did not conform at SHAPE.
 
   cause            n     of failures   of JSON calls
   --------------------------------------------------------
+  malformed         2    40.0%          2.2%
+  element-shape     2    40.0%          2.2%
+  truncated         1    20.0%          1.1%
 
   truncated      the model never finished. This is max_tokens: 1024
                  (llm.service.js:53) — Phase 5 defect 1.
@@ -130,18 +122,18 @@ D. TRUNCATION — finish_reason, WHICH THE SHIPPED FUNCTION THROWS AWAY
 
   feature      calls   finish=length   finish=stop   other
   ------------------------------------------------------------
-  summarize       15     0.0%        100.0%    0
-  flashcards      15     0.0%        100.0%    0
-  concepts        15     0.0%        100.0%    0
-  examQs          15     0.0%        100.0%    0
-  eli5            15     0.0%        100.0%    0
+  summarize       30     0.0%        100.0%    0
+  flashcards      30     0.0%        100.0%    0
+  concepts        30     0.0%        100.0%    0
+  examQs          30     3.3%         96.7%    0
+  eli5            30     0.0%        100.0%    0
 
   CROSS-CHECK — the text-shape classifier against the API's own finish_reason.
   Two independent signals; agreement is a check on the classifier that costs
   nothing and was not designed for.
 
-    JSON calls with both      45
-    agree                     45   100.0%
+    JSON calls with both      90
+    agree                     90   100.0%
     finish=length, parsed ok  0   truncated at a point that still parsed
     finish!=length, unterm.   0   model stopped mid-array on its own
 
@@ -154,7 +146,7 @@ E. THE FENCE-STRIP — HOW OFTEN IT FIRED, AND HOW OFTEN IT MATTERED
   post-strip string. The frozen copy keeps rawText, which is what makes this
   section exist at all.
 
-  JSON calls                     45
+  JSON calls                     90
   raw output contained a fence   0     0.0%
   STRIP RESCUED THE CALL         0     0.0%   raw failed to parse, stripped parsed
   fence residue AFTER stripping  0     0.0%
@@ -170,15 +162,15 @@ F. TOKENS — THE MEASURED QUANTITY. COST IS A MULTIPLIER APPLIED AFTERWARD.
 
   feature      calls    in(mean)  out(mean)  out(p50)  out(p95)  out(max)
   ----------------------------------------------------------------------
-  summarize       15        239        220       216       277       277
-  flashcards      15        257        624       633       903       903
-  concepts        15        256        384       363       659       659
-  examQs          15        258        964       869      1744      1744
-  eli5            15        241        602       604       874       874
+  summarize       30        252        225       216       277       452
+  flashcards      30        270        605       622       868       903
+  concepts        30        269        409       363       659       737
+  examQs          30        271       1061       974      1744      2048
+  eli5            30        254        645       626      1005      1242
   ----------------------------------------------------------------------
-  ALL             75        250        559
+  ALL            150        263        589
 
-  total tokens this run          in 18735   out 41918
+  total tokens this run          in 39460   out 88354
   cost                           $0 — Groq free tier
   ceiling that produced the      max_tokens: 2048
     out(max) column above
@@ -196,13 +188,13 @@ F. TOKENS — THE MEASURED QUANTITY. COST IS A MULTIPLIER APPLIED AFTERWARD.
 
   feature      calls   reasoning(mean)  (p95)   share of the 1024 ceiling
   --------------------------------------------------------------------
-  summarize       15               59     138     2.9%
-  flashcards      15              316     504    15.4%
-  concepts        15              140     390     6.8%
-  examQs          15              153     350     7.5%
-  eli5            15               90     275     4.4%
+  summarize       30               66     138     3.2%
+  flashcards      30              295     541    14.4%
+  concepts        30              165     390     8.1%
+  examQs          30              187     375     9.1%
+  eli5            30               94     204     4.6%
   --------------------------------------------------------------------
-  ALL             75              152     366     7.4%
+  ALL            150              161     390     7.9%
 
   SO SECTION D IS AN UPPER BOUND on what the shipped prompts would truncate
   at on a non-reasoning model, and the size of the overstatement is the last
@@ -224,13 +216,13 @@ G. LATENCY — UNCONTROLLED, AND NETWORK-BOUND
 
   feature      calls     p50      p95      max    6.5 budget (p95 < 4000 ms)
   ----------------------------------------------------------------------
-  summarize       15     999    1902     1902    PASS
-  flashcards      15    1778    2223     2223    PASS
-  concepts        15    1274    2021     2021    PASS
-  examQs          15    2301    4167     4167    FAIL
-  eli5            15    1767    3334     3334    PASS
+  summarize       30     995    1902    75206    PASS
+  flashcards      30    1755    2260     2398    PASS
+  concepts        30    1274    2021     2064    PASS
+  examQs          30    2513    4167     4673    FAIL
+  eli5            30    1775    3132     3334    PASS
   ----------------------------------------------------------------------
-  ALL             75    1627    3209     4167
+  ALL            150    1627    3209    75206
 
 ==============================================================================
 H. WITHIN-CELL VARIANCE — WHAT n=3 BOUGHT, AND WHETHER IT WAS WORTH IT
@@ -248,11 +240,11 @@ H. WITHIN-CELL VARIANCE — WHAT n=3 BOUGHT, AND WHETHER IT WAS WORTH IT
 
   feature      cells n>=2   both conform   both fail   SPLIT
   --------------------------------------------------------------
-  flashcards            0              0           0       0
+  flashcards            1              1           0       0
   concepts              0              0           0       0
   examQs                0              0           0       0
   --------------------------------------------------------------
-  ALL                   0   unanimous 0   SPLIT 0      n/a of cells
+  ALL                   1   unanimous 1   SPLIT 0     0.0% of cells
 
   A SPLIT CELL IS A CELL WHOSE CONFORMANCE IS NOT A PROPERTY OF ITS INPUT.
   Read the ALL row as a floor on the noise 5.5 has to clear: with two draws
@@ -272,18 +264,18 @@ I. CONFORMANCE BY SEED LENGTH — THE AXIS THE GOLDEN SET WAS STRATIFIED ON
 
   quintile  words(seeds)   JSON calls   shape    finish=length
   ----------------------------------------------------------------
-         1         23-35            9   100.0%     0.0%
-         2         51-68            9   100.0%     0.0%
-         3         73-98            9   100.0%     0.0%
-         4       104-140            9   100.0%     0.0%
-         5       158-265            9   100.0%     0.0%
+         1         23-35           18    94.4%     5.6%
+         2         51-68           18   100.0%     0.0%
+         3         73-98           18    88.9%     0.0%
+         4       104-140           18    94.4%     0.0%
+         5       158-265           18    94.4%     0.0%
 
 ==============================================================================
 J. EMPTY AND DEGENERATE OUTPUT
 ==============================================================================
 
-  empty completions              0 of 75     0.0%
-  under 40 characters            0 of 75     0.0%
+  empty completions              0 of 150     0.0%
+  under 40 characters            0 of 150     0.0%
 
   NEITHER IS CALLED A REFUSAL RATE. Whether the model declined is a semantic
   judgment and belongs to 5.6's judge; a character threshold cannot tell a
@@ -303,10 +295,10 @@ K. ENVIRONMENT
   max_tokens           2048
   issued by            services/llm.service.js (live)
   first call           2026-08-19T14:29:08.038Z
-  last call            2026-08-19T15:39:41.384Z
+  last call            2026-08-20T04:21:41.376Z
   golden set           data/gen-eval/clusters.jsonl  sha256 3a0bf51d72d017758908827cd1993eb9973fc91ba6c0913bce77a895c76a7783
   corpus               db8902c5b53042c4ba50b2ad738bda218e059620bc6fcbb18ca98d0c2f0320dd
-  ledger               results/gen-v2.calls.jsonl  116 rows  sha256 7ebf229f9764ace346569a267a164a712d2f94ffd755023580caf6ec0ea1e1a5
+  ledger               results/gen-v2.calls.jsonl  188 rows  sha256 cc1f0a8ef18a20c39321f170d426190b614f97e47e124ac4b15109dd76cef5a7
 
   THE MODEL IS THE ONE INPUT WITH NO CHECKSUM. "model reported" above is what
   the API said it served, which is a string it chose, not a hash of weights.
