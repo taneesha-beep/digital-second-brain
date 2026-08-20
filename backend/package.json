@@ -46,7 +46,11 @@
     "gen:quota": "node scripts/check-gen-quota.js",
     "gen:v5": "node scripts/run-studypack-eval.js",
     "eval:gen": "node scripts/eval-gen.js",
-    "studypack:calibrate": "node scripts/calibrate-studypack.js"
+    "studypack:calibrate": "node scripts/calibrate-studypack.js",
+    "judge:set": "node scripts/build-judge-set.js",
+    "judge:label": "node scripts/label-judge-set.js",
+    "judge:run": "node scripts/run-judge-eval.js",
+    "eval:judge": "node scripts/eval-judge.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
