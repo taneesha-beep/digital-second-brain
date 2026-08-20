@@ -137,6 +137,19 @@ function main() {
   const attempted = verdicts.length;
   const byPairId = new Map(ok.map((v) => [v.pairId, v]));
 
+  /**
+   * THE SAME WITHHOLDING THE RUNNER APPLIES, FOR THE SAME REASON.
+   *
+   * This is the other path by which a judge verdict can reach the human rater
+   * before they have labelled, and a guarantee that holds on one of two display
+   * paths is not a guarantee. Once every pre-registered hand label exists the
+   * report prints in full; until then it prints coverage and mechanics and
+   * withholds every rate. Nothing is lost — the ledger is complete either way
+   * and re-running this costs nothing, which is the point of a pure reporter.
+   */
+  const humanWanted = pairs.filter((p) => p.humanLabelled).length;
+  const blind = humanWanted > 0 && humanRows.length < humanWanted;
+
   const L = [];
   L.push('PHASE 5.6 — LLM-AS-JUDGE FOR GROUNDEDNESS, WITH A HUMAN AGREEMENT CHECK');
   L.push('');
@@ -203,7 +216,26 @@ function main() {
     L.push('');
   }
 
+  if (blind) {
+    L.push(block('B-F. WITHHELD — THE HAND LABELS ARE NOT IN YET'));
+    L.push(`  ${humanRows.length} of ${humanWanted} pre-registered hand labels exist.`);
+    L.push('');
+    L.push('  Every rate is withheld until they do. Cohen\'s kappa is a number about two');
+    L.push('  INDEPENDENT raters, and a rater who has read the judge\'s verdicts — even as');
+    L.push('  an aggregate tally — is not one. "I did not let it influence me" is exactly');
+    L.push('  the claim that cannot be checked afterwards, so the display is closed rather');
+    L.push('  than the discipline being trusted. The runner withholds them too; a guarantee');
+    L.push('  that holds on one of two display paths is not a guarantee.');
+    L.push('');
+    L.push('  NOTHING IS LOST. The ledger is written in full regardless, and this reporter');
+    L.push('  is PURE — re-running it once the labels are in costs nothing.');
+    L.push('');
+    L.push('    Label them:   cd backend && npm run judge:label');
+    L.push('');
+  }
+
   // ------------------------------------------------------------ groundedness
+  if (!blind) {
   L.push(block('B. GROUNDEDNESS — AND IT DOES NOT PRINT WITHOUT ITS NULL'));
   const citedLevels = citedOk.map((v) => v.level);
   const nullLevels = nullOk.map((v) => v.level);
@@ -371,6 +403,8 @@ function main() {
     const gap = c.rate !== null && n.rate !== null ? c.rate - n.rate : null;
     L.push(`    ${g.padEnd(14)} ${String(c.n).padStart(4)}    ${pct(c.rate).padStart(7)}       ${pct(n.rate).padStart(7)}      ` +
       `${gap === null ? ' n/a' : `${gap >= 0 ? '+' : ''}${(gap * 100).toFixed(1)}pp`}`);
+  }
+
   }
 
   // --------------------------------------------------------------- mechanics

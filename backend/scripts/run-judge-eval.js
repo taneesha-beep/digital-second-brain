@@ -106,6 +106,7 @@ const REPO = path.resolve(__dirname, '..', '..');
 const GEN_LEDGER = path.join(REPO, 'results', 'gen-v5.calls.jsonl');
 const SET = path.join(REPO, 'results', 'gen-judge-set.jsonl');
 const LEDGER = path.join(REPO, 'results', 'gen-judge.calls.jsonl');
+const HUMAN = path.join(REPO, 'results', 'gen-judge-human.jsonl');
 
 /** The judge. MUST differ from the model whose output it grades. */
 const JUDGE_MODEL = 'qwen/qwen3.6-27b';
@@ -381,6 +382,28 @@ async function run(state) {
   const spent = [];
   const tally = { 0: 0, 1: 0, 2: 0, fail: 0 };
 
+  /**
+   * THE BLINDING IS MECHANISED HERE TOO, NOT ONLY IN THE PROMPT.
+   *
+   * Cohen's kappa is a number about two INDEPENDENT raters, and the human
+   * reads this terminal. A judge verdict printed here — even an aggregate
+   * tally — is an anchor available to the rater before they label, and "I did
+   * not let it influence me" is exactly the claim that cannot be checked
+   * afterwards. So verdicts are WITHHELD from stdout until every pre-registered
+   * hand label exists; parse failures still print, because those are a property
+   * of the harness rather than of any item.
+   *
+   * The ledger is written in full either way. This withholds a display, not a
+   * measurement.
+   */
+  const humanDone = new Set(readJsonl(HUMAN).map((h) => h.pairId));
+  const humanWanted = pairs.filter((p) => p.humanLabelled).length;
+  const showVerdicts = humanWanted > 0 && humanDone.size >= humanWanted;
+  if (!showVerdicts) {
+    console.log(`  verdicts are WITHHELD from this terminal: ${humanDone.size} of ${humanWanted} hand`);
+    console.log('  labels are in, and a rater who has seen them is not an independent rater.\n');
+  }
+
   for (const pair of todo) {
     const resolved = resolvePair(pair, rowsBySeed);
     if (!resolved) {
@@ -494,7 +517,8 @@ async function run(state) {
         process.stdout.write(
           `  ${String(attempts).padStart(4)}/${todo.length}  ${pair.stratum.padEnd(14)} ` +
           `${pair.condition.padEnd(5)}  ${String(u.total_tokens ?? '?').padStart(4)} tok  ` +
-          `${String(response.__latencyMs).padStart(5)} ms  -> ${verdict.parseFailed ? 'PARSE-FAIL' : verdict.level}\n`
+          `${String(response.__latencyMs).padStart(5)} ms  -> ` +
+          `${verdict.parseFailed ? 'PARSE-FAIL' : (showVerdicts ? verdict.level : 'ok')}\n`
         );
       }
     } else {
@@ -523,7 +547,11 @@ async function run(state) {
   const mins = ((Date.now() - started) / 60000).toFixed(1);
   console.log(`\n  attempts ${attempts}   completed ${completed}   ` +
     `delivery ${attempts ? ((completed / attempts) * 100).toFixed(1) : '0.0'}%   ${mins} min`);
-  console.log(`  verdicts   2:${tally[2]}  1:${tally[1]}  0:${tally[0]}  parse-fail:${tally.fail}`);
+  if (showVerdicts) {
+    console.log(`  verdicts   2:${tally[2]}  1:${tally[1]}  0:${tally[0]}  parse-fail:${tally.fail}`);
+  } else {
+    console.log(`  verdicts   WITHHELD until the hand labels are in — ${tally.fail} failed to parse.`);
+  }
   console.log(`  ACTUAL ${actualTokens} tokens (~${completed ? Math.round(actualTokens / completed) : 0}/call)   ` +
     `RESERVED ${reservedTokens}   ratio ${reservedTokens ? (actualTokens / reservedTokens).toFixed(2) : 'n/a'}`);
   console.log('\n  Report it:   npm run eval:judge -- --write     (PURE — no key, no network)\n');
