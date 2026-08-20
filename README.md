@@ -360,9 +360,14 @@ runtime, and it cannot explain why it matched.
 Retrieval now reaches the LLM features: a study pack is generated from a note **and its
 retrieved neighbours**, and every item it produces carries a citation to the source note
 it came from, checked programmatically against the context that was actually sent. That
-check runs over a committed per-call ledger and needs no API key. Its coverage of the
-evaluation set is **partial** — the free-tier daily token cap is the binding constraint —
-so the citation rates it reports are not yet quoted as a property of the whole set.
+check runs over a committed per-call ledger, needs no API key, and now covers the
+**whole** evaluation set rather than a slice of it. Completing it changed the conclusion:
+the citation rates held, but the same run exposed the feature's largest defect. The
+output ceiling is inherited from a single-note feature and was never derived for a study
+pack, and it cuts off a meaningful share of them — and because a truncated pack parses to
+nothing, that one cause accounts for every quality failure the feature has. So the rates
+are over the packs that complete, and re-deriving the ceiling is an open question rather
+than a fix already made.
 
 Work continuing: an independent judge model for groundedness with a human agreement
 score beside it, the same generation run repeated across retrievers to test whether
