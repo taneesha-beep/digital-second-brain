@@ -82,10 +82,9 @@
  * §32.2 established that the ratio between them is a property of the FEATURE
  * rather than of the API — 0.40 for single-note calls, 0.94 for study packs —
  * and that 5.4 stopped at 9 of 30 seeds for inheriting the wrong one. So
- * ACTUAL_TOKENS_PER_CALL below is neither: it comes from six probe calls
- * against this judge, on this rubric, at 389-534 prompt tokens and 11-14
- * completion tokens. It is an ESTIMATE WITH SIX OBSERVATIONS BEHIND IT, and
- * the plan says so rather than presenting it as a measured mean.
+ * ACTUAL_TOKENS_PER_CALL below is neither: it is measured on THIS judge, on
+ * THIS rubric, and the measured ratio is 0.77. See the constant for how the
+ * first version of it was wrong anyway, and what caught it.
  *
  * The throttle takes the next call's reservation as an argument and runs
  * BEFORE the call, and a TPM 429 is slept off and retried while a TPD 429
@@ -134,15 +133,29 @@ const DEFAULT_MAX_CALLS = 700;
 const DAILY_CAP = 200000;
 
 /**
- * Mean ACTUAL tokens per judge call, from six probe calls against this model on
- * this rubric. NOT inherited from §30.1's 0.40 or §32.2's 0.94 — see the header.
+ * Mean ACTUAL tokens per judge call. NOT inherited from §30.1's 0.40 or §32.2's
+ * 0.94 — see the header for why the ratio is a property of the feature.
  *
- * It will be re-derived from the ledger once the run is COMPLETE, and not from
- * a partial one: §32.2 records that fitting a constant to a partial stratified
- * set is the same mistake at a smaller scale, and that rule was set by 5.4's
- * own noticed list before it had to be obeyed twice.
+ * 522, FROM THE FIRST SIX REAL CALLS ON THIS RUBRIC (n=6, sd not yet meaningful).
+ * IT REPLACES 445, AND THE CORRECTION IS §32.2's MISTAKE CAUGHT EARLY RATHER
+ * THAN AVOIDED. 445 came from six probe calls made while characterising the
+ * judge model — at 389-534 prompt tokens — and the rubric those probes carried
+ * was SHORTER than the one that shipped an hour later. So it was a constant
+ * fitted on a different population, which is exactly what
+ * ACTUAL_TOKENS_PER_CALL = 2195 was at 5.4: drawn from a five-note cluster and
+ * spent on nine-note ones, 46% low, and the run it priced stopped early because
+ * of it.
+ *
+ * The difference is that this one was caught by the first six calls of the run
+ * it prices rather than by the post-mortem, because the runner reports actual
+ * against reserved on every stop. That is the ONLY reason it cost nothing.
+ *
+ * STILL RE-DERIVED FROM THE COMPLETE LEDGER AT THE END, and not from a larger
+ * partial one: §32.2 records that fitting a constant to a partial stratified set
+ * is the same mistake at a smaller scale, and 5.4's noticed list set that rule
+ * before it had to be obeyed twice.
  */
-const ACTUAL_TOKENS_PER_CALL = 445;
+const ACTUAL_TOKENS_PER_CALL = 522;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const has = (name) => process.argv.includes(`--${name}`);
@@ -270,8 +283,8 @@ function plan({ pairs, rowsBySeed, judged }) {
   console.log('');
   console.log(`    RESERVED  ${String(reserved).padStart(7)} tokens   prompt + max_tokens per call.`);
   console.log('                               What the PER-MINUTE gate charges.');
-  console.log(`    ACTUAL    ${String(actual).padStart(7)} tokens   ~${ACTUAL_TOKENS_PER_CALL}/call, from SIX probe calls`);
-  console.log('                               against this judge. What the DAILY cap charges.');
+  console.log(`    ACTUAL    ${String(actual).padStart(7)} tokens   ~${ACTUAL_TOKENS_PER_CALL}/call, MEASURED on this rubric`);
+  console.log('                               What the DAILY cap charges.');
   console.log('');
   console.log(`    daily cap ${DAILY_CAP} per ORGANISATION, refilling at 2.3148 tokens/s.`);
   console.log(`    the actual figure is ${((actual / DAILY_CAP) * 100).toFixed(0)}% of a day; the reserved one is ` +
@@ -282,11 +295,20 @@ function plan({ pairs, rowsBySeed, judged }) {
     console.log('    construction, which is why the emission order makes a prefix a sample.');
   }
   console.log('');
-  console.log(`    ACTUAL_TOKENS_PER_CALL has SIX observations behind it, not one (§32.2's`);
-  console.log('    lesson) and not a population borrowed from another feature (§30.1 measured');
-  console.log('    0.40 for single-note calls, §32.2 measured 0.94 for study packs, and the');
-  console.log('    ratio is a property of the FEATURE). It is re-derived once this ledger is');
-  console.log('    COMPLETE, and not from a partial one.');
+  const seen = readJsonl(LEDGER).filter((r) => r.ok && Number.isFinite(r.totalTokens));
+  if (seen.length) {
+    const mean = Math.round(seen.reduce((a2, r) => a2 + r.totalTokens, 0) / seen.length);
+    const res = seen.reduce((a2, r) => a2 + (r.reservationTokens || 0), 0);
+    console.log(`    MEASURED SO FAR on this ledger: ${mean} actual/call over ${seen.length} calls, ` +
+      `ratio ${res ? (seen.reduce((a2, r) => a2 + r.totalTokens, 0) / res).toFixed(2) : 'n/a'}.`);
+    console.log(`    The constant above is ${ACTUAL_TOKENS_PER_CALL}. If these diverge, the constant is stale —`);
+    console.log('    it is re-derived from the COMPLETE ledger, never from a partial one (§32.2).');
+  } else {
+    console.log(`    ACTUAL_TOKENS_PER_CALL is measured on THIS judge and THIS rubric, not`);
+    console.log('    borrowed from another feature (§30.1 measured 0.40 for single-note calls,');
+    console.log('    §32.2 measured 0.94 for study packs, and the ratio is a property of the');
+    console.log('    FEATURE). It is re-derived once this ledger is COMPLETE.');
+  }
   console.log('');
   console.log(`  pacing             serial, ${DEFAULT_DELAY_MS} ms apart, throttled BEFORE each call`);
   console.log(`                     against its own reservation, under ${TOKENS_PER_MIN}/min`);
