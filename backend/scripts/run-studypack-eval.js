@@ -120,15 +120,45 @@ const LEDGER = path.join(REPO, 'results', 'gen-v5.calls.jsonl');
 /** Per-minute token budget, from the x-ratelimit-limit-tokens header (§28.6). */
 const TOKENS_PER_MIN = 8000;
 const DEFAULT_DELAY_MS = 2500;
+
+/**
+ * A per-minute (TPM) 429 is BACKPRESSURE, NOT A FAILED ATTEMPT, and the two
+ * must not be recorded as the same thing. `delivery = completed / attempted` is
+ * a REPORTED metric, and PRIMER §5.3a is explicit about why an API failure is
+ * an exclusion rather than a zero: "folding it in as a zero makes conformance a
+ * function of the harness's pacing, which is a property of the operator rather
+ * than of the system." A TPM refusal whose stated wait is 487 MILLISECONDS is
+ * exactly that — the operator's pacing — so it is slept off and the seed is
+ * retried, and no ledger row is written for it.
+ *
+ * THE DAILY (TPD) CAP STILL STOPS THE RUN. That one is a real budget boundary
+ * measured in hours, its refusal IS the finding, and it is recorded.
+ */
+const MAX_TPM_PAUSES = 8;
+const TPM_PAUSE_MARGIN_MS = 2000;
 const DEFAULT_MAX_CALLS = 40;
 
 /**
- * Mean ACTUAL tokens per study-pack call, from the one live call at §30.8
- * (2,195 total). Used only to PRICE the run, and it is the actual figure rather
- * than the 3,460 reservation on purpose — see the header. n=1, so it is an
- * estimate with one observation behind it and the plan output says so.
+ * Mean ACTUAL tokens per study-pack call. Used only to PRICE the run, and it is
+ * the actual figure rather than the 3,460 reservation on purpose — see the
+ * header.
+ *
+ * RE-DERIVED 20 Aug 2026 FROM THE COMPLETE 30-SEED LEDGER: 97,073 tokens over
+ * 30 calls = 3,236, replacing 2,195. The old value came from §30.8's ONE live
+ * call, which was a FIVE-note cluster where a golden one is up to nine — 46%
+ * low, and the run it priced stopped at 9 of 30 seeds because of it. §30.8
+ * labelled that call "an existence proof, not a rate" about its CITATION
+ * figures; the same call's TOKEN figures were carried into this constant
+ * without the warning travelling with them. §32.2.
+ *
+ * IT WAS NOT RE-DERIVED FROM THE 9- OR 27-SEED PARTIALS, deliberately: fitting
+ * a constant to a partial stratified set is the same mistake at a smaller
+ * scale. The set is now 30 of 30, 6 per quintile.
+ *
+ * STILL AN ESTIMATE, AND STILL A MEAN OF ONE DRAW PER SEED. sd is 328 and the
+ * range is 2,588-3,828, so a 30-call run is priced to roughly +/-10%.
  */
-const ACTUAL_TOKENS_PER_CALL = 2195;
+const ACTUAL_TOKENS_PER_CALL = 3236;
 const DAILY_CAP = 200000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -210,8 +240,11 @@ function plan(clusters) {
   console.log('    estimate with n=1 behind it, not a measured mean — treat the reserved');
   console.log('    figure as the safe side until this ledger has rows of its own.');
   console.log('');
-  console.log(`  pacing             serial, ${DEFAULT_DELAY_MS} ms apart, self-paced under ${TOKENS_PER_MIN}/min`);
-  console.log('  retries            NONE — a 429 pauses the run; the ledger resumes it');
+  console.log(`  pacing             serial, ${DEFAULT_DELAY_MS} ms apart, throttled BEFORE each`);
+  console.log(`                     call against its own reservation, under ${TOKENS_PER_MIN}/min`);
+  console.log(`  retries            per-minute (TPM) 429 only — slept off and retried, up to`);
+  console.log(`                     ${MAX_TPM_PAUSES} times, and NOT counted as an attempt. A DAILY (TPD)`);
+  console.log('                     429 still STOPS the run; the ledger resumes it');
   console.log('');
   console.log('  Run it:   npm run gen:v5 -- --run');
   console.log('  Check the balance first:   npm run gen:quota\n');
@@ -222,11 +255,40 @@ function tokensInWindow(spent) {
   return spent.filter((s) => s.at >= cutoff).reduce((a, s) => a + s.tokens, 0);
 }
 
-function throttleFor(spent) {
-  if (tokensInWindow(spent) < TOKENS_PER_MIN) return 0;
+/**
+ * How long to wait before issuing a call that will RESERVE `reservation` tokens.
+ *
+ * THE RESERVATION OF THE CALL ABOUT TO BE MADE IS AN ARGUMENT, and that is the
+ * whole fix rather than a refinement of one. The provider's gate is
+ * `used_in_window + requested <= TOKENS_PER_MIN` — §29.6 established by
+ * controlled probe that the per-minute limit is charged on what a call
+ * RESERVES, not on what it writes. A throttle that only asks whether the PAST
+ * minute is under budget therefore lets exactly one breaching call through
+ * every time the window is close to full, because it cannot see the request
+ * that is about to be added to it.
+ *
+ * IT DID, ON 20 Aug 2026, AND IT MISSED BY 65 TOKENS: 4,432 in the window plus
+ * a 3,633-token reservation is 8,065 against a limit of 8,000. The run stopped
+ * at 14 of 30 seeds with the DAILY budget nowhere near binding (~58,700 free).
+ *
+ * The wait is the time for enough of the oldest reservations to age out of the
+ * 60-second window that this one fits — not a flat minute, and not the age of
+ * the single oldest entry, which under-waits whenever more than one has to go.
+ */
+function throttleFor(spent, reservation = 0) {
+  const inWindow = tokensInWindow(spent);
+  if (inWindow + reservation <= TOKENS_PER_MIN) return 0;
+
   const cutoff = Date.now() - 60000;
-  const oldest = spent.filter((s) => s.at >= cutoff)[0];
-  return oldest ? Math.max(0, oldest.at + 60000 - Date.now()) + 1000 : 0;
+  const live = spent.filter((s) => s.at >= cutoff);
+  const mustFree = inWindow + reservation - TOKENS_PER_MIN;
+
+  let freed = 0;
+  for (const s of live) {
+    freed += s.tokens;
+    if (freed >= mustFree) return Math.max(0, s.at + 60000 - Date.now()) + 1000;
+  }
+  return live.length ? Math.max(0, live[live.length - 1].at + 60000 - Date.now()) + 1000 : 0;
 }
 
 function parseRetryHint(text) {
@@ -267,7 +329,7 @@ async function run(clusters) {
   console.log(`  max_tokens       ${MAX_TOKENS}   inherited (§30.9)`);
   console.log(`  issued by        services/studyPack.service.js — THE LIVE FUNCTION`);
   console.log(`  seeds to call    ${todo.length} of ${clusters.length}`);
-  console.log(`  retries          NONE — a 429 pauses the run; the ledger resumes it\n`);
+  console.log(`  retries          TPM 429 retried (<=${MAX_TPM_PAUSES}, not an attempt); TPD 429 STOPS\n`);
 
   if (todo.length > maxCalls) {
     console.error(`REFUSING: ${todo.length} calls exceeds the --max-calls ceiling of ${maxCalls}.`);
@@ -307,26 +369,68 @@ async function run(clusters) {
       };
     });
 
+    // ONE ATTEMPT PER SEED. A TPM pause below is not an attempt — see
+    // MAX_TPM_PAUSES for why delivery must not count the operator's pacing.
     attempts += 1;
     let observation = null;
     let failure = null;
+    let tpmPauses = 0;
 
-    try {
-      observation = await studyPack.generate(context.text, noteCount);
-      completed += 1;
-      actualTokens += observation.totalTokens || 0;
-    } catch (err) {
-      // THE PROVIDER'S OWN MESSAGE, NOT JUST THE MAPPED ONE. §29.6: the mapped
-      // sentence cannot tell a per-minute limit from a daily one, and the daily
-      // one carries "Limit 200000, Used ..., try again in ...". 5.5 threw that
-      // body away twice before recording it.
-      const raw = err && err.cause ? String(err.cause.message || '') : '';
-      failure = {
-        message: String(err && err.message).slice(0, 400),
-        status: err && err.status ? err.status : null,
-        providerMessage: raw ? raw.replace(/\s+/g, ' ').slice(0, 600) : null,
-        retryAfterMs: parseRetryHint(raw || String((err && err.message) || ''))
-      };
+    // Charged on the RESERVATION under the per-minute limit (§29.6), whatever
+    // the model actually writes, so the estimate is what the gate sees.
+    const reservation = context.estimatedTokens + MAX_TOKENS;
+
+    for (;;) {
+      // THE THROTTLE RUNS BEFORE THE CALL AND KNOWS THIS CALL'S RESERVATION.
+      const waitMs = throttleFor(spent, reservation);
+      if (waitMs > 0) {
+        console.log(`  ...${tokensInWindow(spent)} reserved of ${TOKENS_PER_MIN}/min, ` +
+          `next call reserves ${reservation} — pausing ${(waitMs / 1000).toFixed(1)} s`);
+        await sleep(waitMs);
+      }
+
+      failure = null;
+      try {
+        observation = await studyPack.generate(context.text, noteCount);
+        completed += 1;
+        actualTokens += observation.totalTokens || 0;
+        spent.push({
+          at: Date.now(),
+          tokens: (Number.isFinite(observation.promptTokens) ? observation.promptTokens : context.estimatedTokens) + MAX_TOKENS
+        });
+        break;
+      } catch (err) {
+        // THE PROVIDER'S OWN MESSAGE, NOT JUST THE MAPPED ONE. §29.6: the mapped
+        // sentence cannot tell a per-minute limit from a daily one, and the daily
+        // one carries "Limit 200000, Used ..., try again in ...". 5.5 threw that
+        // body away twice before recording it.
+        const raw = err && err.cause ? String(err.cause.message || '') : '';
+        failure = {
+          message: String(err && err.message).slice(0, 400),
+          status: err && err.status ? err.status : null,
+          providerMessage: raw ? raw.replace(/\s+/g, ' ').slice(0, 600) : null,
+          retryAfterMs: parseRetryHint(raw || String((err && err.message) || ''))
+        };
+        observation = null;
+      }
+
+      const rateLimited = failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '');
+      const daily = /tokens per day|TPD/i.test(failure.providerMessage || '');
+
+      if (rateLimited && !daily && tpmPauses < MAX_TPM_PAUSES) {
+        tpmPauses += 1;
+        // The refusal executed nothing, but it PROVES the window is fuller than
+        // this process believed — a resumed run starts with an empty window and
+        // cannot know what the previous one spent. Record the reservation so the
+        // throttle stops guessing.
+        spent.push({ at: Date.now(), tokens: reservation });
+        const backoff = (failure.retryAfterMs || 1000) + TPM_PAUSE_MARGIN_MS;
+        console.log(`  ... per-minute (TPM) 429 — pausing ${(backoff / 1000).toFixed(1)} s and retrying ` +
+          `seed ${cluster.seedId} (backpressure, NOT a failed attempt; ${tpmPauses}/${MAX_TPM_PAUSES})`);
+        await sleep(backoff);
+        continue;
+      }
+      break;
     }
 
     if (observation) {
@@ -380,24 +484,17 @@ async function run(clusters) {
 
       if (failure.status === 429 || /rate limit|rate_limit|429/i.test(failure.message || '')) {
         const daily = /tokens per day|TPD/i.test(failure.providerMessage || '');
-        console.log(`\n  429 on the ${daily ? 'DAILY (TPD)' : 'per-minute'} limit — STOPPING.`);
+        // A TPM refusal only reaches here having exhausted MAX_TPM_PAUSES, which
+        // means the pauses are not working rather than that the budget is gone.
+        console.log(`\n  429 on the ${daily ? 'DAILY (TPD)' : 'per-minute'} limit — STOPPING` +
+          `${daily ? '' : ` after ${tpmPauses} TPM pauses`}.`);
         if (failure.providerMessage) console.log(`  ${failure.providerMessage.slice(0, 300)}`);
         if (failure.retryAfterMs) {
-          console.log(`  frees in ~${Math.round(failure.retryAfterMs / 60000)} min for ONE call.`);
+          const mins = failure.retryAfterMs / 60000;
+          console.log(`  frees in ~${mins >= 1 ? `${Math.round(mins)} min` : `${(failure.retryAfterMs / 1000).toFixed(1)} s`} for ONE call.`);
         }
         console.log('  Nothing completed is lost — re-run the same command to resume.\n');
         break;
-      }
-    }
-
-    if (observation && Number.isFinite(observation.promptTokens)) {
-      // Charged on the RESERVATION under the per-minute limit (§29.6), whatever
-      // the model actually wrote.
-      spent.push({ at: Date.now(), tokens: observation.promptTokens + MAX_TOKENS });
-      const waitMs = throttleFor(spent);
-      if (waitMs > 0) {
-        console.log(`  ...${tokensInWindow(spent)} reserved tokens in the last minute of ${TOKENS_PER_MIN}, pausing ${Math.round(waitMs / 1000)} s`);
-        await sleep(waitMs);
       }
     }
 
