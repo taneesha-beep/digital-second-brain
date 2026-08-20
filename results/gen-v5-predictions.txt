@@ -1,0 +1,80 @@
+PHASE 5.4 — PREDICTIONS, WRITTEN BEFORE THE FIRST gen-v5 API CALL
+================================================================================
+
+Committed in its own commit so the ordering is checkable in git, the same way
+results/gen-predictions.txt (5.3) and results/gen-v2-predictions.txt (5.5) were.
+
+Priors, so the hit rate below is read against something: 5.1 scored 3 right /
+3 wrong / 1 untestable, 5.5 finished 9 right / 6 wrong / 0 untestable, 5.3 was
+9 of 16, the README pass 4 of 6, and 4.6 5 of 10.
+
+WHAT IS BEING PREDICTED. gen-v5 is Study Pack over the 30 seeds of the 5.2
+golden set, n=1, one call per seed, through the LIVE services/studyPack.service.js.
+Every band below is over those 30 calls, or over the ~420 items they return.
+
+n IS DECLARED HERE AND NOT SET BY THE QUOTA. 5.3 stopped at 234 of 330 cells and
+5.5 at 78 of 150, and in both cases what the run could afford chose n after the
+fact (§28.6). 30 calls at ~2,195 ACTUAL tokens is ~66,000 of a 200,000/day
+organisation cap — about a third of a day (§30.1's cost model). If the cap
+refuses partway, the coverage is reported as partial and no band below is
+scored on a fraction of the set.
+
+
+  #   PREDICTION                                              BAND
+  ------------------------------------------------------------------------
+  1   Study Pack truncates at the INHERITED 2048 ceiling      20-45% of calls
+  2   Reasoning share of completion tokens                    45-65%
+  3   Citation validity, in-range                             92-99% of items
+  4   Citation `missing` (no usable `source` field)           0-3% of items
+  5   Study-pack shape conformance (object envelope, both     80-95% of calls
+      arrays present, every element EXACTLY its keys)
+  6   Cardinality exactly 6 flashcards and 8 concepts         70-90% of calls
+  7   Mean containment against the CITED note                 0.45-0.70
+  8   GAP: mean containment cited MINUS mean containment      +0.10 to +0.30
+      against the non-cited notes in the SAME prompt
+  9   Distinct notes cited / notes in context                 55-85%
+ 10   `usedFallbackParse` fires                               0-7% of calls
+ 11   Empty rate                                              0%
+ 12   Delivery (completed / attempted)                        >= 90%
+ 13   The 90 + ceil(chars/4.5) bound never underestimates     30 of 30 calls
+
+
+TWO OF THESE ARE WHERE I EXPECT TO BE WRONG, AND WHY.
+
+#1, TRUNCATION. §30.9 records `max_tokens: 2048` as INHERITED, NOT DERIVED —
+§29.2 argued 2048 as smallest-sufficient from measured `examQs` demand, and no
+such measurement exists for a study pack. The one live call at §30.8 spent
+57.9% of its completion on REASONING against §28.7's ~17% on single notes, on a
+608-token, five-note prompt. A golden cluster is ~1,412 prompt tokens across up
+to nine notes and asks the model to RELATE them rather than summarise one, so
+the reasoning cost should go up, not down. If #1 lands high, study-pack shape
+conformance is ceiling-dominated and §28's headline defect has reproduced itself
+on a new surface one phase after being declared fixed — with 5.5's residual 3.3%
+`examQs` truncation at 2048 as the warning shot.
+
+#8, THE NULL GAP. There is no prior for this anywhere in the project. It is the
+number that decides whether citation SUPPORT means anything: if a claim scores
+0.60 against the note it cites and 0.55 against every other note in the same
+prompt, the citation carries almost no information and the headline support
+figure hides that. It is also the number I have the most reason to want to be
+large, which is exactly why the band is written down first.
+
+
+WHAT THESE NUMBERS CANNOT BE, WHATEVER THEY COME OUT AT.
+
+NO NOISE FLOOR EXISTS FOR ANY OF THEM. n=1 per seed measures BETWEEN-SEED
+variation only. §28.8 measured 32.1% of `examQs` cells flipping verdict on a
+re-draw at this temperature, and nothing here establishes the equivalent for a
+study pack. So a gen-v5 rate may be compared against nothing — there is no
+before, and no re-draw. Any future comparison that moves one of these numbers
+has to buy its own repeats first.
+
+CITATION SUPPORT IS A PROXY AND IS LABELLED ONE. It is lexical containment of
+the claim's terms in the cited note's terms. A correct paraphrase sharing no
+vocabulary scores zero and is NOT a hallucination; a claim built from generic
+cooking vocabulary scores high against ANY cooking note. Both directions are
+real and 5.6's judge is what actually answers the question.
+
+THE SEEDS ARE STACK EXCHANGE QUESTIONS SHAPED AS NOTES. §12.2's gap, ninth
+instance: the "<=500-note user slice" the app retrieves over has no referent on
+this corpus.
