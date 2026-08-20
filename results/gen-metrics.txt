@@ -15,24 +15,8 @@ A. WHAT IS BEING COMPARED, AND WHY TWO COLUMNS ARE STRUCTURALLY EMPTY
            Phase 5.3 baseline. Five single-note features, max_tokens 1024, frozen copy.
   gen-v2   single-note  188 ledger rows
            Phase 5.5 re-measure. Same prompts and model, max_tokens 2048, LIVE service.
-  gen-v5   study-pack   10 ledger rows
+  gen-v5   study-pack   33 ledger rows
            Phase 5.4. Study Pack: seed + v4-bm25 neighbours, one call, a citation per item.
-
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !! gen-v5 IS PARTIAL: 9 OF 30 GOLDEN SEEDS.
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-  EVERY gen-v5 FIGURE BELOW IS OVER THAT FRACTION AND MAY NOT BE QUOTED AS
-  A PROPERTY OF THE GOLDEN SET. This is not a formality. 5.5 reported a
-  15-of-30 result with its partiality stated loudly at every site, drew a
-  headline conclusion from it, and THE OTHER HALF OF THE SET OVERTURNED
-  THAT CONCLUSION — the ceiling it called "mostly variance" turned out to
-  be binding on 43.3% against 46.7%, a gap of 3.4 points rather than 20.
-  §29.5's ↳. A sample described honestly is not the same as a sample large
-  enough, and this one is thinner than the one that failed.
-
-  The run stopped on the 200,000/day ORGANISATION cap. Resume with:
-    npm run gen:v5 -- --run        (nothing completed is lost)
 
   ROADMAP 5.4 ASKS FOR "ALL FOUR METRICS POPULATED FOR gen-v1" AND THAT IS
   NOT POSSIBLE. gen-v1 and gen-v2 are SINGLE-NOTE generation and produce no
@@ -63,7 +47,7 @@ B. THE FOUR METRICS
   ----------------------------------------------------------------------
   gen-v1          83.3%       n/a - none         n/a - none         0.0%
   gen-v2          94.4%       n/a - none         n/a - none         0.0%
-  gen-v5         100.0%           100.0%              0.284         0.0%
+  gen-v5          76.7%           100.0%              0.283         0.0%
 
   `n/a - none` is "this configuration emits no citations", not "not measured".
   Schema conformance for the single-note runs is over their JSON features
@@ -75,7 +59,7 @@ B. THE FOUR METRICS
   ----------------------------------------------------------
   gen-v1          235         234      99.6%      150      30
   gen-v2          188         151      80.3%      150      30
-  gen-v5           10           9      90.0%        9       9
+  gen-v5           33          30      90.9%       30      30
 
   `scored` is below `completed` where a run kept only balanced first draws:
   a seed counts only if every feature completed for it, so each feature is
@@ -88,12 +72,12 @@ C. CITATION VALIDITY — gen-v5 ONLY
   Does the note a generated item cites exist in the context that was sent?
   Mechanical: the label is resolved against the notes on the ledger row.
 
-    items returned            126 of 126 expected
-    valid                      126    100.0%
+    items returned            322 of 420 expected
+    valid                      322    100.0%
     out-of-range                 0      0.0%   a note that was not there
     missing                      0      0.0%   no usable `source` at all
 
-    notes cited per pack        7.78 of  8.67 in context   coverage   90.1%
+    notes cited per pack        5.93 of  8.70 in context   coverage   67.0%
 
     THIS MOSTLY MEASURES OUT-OF-RANGE LABELS, NOT FABRICATED IDENTIFIERS.
     §30.5 chose small integers over 24-hex ObjectIds — ~1 token per item
@@ -110,31 +94,31 @@ D. CITATION SUPPORT — A PROXY, AND IT SHIPS WITH ITS NULL
   retriever-INDEPENDENT so 5.7 can vary the retriever without moving the
   measuring instrument, and not a fourth tokenizer.
 
-    items scored               126
+    items scored               322
     unscorable                   0   valid citation, no terms after stopwords
 
-    mean                        0.284
+    mean                        0.283
     median                      0.273
-    p10                         0.133
-    rate >= 0.3                 40.5%
-    rate >= 0.5                  6.3%   <- the PRE-COMMITTED cut
+    p10                         0.139
+    rate >= 0.3                 41.0%
+    rate >= 0.5                  5.9%   <- the PRE-COMMITTED cut
     rate >= 0.7                  0.0%
 
   THE NULL. The same claims scored against the notes in the SAME prompt
   they did NOT cite. Without it a support figure has no scale at all.
 
-    mean vs CITED note          0.284
-    mean vs OTHER notes         0.123
-    GAP                         0.161   <- the number that says whether
+    mean vs CITED note          0.283
+    mean vs OTHER notes         0.119
+    GAP                         0.163   <- the number that says whether
                                         a citation carries information
 
-    cited note is the argmax    69.8%
+    cited note is the argmax    77.3%
 
     by slot:
-      flashcards  n=  54   cited   0.303   other   0.127   gap   0.176
-      concepts    n=  72   cited   0.270   other   0.121   gap   0.150
+      flashcards  n= 138   cited   0.291   other   0.124   gap   0.167
+      concepts    n= 184   cited   0.276   other   0.116   gap   0.160
 
-    items citing the SEED       15.1%   label 1 of  8.7 notes
+    items citing the SEED       12.4%   label 1 of  8.7 notes
       A pack that leans on the seed used the cluster less than `notesCited`
       suggests. This is the sharper version of that number.
 
@@ -154,20 +138,23 @@ D. CITATION SUPPORT — A PROXY, AND IT SHIPS WITH ITS NULL
 E. SCHEMA CONFORMANCE AND EMPTY/REFUSAL — gen-v5
 ==============================================================================
 
-    shape conformance          100.0%   object envelope, both arrays, exact keys
-    cardinality (6 and 8)      100.0%   reported SEPARATELY, not a schema failure
-    truncated at 2048            0.0%   finish_reason === 'length'
+    shape conformance           76.7%   object envelope, both arrays, exact keys
+    cardinality (6 and 8)       76.7%   reported SEPARATELY, not a schema failure
+    truncated at 2048           23.3%   finish_reason === 'length'
 
-    A 0% TRUNCATION RATE HERE IS NOT A COMFORTABLE ZERO. The worst call
-    returned 1951 completion tokens against a 2048 ceiling — 95.3% of it,
-    with the whole run bunched just under the cap. `max_tokens` is INHERITED
-    from a value §29.2 derived for `examQs` demand and never re-derived for a
-    study pack (§30.9), and this says it is close to binding rather than
-    comfortably clear. Read the rate with the headroom beside it.
+    THE CEILING BINDS. 23.3% of calls stopped on `length`, and the worst
+    returned 2048 tokens against a 2048 ceiling — 100.0% of it.
+    Shape conformance and cardinality above are the SAME calls: a truncated
+    pack parses to nothing, so it fails both. Read them as one defect.
+    `max_tokens` is INHERITED from a value §29.2 derived for `examQs` demand
+    and never re-derived for a study pack (§30.9).
 
     empty response               0.0%
-    empty PACK (0 items)         0.0%   parsed fine, returned nothing
+    empty PACK (0 items)        23.3%   parsed fine, returned nothing
     very short (<40 chars)       0.0%   A FLAG FOR A HUMAN, NOT A REFUSAL RATE
+
+    failure causes:
+      truncated        7
 
     `veryShort` is not called a refusal. Detecting "the model declined" is
     a semantic judgment and belongs to 5.6's judge; a length threshold
@@ -177,17 +164,18 @@ E. SCHEMA CONFORMANCE AND EMPTY/REFUSAL — gen-v5
 F. OPERATIONAL — gen-v5
 ==============================================================================
 
-    latency p50 / p95           5305 /  29702 ms
+    latency p50 / p95           4870 /  25223 ms
       §29.2's linear model (420 + 2.15 x completion) predicts ~4,400 ms at this
       output length and matched §30.8's single call to 2.9%. It does NOT hold
-      across this run: five calls land near the prediction and four are 12-30 s.
+      across this run: 18 of 30 calls land within 25% of the prediction,
+      the rest run long (slowest 29702 ms).
       That spread is provider-side, not output length, so p95 here is a figure
       about one afternoon on one home connection. 6.5 owns the controlled one.
-    mean prompt tokens          1367
-    mean completion tokens      1828
-    mean reasoning tokens       1048     57.3% of the completion
-    total ACTUAL tokens        28752   what the DAILY cap charged (§30.1)
-    total RESERVED tokens      30731   what the PER-MINUTE gate charged
+    mean prompt tokens          1404
+    mean completion tokens      1832
+    mean reasoning tokens       1118     61.0% of the completion
+    total ACTUAL tokens        97073   what the DAILY cap charged (§30.1)
+    total RESERVED tokens     103556   what the PER-MINUTE gate charged
     actual / reserved           0.94
 
     THAT RATIO IS 0.40 FOR THE SINGLE-NOTE RUN (§30.1) AND IT IS NOT A
@@ -198,21 +186,15 @@ F. OPERATIONAL — gen-v5
     the constant carried into it has to come from the same population.
 
     THE ESTIMATOR CHECKING ITSELF, on every call, for free:
-      slack min / mean         -63 / 7.3 tokens
-      never underestimates    NO — THE BOUND IS BROKEN   over 9 calls
+      slack min / mean         -63 / 8.0 tokens
+      never underestimates    NO — THE BOUND IS BROKEN   over 30 calls
 
-    neighbours dropped for budget   3 across 9 clusters
-    seeds by length quintile        Q1:2  Q2:2  Q3:2  Q4:2  Q5:1
+    neighbours dropped for budget   9 across 30 clusters
+    seeds by length quintile        Q1:6  Q2:6  Q3:6  Q4:6  Q5:6
 
 ==============================================================================
 G. WHAT THESE NUMBERS CANNOT SAY
 ==============================================================================
-
-  NOT THE GOLDEN SET. 9 of 30 seeds, stopped by the daily cap. The
-  quintile spread is printed in section F precisely because the golden set
-  is 6 per quintile and a partial run has no mechanism protecting that
-  balance — the seeds are called in file order, which is by id, and any
-  stratification a prefix happens to have is luck rather than design.
 
   NO NOISE FLOOR EXISTS FOR ANY gen-v5 FIGURE. n = 1 per seed measures
   BETWEEN-SEED variation only. §28.8 measured 32.1% of `examQs` cells

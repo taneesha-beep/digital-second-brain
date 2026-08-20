@@ -528,13 +528,25 @@ function main() {
     w(`    cardinality (6 and 8)     ${pctCell(m.cardinality)}   reported SEPARATELY, not a schema failure`);
     w(`    truncated at ${String(v5.rows.find((r) => r.ok).maxTokens).padEnd(4)}         ${pctCell(m.truncated)}   finish_reason === 'length'`);
     w('');
-    w('    A 0% TRUNCATION RATE HERE IS NOT A COMFORTABLE ZERO. The worst call');
-    w(`    returned ${m.maxCompletion} completion tokens against a ${v5.rows.find((r) => r.ok).maxTokens} ceiling — ` +
-      `${((m.maxCompletion / v5.rows.find((r) => r.ok).maxTokens) * 100).toFixed(1)}% of it,`);
-    w('    with the whole run bunched just under the cap. `max_tokens` is INHERITED');
-    w('    from a value §29.2 derived for `examQs` demand and never re-derived for a');
-    w('    study pack (§30.9), and this says it is close to binding rather than');
-    w('    comfortably clear. Read the rate with the headroom beside it.');
+    // THIS PARAGRAPH IS COMPUTED, NOT TRANSCRIBED. It read "A 0% TRUNCATION RATE
+    // HERE IS NOT A COMFORTABLE ZERO" — true of the 9-seed partial it was written
+    // beside, and printed directly above `truncated 23.3%` once the golden set
+    // completed. A hardcoded sentence next to a recomputed number is §22.6's shape
+    // in a reporter: it cannot fail, it can only go quietly false.
+    const ceiling = v5.rows.find((r) => r.ok).maxTokens;
+    const atCeiling = ((m.maxCompletion / ceiling) * 100).toFixed(1);
+    if (m.truncated === 0) {
+      w('    A 0% TRUNCATION RATE IS NOT AUTOMATICALLY A COMFORTABLE ZERO. The worst');
+      w(`    call returned ${m.maxCompletion} completion tokens against a ${ceiling} ceiling — ${atCeiling}% of it.`);
+      w('    Read the rate with the headroom beside it.');
+    } else {
+      w(`    THE CEILING BINDS. ${(m.truncated * 100).toFixed(1)}% of calls stopped on \`length\`, and the worst`);
+      w(`    returned ${m.maxCompletion} tokens against a ${ceiling} ceiling — ${atCeiling}% of it.`);
+      w('    Shape conformance and cardinality above are the SAME calls: a truncated');
+      w('    pack parses to nothing, so it fails both. Read them as one defect.');
+    }
+    w('    `max_tokens` is INHERITED from a value §29.2 derived for `examQs` demand');
+    w('    and never re-derived for a study pack (§30.9).');
     w('');
     w(`    empty response            ${pctCell(m.empty)}`);
     w(`    empty PACK (0 items)      ${pctCell(m.emptyPack)}   parsed fine, returned nothing`);
@@ -554,9 +566,15 @@ function main() {
     w('='.repeat(78));
     w('');
     w(`    latency p50 / p95         ${String(m.latencyP50).padStart(6)} / ${String(m.latencyP95).padStart(6)} ms`);
+    // COUNTED, NOT TRANSCRIBED — this said "five calls ... and four are 12-30 s",
+    // which was the 9-call run's tally left standing beside a recomputed p50/p95.
+    const lat = v5.rows.filter((r) => r.ok && Number.isFinite(r.latencyMs));
+    const predicted = lat.map((r) => 420 + 2.15 * (r.completionTokens || 0));
+    const near = lat.filter((r, i) => Math.abs(r.latencyMs - predicted[i]) <= 0.25 * predicted[i]).length;
     w('      §29.2\'s linear model (420 + 2.15 x completion) predicts ~4,400 ms at this');
     w('      output length and matched §30.8\'s single call to 2.9%. It does NOT hold');
-    w('      across this run: five calls land near the prediction and four are 12-30 s.');
+    w(`      across this run: ${near} of ${lat.length} calls land within 25% of the prediction,`);
+    w(`      the rest run long (slowest ${Math.max(...lat.map((r) => r.latencyMs))} ms).`);
     w('      That spread is provider-side, not output length, so p95 here is a figure');
     w('      about one afternoon on one home connection. 6.5 owns the controlled one.');
     w(`    mean prompt tokens        ${numCell(m.promptTokens, 0, 6)}`);
