@@ -44,6 +44,8 @@
     "gen:v2": "node scripts/measure-gen-baseline.js --variant v2",
     "gen:compare": "node scripts/compare-gen-runs.js",
     "gen:quota": "node scripts/check-gen-quota.js",
+    "gen:v5": "node scripts/run-studypack-eval.js",
+    "eval:gen": "node scripts/eval-gen.js",
     "studypack:calibrate": "node scripts/calibrate-studypack.js"
   },
   "dependencies": {

@@ -563,6 +563,25 @@ function contextDigest(contextText) {
 module.exports = {
   buildStudyPack,
   buildCluster,
+  /**
+   * EXPORTED FOR PHASE 5.4 AND NOTHING ELSE CHANGED IN THIS FILE.
+   *
+   * scripts/run-studypack-eval.js drives the 30 golden seeds, which are Stack
+   * Exchange documents with neighbours already stamped at 5.2 — there is no
+   * note id, no user id and no database, so `buildStudyPack` cannot be the
+   * entry point. It calls `assembleContext` and then this.
+   *
+   * EXPORTED RATHER THAN REIMPLEMENTED IN THE SCRIPT. A second copy of this
+   * call would be a SECOND hardcoded model string, which is §28.9's defect —
+   * "the model is the one input with no checksum" — built on purpose, and
+   * `npm run gen:probe` would stop covering everything the project asks for.
+   * §29.4 records the same reasoning from the other side: gen-v2 measures the
+   * live function where gen-v1 measured a frozen copy, and calls that the
+   * stronger position. gen-v5 starts there.
+   *
+   * Additive: no behaviour changes and no caller changes.
+   */
+  generate,
   assembleContext,
   parseStudyPackJson,
   resolveCitations,

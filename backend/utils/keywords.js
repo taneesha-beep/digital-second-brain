@@ -106,4 +106,25 @@ function sharedKeywordCount(kw1, kw2) {
   return kw2.filter(k => set1.has(k)).length;
 }
 
-module.exports = { extractKeywords, sharedKeywordCount };
+/**
+ * `tokenise` IS EXPORTED FOR PHASE 5.4 AND NOTHING ELSE CHANGED HERE.
+ *
+ * 5.4's citation-support metric needs to split a generated claim and a cited
+ * note into comparable terms. CLAUDE.md records that this repository already
+ * has THREE tokenizers — this one (length > 2, the stopword list above),
+ * graphBuilder.service.js:10's local one (length > 3, a shorter list, never
+ * measured), and each retriever's inside backend/retrieval/ — so the metric
+ * uses an existing one rather than adding a fourth.
+ *
+ * THIS ONE RATHER THAN A RETRIEVER'S, and the reason is 5.7. That phase runs
+ * Study Pack against v1-overlap and against v4-bm25 with prompts held fixed. A
+ * support metric built on the retriever's own tokenizer would move when the
+ * retriever moves, which makes the measuring instrument one of the variables —
+ * CLAUDE.md's never-change-two rule, violated inside the metric rather than
+ * inside the experiment. This tokenizer is retriever-independent and is already
+ * pinned by tests/keywords.stability.test.js (4.6).
+ *
+ * Additive: no behaviour changes, no caller changes, and nothing in this
+ * repository asserts this file's export list. docs/EVALUATION.md §32.
+ */
+module.exports = { extractKeywords, sharedKeywordCount, tokenise };
