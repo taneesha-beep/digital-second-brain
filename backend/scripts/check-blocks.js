@@ -108,12 +108,27 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // Rule 1 does not make this distinction: a command is checked everywhere,
 // because a reader types a command out of any document without asking which
 // phase wrote it. Commands that do not exist yet go on PLANNED_SCRIPTS.
+// `published` IS LOAD-BEARING AND WAS ADDED THE DAY CI FIRST RAN.
+//
+// Four of these five are gitignored on purpose — they hold personal career
+// material — so a fresh clone, and therefore every CI checkout, has exactly ONE
+// of them. Rule 3 asks "is this file named by a writeup", which is
+// unanswerable when the writeups that would name it are absent: the first real
+// CI run flagged all 50 files in the covered roots and went red on a repository
+// with no documentation gap at all.
+//
+// DECLARED, NOT PROBED, which is tests/helpers/preconditions.js's argument
+// reused verbatim: a probe answers "was the file there", satisfied by accident,
+// and a declaration answers "was it meant to be there". So an absent
+// `published: false` writeup is an EXPECTED absence that skips rule 3 loudly,
+// and an absent `published: true` one is a FAILURE — README.md going missing is
+// not an environment, it is a defect.
 const WRITEUPS = [
-  { file: 'README.md', mode: 'current' },
-  { file: 'docs/EVALUATION.md', mode: 'current' },
-  { file: 'docs/PRIMER.md', mode: 'current' },
-  { file: 'docs/ROADMAP.md', mode: 'forward-looking' },
-  { file: 'docs/END-STATE.md', mode: 'forward-looking' }
+  { file: 'README.md', mode: 'current', published: true },
+  { file: 'docs/EVALUATION.md', mode: 'current', published: false },
+  { file: 'docs/PRIMER.md', mode: 'current', published: false },
+  { file: 'docs/ROADMAP.md', mode: 'forward-looking', published: false },
+  { file: 'docs/END-STATE.md', mode: 'forward-looking', published: false }
 ];
 
 const MANIFESTS = ['backend/package.json', 'scripts/package.json', 'frontend/package.json', 'package.json'];
@@ -142,6 +157,16 @@ const QUOTED = new Map([
 // Scripts a writeup names for a phase that has not run yet.
 const PLANNED_SCRIPTS = new Map([
   ['eval:gen', 'Phase 5.4 — the generation eval harness, ROADMAP 5.4']
+]);
+
+// Paths a writeup names that the READER is supposed to create. Not planned, not
+// quoted-as-wrong — correct instructions about a file that must not be in the
+// repository. §27 spotted this class in prose ("`backend/.env` has the same
+// shape") and nothing acted on it; the first CI run turned it into a red build,
+// because README tells a reader to create `backend/.env` and a fresh checkout
+// rightly has none.
+const CREATED_BY_READER = new Map([
+  ['backend/.env', 'README tells the reader to create it; .env.example is the tracked template']
 ]);
 
 const PLANNED = new Map([
@@ -371,13 +396,20 @@ function main() {
   const plannedHit = new Map();
   const quotedHit = new Map();
   const plannedScriptHit = new Map();
+  const readerHit = new Map();
   let scriptsChecked = 0;
   let pathsChecked = 0;
   const writeupsFound = [];
+  // Absent writeups, split by whether their absence is the design or a defect.
+  const absentUnpublished = [];
+  const absentPublished = [];
 
-  for (const { file: rel, mode } of WRITEUPS) {
+  for (const { file: rel, mode, published } of WRITEUPS) {
     const file = path.join(REPO_ROOT, rel);
-    if (!fs.existsSync(file)) continue;
+    if (!fs.existsSync(file)) {
+      (published ? absentPublished : absentUnpublished).push(rel);
+      continue;
+    }
     writeupsFound.push(rel);
     const text = fs.readFileSync(file, 'utf8');
     const lineOf = lineIndexer(text);
@@ -403,6 +435,10 @@ function main() {
         continue;
       }
       if (QUOTED.has(token)) { quotedHit.set(token, (quotedHit.get(token) || 0) + 1); continue; }
+      if (CREATED_BY_READER.has(token)) {
+        readerHit.set(token, (readerHit.get(token) || 0) + 1);
+        continue;
+      }
       if (ROOTS.some((root) => fs.existsSync(path.join(REPO_ROOT, root, token)))) continue;
       const row = { file: rel, line: lineOf(index), token };
       if (mode === 'forward-looking' || UNTRACKED_BY_DESIGN.test(token)) softPaths.push(row);
@@ -411,6 +447,17 @@ function main() {
   }
 
   // --- rule 3: reverse coverage ---------------------------------------------
+  //
+  // RUNS ONLY WHEN EVERY WRITEUP IS PRESENT. With four of the five gitignored,
+  // a CI checkout holds one, and asking "does any writeup name this file"
+  // against a fifth of the corpus answers a different question than the one the
+  // rule exists for — it reported all 50 covered files as undocumented on the
+  // first CI run this repository ever produced. Skipping is not weakening it:
+  // it was ALWAYS a local-only guard, and this makes that fact declared instead
+  // of accidental. The skip is announced with the names, because §22.6's whole
+  // lesson is that a check which quietly does not run looks exactly like one
+  // that passed.
+  const coverageRan = absentUnpublished.length === 0 && absentPublished.length === 0;
   const raw = writeupsFound.map((rel) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8')).join('\n');
   const corpus = `${raw}\n${expandBraces(raw)}`;
   const undocumented = [];
@@ -418,7 +465,7 @@ function main() {
   let coverageChecked = 0;
   const rootsScanned = [];
 
-  for (const root of COVERED_ROOTS) {
+  for (const root of coverageRan ? COVERED_ROOTS : []) {
     const dir = path.join(REPO_ROOT, root.dir);
     if (!fs.existsSync(dir)) continue;
     const names = fs.readdirSync(dir, { withFileTypes: true })
@@ -445,8 +492,32 @@ function main() {
   console.log(`  manifests        ${manifestsFound.join(', ')}  (${known.size} scripts)`);
   console.log(`  npm run checked  ${scriptsChecked}`);
   console.log(`  paths checked    ${pathsChecked}`);
-  console.log(`  files covered    ${coverageChecked}  in ${rootsScanned.join(', ')}`);
+  console.log(`  files covered    ${coverageRan ? `${coverageChecked}  in ${rootsScanned.join(', ')}` : 'RULE 3 SKIPPED — see below'}`);
   console.log('');
+
+  if (absentUnpublished.length > 0) {
+    console.log('  RULE 3 DID NOT RUN, AND THAT IS DECLARED RATHER THAN SILENT.');
+    console.log('  Reverse coverage — "every file in a covered root is named by a writeup" —');
+    console.log('  needs the writeups. These are gitignored by design and absent here:');
+    console.log('');
+    for (const rel of absentUnpublished) console.log(`    ${rel}`);
+    console.log('');
+    console.log('  So this run checked rules 1 and 2 only, over the writeups that ARE here:');
+    console.log(`    ${writeupsFound.join(', ') || '(none)'}`);
+    console.log('');
+    console.log('  Those two are the ones that matter to a stranger: they check that every');
+    console.log('  command README tells you to run exists and every path it names resolves.');
+    console.log('  Rule 3 is a local guard and always was. Run it with docs/ present.');
+    console.log('');
+  }
+
+  if (readerHit.size > 0) {
+    console.log('  CREATED BY THE READER — named correctly, and must not be in the repo.');
+    for (const [token, why] of [...readerHit.keys()].sort().map((k) => [k, CREATED_BY_READER.get(k)])) {
+      console.log(`    ${token.padEnd(52)}  ${why}`);
+    }
+    console.log('');
+  }
 
   if (undocumentedHit.size > 0) {
     console.log('  UNDOCUMENTED ON PURPOSE — in a covered root, named by no writeup.');
@@ -493,6 +564,19 @@ function main() {
   const failures = [...badScripts.map((b) => ({ ...b, what: `npm run ${b.script}`, why: 'no such script' })),
     ...badPaths.map((b) => ({ ...b, what: b.token, why: 'no such file' }))];
 
+  // The other direction of the declaration. An absent gitignored writeup is the
+  // design; an absent PUBLISHED one is a defect, and it must not be able to
+  // disable rule 3 quietly on its way past.
+  if (absentPublished.length > 0) {
+    console.log(`  FAIL — ${absentPublished.length} writeup(s) declared published are missing:\n`);
+    for (const rel of absentPublished) console.log(`    ${rel}`);
+    console.log('');
+    console.log('  These are tracked files. Absent means deleted or renamed, not gitignored,');
+    console.log('  and rule 3 was skipped as a consequence rather than as a decision.');
+    console.log('');
+    process.exitCode = 1;
+  }
+
   if (undocumented.length > 0) {
     console.log(`  FAIL — ${undocumented.length} file(s) exist in a covered root and no writeup names them:\n`);
     for (const rel of undocumented) console.log(`    ${rel}`);
@@ -504,7 +588,7 @@ function main() {
     process.exitCode = 1;
   }
 
-  if (failures.length === 0 && undocumented.length === 0) {
+  if (failures.length === 0 && undocumented.length === 0 && absentPublished.length === 0) {
     console.log('  IT DOES NOT CHECK CODE QUOTED VERBATIM. A fenced block holding a function');
     console.log('  signature is invisible here — see the header. That is 3.4\'s case and it');
     console.log('  is still open.');
