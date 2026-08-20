@@ -7,6 +7,7 @@ const authRoutes = require('./routes/auth');
 const noteRoutes = require('./routes/notes');
 const uploadRoutes = require('./routes/upload');
 const llmRoutes = require('./routes/llm');
+const studyPackRoutes = require('./routes/studyPack');
 const graphRoutes = require('./routes/graph');
 const searchRoutes = require('./routes/search');
 const exportRoutes = require('./routes/export');
@@ -54,6 +55,9 @@ app.use('/api/auth', authRoutes); // NO protect here
 app.use('/api/notes', noteRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/llm', llmRoutes);
+// Phase 5.1 — the retrieval-to-generation join. A SEPARATE mount from /api/llm,
+// which is left byte-identical because its five features are 5.1's A/B control.
+app.use('/api/study-pack', studyPackRoutes);
 app.use('/api/graph', graphRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/export', exportRoutes);

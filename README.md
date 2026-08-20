@@ -17,6 +17,12 @@
 > both retrieval parity proofs *regenerated rather than read*; the two
 > documentation checkers; and **both database migrations with their rollbacks
 > against a real MongoDB 7**.
+> **One of those checkers runs partially there, deliberately.** It verifies that
+> every command and path the published documentation names is real, but it
+> cannot check the reverse — that every file is *described* somewhere — because
+> the design documents it would read are not published. It says so on every run
+> rather than passing quietly, and that half is checked before every commit
+> instead.
 > **What it does not cover:** the frontend, which has no tests at all; the
 > evaluation scripts — the eval runner, the three parameter sweeps, the analysis
 > drivers and the graph characterization — which need a multi-hundred-megabyte
