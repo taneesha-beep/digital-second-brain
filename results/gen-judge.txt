@@ -1,0 +1,131 @@
+PHASE 5.6 — LLM-AS-JUDGE FOR GROUNDEDNESS, WITH A HUMAN AGREEMENT CHECK
+
+  A rubric-based, claim-level groundedness judgement, graded by a model that
+  is NOT the model being judged, and checked against hand labels.
+
+  Produced by:  cd backend && npm run eval:judge -- --write
+  PURE — no key, no network, nothing under data/. Reads only results/.
+
+==============================================================================
+A. COVERAGE, AND WHAT EACH DENOMINATOR IS
+==============================================================================
+
+  judge model            qwen/qwen3.6-27b
+  model being judged     openai/gpt-oss-120b
+
+  Different vendor and family, which is ROADMAP 5.6's requirement and 5.0's
+  decision-log reservation. What this does NOT rule out is correlated error:
+  two models trained on overlapping text can be wrong about the same claim,
+  and only the human labels below speak to that.
+
+  items in the pair set  322
+  pairs in the pair set  644   (each item twice: cited, null)
+  judge calls attempted  8
+  judge calls completed  8   delivery 100.0%   <- denominator: CALLS
+
+  cited verdicts parsed  4   <- denominator: ITEMS
+  null  verdicts parsed  4   <- denominator: ITEMS
+  items with BOTH        4   <- denominator: PAIRED ITEMS (the gap)
+  hand-labelled items    0   <- denominator: HUMAN ITEMS (the kappa)
+
+  *** THIS RUN IS 1.2% COMPLETE AND EVERY FIGURE BELOW IS PROVISIONAL.
+  *** Two partial sets in this project have produced headlines their own
+  *** completions overturned (§29.5's, §32.9's: 6-right/7-wrong on a third of
+  *** the set became 9-right/4-wrong on all of it, three rows flipping).
+  *** What protects a partial run here is the EMISSION ORDER, not luck: items
+  *** are interleaved so any prefix holds each stratum in proportion to its
+  *** size, and an item's two conditions are emitted back to back.
+
+    stratum          judged   of     share    population share
+    Q1/concepts          1    48   25.0%    14.9%
+    Q1/flashcards        1    36   25.0%    11.2%
+    Q2/concepts          1    40   25.0%    12.4%
+    Q2/flashcards        0    30   0.0%    9.3%
+    Q3/concepts          0    32   0.0%    9.9%
+    Q3/flashcards        0    24   0.0%    7.5%
+    Q4/concepts          1    40   25.0%    12.4%
+    Q4/flashcards        0    30   0.0%    9.3%
+    Q5/concepts          0    24   0.0%    7.5%
+    Q5/flashcards        0    18   0.0%    5.6%
+
+
+==============================================================================
+B-F. WITHHELD — THE HAND LABELS ARE NOT IN YET
+==============================================================================
+
+  0 of 60 pre-registered hand labels exist.
+
+  Every rate is withheld until they do. Cohen's kappa is a number about two
+  INDEPENDENT raters, and a rater who has read the judge's verdicts — even as
+  an aggregate tally — is not one. "I did not let it influence me" is exactly
+  the claim that cannot be checked afterwards, so the display is closed rather
+  than the discipline being trusted. The runner withholds them too; a guarantee
+  that holds on one of two display paths is not a guarantee.
+
+  NOTHING IS LOST. The ledger is written in full regardless, and this reporter
+  is PURE — re-running it once the labels are in costs nothing.
+
+    Label them:   cd backend && npm run judge:label
+
+
+==============================================================================
+G. THE JUDGE AS AN INSTRUMENT — COST, PARSING, AND WHAT DRIFTED
+==============================================================================
+
+  DENOMINATOR: JUDGE CALLS.
+
+    calls completed            8
+    mean ACTUAL tokens         526   (prompt 511, completion 15)
+    ACTUAL / RESERVED          0.77   <- a JUDGE-specific ratio
+    total ACTUAL tokens        4207
+    parse failures             0   0.0%
+    finish_reason 'length'     0   0.0%
+    <think> block appeared     0   0.0%   reasoning_effort:'none' should keep this 0
+    latency p50 / p95          168 / 586 ms   one home connection, one afternoon
+
+  §30.1 measured actual/reserved at 0.40 for single-note calls and §32.2 at
+  0.94 for study packs, and established that the ratio is a property of the
+  FEATURE rather than of the API — it is how much of max_tokens a feature
+  uses. Neither was inherited here. This is a third value for a third feature,
+  and it is the figure to price a future judge run with.
+
+  A <think> BLOCK APPEARING WOULD BE A PROVIDER-SIDE CHANGE, NOT A BUG HERE.
+  qwen/qwen3.6-27b emits reasoning inline in the message content rather than
+  in completion_tokens_details, so the field gen-v5 relies on is blind to it.
+  The run disables reasoning; the count above is what says it stayed disabled.
+  §28.9's class: the model is the one input with no checksum.
+
+==============================================================================
+H. WHAT THESE NUMBERS CANNOT SAY
+==============================================================================
+
+  KAPPA MEASURES AGREEMENT, NOT CORRECTNESS. One human, no inter-human
+  agreement figure, so rubric ambiguity and rater error are not separable.
+
+  THE ITEM SET IS CENSORED AT THE CALL LEVEL, AND THIS IS THE LIMITATION MOST
+  LIKELY TO BE QUOTED PAST. gen-v5's 30 completed calls include 7 that
+  truncated at the INHERITED max_tokens: 2048 ceiling. A truncated pack parses
+  to nothing and contributes ZERO items, and those packs are systematically
+  the LONGER seeds: 140.4 mean words against 87.3. So groundedness is
+  measured over 23 of 30 seeds, skewed short. The items themselves are
+  intact — every contributing call finished with `stop` — but the seed mix is
+  not the golden set's. ROADMAP 5.9 owns the ceiling.
+
+  NO NOISE FLOOR UNDER THE ITEMS. Inherited from gen-v5 and not fixed here:
+  one draw per seed at temperature 0.4, no repeats. §28.8 measured 32.1% of
+  examQs cells flipping verdict on a re-draw and §32.10 states that no gen-v5
+  figure may be compared against a later one until repeats are bought. The
+  JUDGE runs at temperature 0, so it adds little of its own — but temperature 0
+  is not determinism, and nothing here claims a judged run would replay exactly.
+
+  CORRELATED ERROR IS NOT RULED OUT BY A DIFFERENT VENDOR. Two models trained
+  on overlapping text can be confidently wrong about the same claim. A
+  different family lowers self-preference; it does not eliminate shared priors.
+
+  NOT A RETRIEVER COMPARISON. That is 5.7, and the stamped retriever/digest on
+  every gen-v5 ledger row is what it will need.
+
+  THE NEIGHBOURS ARE RETRIEVED OVER 27,325 CORPUS DOCUMENTS, not a <=500-note
+  user slice, and the seeds are Stack Exchange questions shaped as Notes.
+  §12.2's gap, tenth instance.
+
