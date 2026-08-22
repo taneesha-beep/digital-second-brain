@@ -484,9 +484,23 @@ async function run(state) {
    * The ledger is written in full either way. This withholds a display, not a
    * measurement.
    */
+  /**
+   * 5.7 FIXED A GATE THAT WAS INVERTED FOR AN ARM WITH NO HUMAN SAMPLE.
+   *
+   * The condition was `humanWanted > 0 && humanDone >= humanWanted`, which
+   * withholds when `humanWanted` is ZERO — i.e. it hid verdicts on an arm that
+   * has no rater to anchor, protecting nobody and reporting "0 of 0 hand labels
+   * are in" as if something were missing. `eval-judge.js` had the equivalent
+   * condition the right way round (`blind = humanWanted > 0 && incomplete`), so
+   * the two display paths DISAGREED — and §33.6's whole point is that a
+   * guarantee holding on one of two paths is not a guarantee.
+   *
+   * The rule is unchanged and exactly as strict where it applies: withhold iff
+   * this arm HAS a pre-registered human sample and it is not yet complete.
+   */
   const humanDone = new Set(readJsonl(arm.human).map((h) => h.pairId));
   const humanWanted = pairs.filter((p) => p.humanLabelled).length;
-  const showVerdicts = humanWanted > 0 && humanDone.size >= humanWanted;
+  const showVerdicts = humanWanted === 0 || humanDone.size >= humanWanted;
   if (!showVerdicts) {
     console.log(`  verdicts are WITHHELD from this terminal: ${humanDone.size} of ${humanWanted} hand`);
     console.log('  labels are in, and a rater who has seen them is not an independent rater.\n');
@@ -676,6 +690,7 @@ async function run(state) {
     console.log(`  verdicts   2:${tally[2]}  1:${tally[1]}  0:${tally[0]}  parse-fail:${tally.fail}`);
   } else {
     console.log(`  verdicts   WITHHELD until the hand labels are in — ${tally.fail} failed to parse.`);
+    console.log(`             ${humanDone.size} of ${humanWanted} pre-registered labels exist.`);
   }
   console.log(`  ACTUAL ${actualTokens} tokens (~${completed ? Math.round(actualTokens / completed) : 0}/call)   ` +
     `RESERVED ${reservedTokens}   ratio ${reservedTokens ? (actualTokens / reservedTokens).toFixed(2) : 'n/a'}`);

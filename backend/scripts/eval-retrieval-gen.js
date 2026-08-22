@@ -504,16 +504,62 @@ function main() {
     }
     return { x, y };
   };
-  say('    outcome                        n     pearson r   95% CI            spearman   |r| detectable');
-  say(`    ${'-'.repeat(96)}`);
+  say('  TWO POOLED FIGURES, AND THE SECOND IS THE ONE TO QUOTE.');
+  say('');
+  say('  A NAIVE POOL CONFOUNDS TWO SOURCES OF VARIATION AND ONLY ONE OF THEM HAS');
+  say('  n=46 BEHIND IT. Both arms differ in mean nDCG@8 AND in mean outcome, so');
+  say('  pooling their raw values lets a single BETWEEN-ARM contrast — which is n=2,');
+  say('  two arm means — masquerade as 46 observations. That is the shape of');
+  say('  Simpson\'s paradox, and here it is not hypothetical: lexical support');
+  say('  disagrees between the pooled and per-arm readings below.');
+  say('');
+  say('  WITHIN-ARM centres each variable on its own arm\'s mean before pooling, so');
+  say('  the estimate uses only variation BETWEEN SEEDS INSIDE an arm — the question');
+  say('  actually being asked. It is the fixed-effects estimate and it is the honest');
+  say('  pooled number.');
+  say('');
+  say('    outcome                     pool     n     pearson r   95% CI             spearman  |r| detectable');
+  say(`    ${'-'.repeat(102)}`);
   for (const [label, ys] of [['mean lexical support', obs.support], ['mean judged level', obs.level], ['rate(2)', obs.rate]]) {
     const { x, y } = pairUp(ys);
     if (x.length < 4) { say(`    ${label.padEnd(28)} ${String(x.length).padStart(4)}   too few observations`); continue; }
-    const r = stats.pearson(x, y);
-    const ci = stats.fisherCI(r, x.length);
-    say(`    ${label.padEnd(28)} ${String(x.length).padStart(4)}   ${f3(r)}       ` +
-      `${ci ? `[${f3(ci.lo)}, ${f3(ci.hi)}]` : '        n/a       '}   ${f3(stats.spearman(x, y))}      ` +
-      `${f3(stats.detectableR(x.length))}`);
+    for (const mode of ['naive', 'within-arm']) {
+      let xs = x;
+      let ys2 = y;
+      if (mode === 'within-arm') {
+        // Centre both variables on their own arm's mean. Seeds whose arm
+        // contributes fewer than two observations carry no within-arm
+        // information and are dropped rather than centred to zero.
+        const idx = [];
+        for (let i = 0, k = 0; i < ys.length; i += 1) {
+          if (ys[i] === null || ys[i] === undefined) continue;
+          idx.push(obs.arm[i]);
+          k += 1;
+        }
+        const byArm = new Map();
+        idx.forEach((a, i) => {
+          if (!byArm.has(a)) byArm.set(a, { xs: [], ys: [] });
+          byArm.get(a).xs.push(x[i]);
+          byArm.get(a).ys.push(y[i]);
+        });
+        const cx = [];
+        const cy = [];
+        idx.forEach((a, i) => {
+          const g = byArm.get(a);
+          if (g.xs.length < 2) return;
+          cx.push(x[i] - stats.mean(g.xs));
+          cy.push(y[i] - stats.mean(g.ys));
+        });
+        xs = cx;
+        ys2 = cy;
+      }
+      if (xs.length < 4) continue;
+      const r = stats.pearson(xs, ys2);
+      const ci = stats.fisherCI(r, xs.length);
+      say(`    ${(mode === 'naive' ? label : '').padEnd(28)} ${mode.padEnd(11)} ${String(xs.length).padStart(3)}   ${f3(r)}       ` +
+        `${ci ? `[${f3(ci.lo)}, ${f3(ci.hi)}]` : '        n/a       '}   ${f3(stats.spearman(xs, ys2))}     ` +
+        `${f3(stats.detectableR(xs.length))}${mode === 'within-arm' ? '   <- QUOTE THIS' : ''}`);
+    }
   }
   say('');
   say('  AND PER ARM, so a pooled figure cannot hide two arms disagreeing:');
