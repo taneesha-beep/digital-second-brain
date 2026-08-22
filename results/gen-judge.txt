@@ -1,0 +1,225 @@
+PHASE 5.6 — LLM-AS-JUDGE FOR GROUNDEDNESS, WITH A HUMAN AGREEMENT CHECK
+
+  A rubric-based, claim-level groundedness judgement, graded by a model that
+  is NOT the model being judged, and checked against hand labels.
+
+  Produced by:  cd backend && npm run eval:judge -- --write
+  PURE — no key, no network, nothing under data/. Reads only results/.
+
+==============================================================================
+A. COVERAGE, AND WHAT EACH DENOMINATOR IS
+==============================================================================
+
+  judge model            qwen/qwen3.6-27b
+  model being judged     openai/gpt-oss-120b
+
+  Different vendor and family, which is ROADMAP 5.6's requirement and 5.0's
+  decision-log reservation. What this does NOT rule out is correlated error:
+  two models trained on overlapping text can be wrong about the same claim,
+  and only the human labels below speak to that.
+
+  items in the pair set  322
+  pairs in the pair set  644   (each item twice: cited, null)
+  judge calls attempted  646
+  judge calls completed  644   delivery 99.7%   <- denominator: CALLS
+
+  cited verdicts parsed  322   <- denominator: ITEMS
+  null  verdicts parsed  322   <- denominator: ITEMS
+  items with BOTH        322   <- denominator: PAIRED ITEMS (the gap)
+  hand-labelled items    60   <- denominator: HUMAN ITEMS (the kappa)
+
+
+==============================================================================
+B. GROUNDEDNESS — AND IT DOES NOT PRINT WITHOUT ITS NULL
+==============================================================================
+
+  Share of items at each rubric level. DENOMINATOR: ITEMS.
+
+    level              cited        null        gap
+    ----------------------------------------------------
+    2 SUPPORTED         5.0%        0.0%    +5.0pp
+    1 PARTIAL          10.2%        0.9%    +9.3pp
+    0 UNSUPPORTED      84.8%       99.1%    -14.3pp
+    ----------------------------------------------------
+    n (items)            322         322
+
+  GROUNDEDNESS RATE      5.0%   16 of 322 items scored 2
+  THE NULL               0.0%   the same claims against a note from the
+                                 SAME prompt that they did NOT cite
+  GAP                    +5.0pp  <- the number with information in it
+
+  PRIMER §5.3a: a rate needs its denominator and a score needs its null, and
+  neither is ever printed alone. §32.5 reached the same conclusion for the
+  LEXICAL support metric, where a bare 0.283 read as failure until the 0.119
+  floor gave it a scale. A groundedness rate has exactly that problem: it is
+  a judgement about how strict a rubric is as much as about the system, and
+  only the gap separates the two.
+
+==============================================================================
+C. AGREEMENT WITH A HUMAN — WITHOUT THIS, SECTION B MEANS NOTHING
+==============================================================================
+
+  ROADMAP 5.6: "Without that agreement number the judge scores mean nothing."
+  CLAUDE.md lists a groundedness score with no judge-human agreement beside it
+  under Claim discipline as a thing never to write. So this section is not a
+  supplement to section B; it is what makes section B quotable.
+
+  hand-labelled, cited   50
+  hand-labelled, null    10   the human's own null — see D
+  marked UNSURE          0   excluded from kappa, counted here
+  usable pairs           50   both raters gave a level
+
+  THREE-LEVEL (0 / 1 / 2)
+
+                    JUDGE
+    HUMAN           0     1     2    total
+      0            27     2     0       29
+      1            13     5     3       21
+      2             0     0     0        0
+      total        40     7     3       50
+
+    n (items)              50
+    observed agreement P_o 0.640   64.0%
+    chance agreement  P_e  0.523
+    COHEN'S KAPPA          0.246
+    P_o - kappa            0.394
+
+  BINARY COLLAPSE (2 vs {1,0}) — the distinction the HEADLINE RATE makes
+
+                    JUDGE
+    HUMAN           0     1    total
+      0            47     3       50
+      1             0     0        0
+      total        47     3       50
+
+    n (items)              50
+    observed agreement P_o 0.940   94.0%
+    chance agreement  P_e  0.940
+    COHEN'S KAPPA          0.000
+    P_o - kappa            0.940
+
+  KAPPA IS REPORTED WITH P_o BESIDE IT AND THAT IS NOT DECORATION. Cohen's
+  kappa collapses toward 0 when both raters put nearly everything in one
+  category, however often they agree — the kappa paradox. A bare kappa in
+  that regime understates agreement and a reader cannot tell.
+
+  Here P_o - kappa is 0.394, which IS that regime.
+    human marginals   0:29  1:21  2:0
+    judge marginals   0:40  1:7  2:3
+
+  WHAT KAPPA CANNOT SAY: it measures whether two raters agree, not whether
+  either is right. A judge that reproduces a human's systematic mistake
+  scores well here. The human is one rater — me — so there is no
+  inter-HUMAN agreement figure and no way to separate rubric ambiguity from
+  rater error. That needs a second human and is not bought here.
+
+==============================================================================
+D. THE HUMAN'S OWN NULL
+==============================================================================
+
+  10 of the 60 hand-labelled items pair a claim with a note from the same
+  prompt it did NOT cite. The rater was not told which, and they were shuffled
+  in with the other 50. DENOMINATOR: HUMAN NULL ITEMS.
+
+    human rate(2), cited   0.0%   0 of 50
+    human rate(2), null    0.0%   0 of 10
+    human gap              +0.0pp
+
+  This is what stops "the judge is lenient" being the automatic reading of a
+  high score, or "the judge is harsh" of a low one: if the human marks
+  distractors the same way, the rubric is doing that, not the model.
+  TEN ITEMS IS A SMALL DENOMINATOR and it is printed rather than rounded away.
+
+==============================================================================
+E. AGAINST §32.5's LEXICAL SUPPORT — THE PILE THE JUDGE WAS ASKED TO SORT
+==============================================================================
+
+  §32.5 measured the cited note as the lexical argmax on 77.3% of items and
+  called the other 22.7% "the pile 5.6 will have to sort" — some
+  mis-attributions, some correct citations of a note that phrased things
+  differently, and containment cannot tell them apart. DENOMINATOR: ITEMS.
+
+    cited note WAS the lexical argmax      rate(2) 6.2%   n = 225
+    cited note was NOT the argmax         rate(2) 2.1%   n = 97
+    difference                            +4.2pp
+
+  The judge scores the argmax pile higher, so the two metrics are partly
+  seeing the same thing and the 22.7% contains real mis-attribution.
+
+==============================================================================
+F. BY SLOT AND BY QUINTILE
+==============================================================================
+
+  DENOMINATOR: ITEMS, and each row prints its own n rather than sharing one.
+
+    group            n     rate(2)    null rate(2)    gap
+    ----------------------------------------------------------
+    Q1               84       4.8%          0.0%      +4.8pp
+    Q2               70       4.3%          0.0%      +4.3pp
+    Q3               56       7.1%          0.0%      +7.1pp
+    Q4               70       5.7%          0.0%      +5.7pp
+    Q5               42       2.4%          0.0%      +2.4pp
+    concepts        184       7.1%          0.0%      +7.1pp
+    flashcards      138       2.2%          0.0%      +2.2pp
+
+==============================================================================
+G. THE JUDGE AS AN INSTRUMENT — COST, PARSING, AND WHAT DRIFTED
+==============================================================================
+
+  DENOMINATOR: JUDGE CALLS.
+
+    calls completed            644
+    mean ACTUAL tokens         557   (prompt 542, completion 15)
+    ACTUAL / RESERVED          0.78   <- a JUDGE-specific ratio
+    total ACTUAL tokens        358852
+    parse failures             0   0.0%
+    finish_reason 'length'     0   0.0%
+    <think> block appeared     0   0.0%   reasoning_effort:'none' should keep this 0
+    latency p50 / p95          177 / 325 ms   one home connection, one afternoon
+
+  §30.1 measured actual/reserved at 0.40 for single-note calls and §32.2 at
+  0.94 for study packs, and established that the ratio is a property of the
+  FEATURE rather than of the API — it is how much of max_tokens a feature
+  uses. Neither was inherited here. This is a third value for a third feature,
+  and it is the figure to price a future judge run with.
+
+  A <think> BLOCK APPEARING WOULD BE A PROVIDER-SIDE CHANGE, NOT A BUG HERE.
+  qwen/qwen3.6-27b emits reasoning inline in the message content rather than
+  in completion_tokens_details, so the field gen-v5 relies on is blind to it.
+  The run disables reasoning; the count above is what says it stayed disabled.
+  §28.9's class: the model is the one input with no checksum.
+
+==============================================================================
+H. WHAT THESE NUMBERS CANNOT SAY
+==============================================================================
+
+  KAPPA MEASURES AGREEMENT, NOT CORRECTNESS. One human, no inter-human
+  agreement figure, so rubric ambiguity and rater error are not separable.
+
+  THE ITEM SET IS CENSORED AT THE CALL LEVEL, AND THIS IS THE LIMITATION MOST
+  LIKELY TO BE QUOTED PAST. gen-v5's 30 completed calls include 7 that
+  truncated at the INHERITED max_tokens: 2048 ceiling. A truncated pack parses
+  to nothing and contributes ZERO items, and those packs are systematically
+  the LONGER seeds: 140.4 mean words against 87.3. So groundedness is
+  measured over 23 of 30 seeds, skewed short. The items themselves are
+  intact — every contributing call finished with `stop` — but the seed mix is
+  not the golden set's. ROADMAP 5.9 owns the ceiling.
+
+  NO NOISE FLOOR UNDER THE ITEMS. Inherited from gen-v5 and not fixed here:
+  one draw per seed at temperature 0.4, no repeats. §28.8 measured 32.1% of
+  examQs cells flipping verdict on a re-draw and §32.10 states that no gen-v5
+  figure may be compared against a later one until repeats are bought. The
+  JUDGE runs at temperature 0, so it adds little of its own — but temperature 0
+  is not determinism, and nothing here claims a judged run would replay exactly.
+
+  CORRELATED ERROR IS NOT RULED OUT BY A DIFFERENT VENDOR. Two models trained
+  on overlapping text can be confidently wrong about the same claim. A
+  different family lowers self-preference; it does not eliminate shared priors.
+
+  NOT A RETRIEVER COMPARISON. That is 5.7, and the stamped retriever/digest on
+  every gen-v5 ledger row is what it will need.
+
+  THE NEIGHBOURS ARE RETRIEVED OVER 27,325 CORPUS DOCUMENTS, not a <=500-note
+  user slice, and the seeds are Stack Exchange questions shaped as Notes.
+  §12.2's gap, tenth instance.
+

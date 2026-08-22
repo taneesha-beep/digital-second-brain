@@ -1,0 +1,113 @@
+PHASE 5.6 — THE GROUNDEDNESS RUBRIC, COMMITTED VERBATIM
+================================================================================
+
+ROADMAP 5.6 requires the rubric to be committed verbatim, and this is that
+file. It is RENDERED from backend/scripts/lib/judge-rubric.js, which is the
+single copy the judge actually receives — a rubric that lives in two places is
+committed twice and verbatim nowhere. tests/judge-rubric.test.js asserts the
+block below still matches that module character for character, so this file
+cannot drift into being a description of the rubric instead of the rubric.
+
+A RUBRIC EDITED AFTER SEEING SCORES IS NOT A RUBRIC. Committed before the
+first judge call, alongside results/gen-judge-predictions.txt.
+
+--------------------------------------------------------------------------------
+THE SYSTEM MESSAGE, VERBATIM
+--------------------------------------------------------------------------------
+
+You grade whether a CLAIM is supported by a PASSAGE.
+
+Judge the claim ONLY against the passage in front of you. Ignore anything you
+know from elsewhere: a claim that is true in the world but absent from the
+passage is not supported by it. The passage may or may not be where the claim
+came from.
+
+A claim has two parts. The first names what it is about; the second is the
+assertion being graded. For a question-and-answer pair the answer is the
+assertion. For a term-and-definition pair the definition is the assertion.
+
+2 SUPPORTED   every factual assertion in the claim is stated in the passage, or
+              follows directly from what the passage states.
+1 PARTIAL     the passage is about the claim's subject and supports part of the
+              assertion, but at least one part of it is not in the passage.
+0 UNSUPPORTED the passage does not support the claim: it contradicts it, or it
+              is about something else, or the substance of the assertion is
+              simply absent.
+
+Wording will differ. Judge meaning, not vocabulary: a correct paraphrase that
+shares no words with the passage is still supported. A claim that only names a
+topic the passage covers, without asserting what the passage asserts, is 1. A
+passage that merely ASKS about the claim's subject without answering it does
+not support an answer, and is 0.
+
+Reply with exactly one line: a single digit 2, 1 or 0, then a space, then at
+most 12 words of reason. No other text.
+
+--------------------------------------------------------------------------------
+THE USER MESSAGE
+--------------------------------------------------------------------------------
+
+  PASSAGE
+  <title>
+  <body>
+
+  CLAIM
+  <q + " " + a, or term + " " + definition>
+
+  VERDICT:
+
+PASSAGE BEFORE CLAIM, deliberately. The other order invites the model to read
+the claim first and then scan for confirmation, which is the shape of
+confirmation bias and the thing a groundedness judge exists to resist.
+
+WHAT THE JUDGE IS NEVER SHOWN: the integer label the generator emitted, any
+other note from the same pack, the slot name, the seed id, the quintile, or
+whether this passage is the one the item cited. Both conditions are
+structurally identical at the model's input, which is what makes the null a
+null rather than an assertion that it is one.
+
+--------------------------------------------------------------------------------
+WHAT WILL BE JUDGED
+--------------------------------------------------------------------------------
+
+  items judged            322
+  judged pairs            644   (each item twice: cited, null)
+  items not judgeable     0   no valid citation or no claim text
+  null draw               uniform over the other notes in the SAME prompt,
+                          keyed on the item and seed 20260820
+
+  stratum        items   human-cited   human-null
+  --------------------------------------------------
+  Q1/concepts       48             7            1
+  Q1/flashcards     36             5            1
+  Q2/concepts       40             6            1
+  Q2/flashcards     30             5            1
+  Q3/concepts       32             5            1
+  Q3/flashcards     24             4            1
+  Q4/concepts       40             6            1
+  Q4/flashcards     30             5            1
+  Q5/concepts       24             4            1
+  Q5/flashcards     18             3            1
+  --------------------------------------------------
+  total            322            50           10
+
+THE HUMAN'S 10 NULL ITEMS ARE DRAWN FROM THE COMPLEMENT OF THE 50 CITED ONES.
+A rater shown the same claim twice, once against each passage, has been told
+the two are a pair — the provenance the blinding withholds, handed over by the
+interface instead of by the prompt. The 60 are shuffled together for labelling.
+
+--------------------------------------------------------------------------------
+EMISSION ORDER
+--------------------------------------------------------------------------------
+
+Items are sorted by a fractional within-stratum position, so ANY PREFIX holds
+each stratum in proportion to its size — a partial run is a SAMPLE of the 322,
+not a corner of it. Round-robin was rejected: the strata run 48 down to 18, so
+equal-per-stratum would over-represent Q5 relative to the population the
+headline rate is about. An item's two conditions are emitted back to back, so
+a stop never leaves a cited verdict without its null. Human-labelled items sort
+first within their stratum, so kappa is available early rather than last.
+
+§32.8 recorded that gen-v5 had no mechanism protecting its stratification and
+got a balanced partial set by luck, and drew the lesson that the protection has
+to be re-derived for whatever axis a new harness stratifies on. This is that.

@@ -1,0 +1,148 @@
+PHASE 5.6 — PREDICTIONS, WRITTEN BEFORE THE FIRST JUDGE API CALL
+================================================================================
+
+Committed in its own commit so the ordering is checkable in git, the same way
+results/gen-predictions.txt (5.3), results/gen-v2-predictions.txt (5.5) and
+results/gen-v5-predictions.txt (5.4) were.
+
+Priors, so the hit rate below is read against something: 5.4 finished 9 right /
+4 wrong / 0 untestable (its own PROVISIONAL score on 9 of 30 seeds was 6/7, and
+three rows flipped when the set completed — see §32.9), 5.5 scored 9/6/0, 5.1
+3/3/1, 5.3 9 of 16, the README pass 4 of 6, and 4.6 5 of 10.
+
+WHAT IS BEING PREDICTED. An LLM judge, qwen/qwen3.6-27b, grades whether each
+Study Pack item is supported by a passage it is shown. The items are the 322
+that gen-v5 produced (results/gen-v5.calls.jsonl). Each item is judged TWICE
+under identical presentation:
+
+  cited    the passage is the note the item actually cited
+  null     the passage is one OTHER note from the SAME prompt, drawn uniformly
+           at random with a fixed seed
+
+644 judged pairs. The judge is never told which condition it is in.
+
+THE DENOMINATORS ARE NOT ONE NUMBER, AND THAT IS §32's CENTRAL FINDING APPLIED
+IN ADVANCE. 5.4 was simultaneously well-powered for items (322) and badly
+under-powered for calls (30) and printed both under one seed count. Every band
+below therefore names its own denominator:
+
+  items (cited)      322     rows 1, 2, 12, 15
+  items (paired)     322     row 3
+  items (human)       50     rows 4, 5, 6, 7, 13
+  items (human null)  10     row 14
+  judge calls        644     rows 8, 9, 10, 11, 16
+
+n IS DECLARED HERE AND NOT SET BY THE QUOTA. 644 calls at ~445 ACTUAL tokens is
+~287,000 of a 200,000/day organisation cap — about 34 hours of refill at the
+measured 2.3148 tokens/s, so this is a TWO-SESSION run by construction rather
+than by accident. The emission order is stratum-major round-robin over the ten
+(quintile x slot) strata with each item's two conditions emitted back to back,
+so any stop leaves a set that is BALANCED and PAIRED rather than a prefix —
+§32.8's defect, fixed on this axis by design instead of survived by luck.
+
+
+  #   PREDICTION                                              BAND
+  ------------------------------------------------------------------------
+  1   GROUNDEDNESS: judge says 2 (SUPPORTED) on cited pairs   15-40% of items
+  2   Judge says 0 (UNSUPPORTED) on cited pairs               25-55% of items
+  3   JUDGED GAP: rate(2 | cited) minus rate(2 | null)        +10 to +35 points
+  4   Cohen's kappa, 3-level, human vs judge                  0.35-0.65
+  5   Cohen's kappa, binary (2 vs {1,0}), human vs judge      0.40-0.70
+  6   Observed agreement P_o, 3-level                         60-80%
+  7   P_o minus kappa (the skewed-marginal paradox shows)     > 0.20
+  8   Judge verdicts that fail to parse                       0-2% of calls
+  9   reasoning_effort:'none' holds — finish_reason 'length'  0-2% of calls
+ 10   ACTUAL / RESERVED for the judge                         0.72-0.88
+ 11   Mean ACTUAL tokens per judge call                       400-500
+ 12   flashcards' rate(2) exceeds concepts' rate(2)           by 0-15 points
+ 13   HUMAN labels 2 (SUPPORTED) on the cited pairs           10-35% of items
+ 14   HUMAN labels 2 (SUPPORTED) on the null pairs            0-10% of items
+ 15   Items whose cited note was NOT the lexical argmax       lower by >= 10
+      score lower on rate(2) than items where it was          points
+ 16   Delivery (completed / attempted)                        >= 95%
+
+
+ROW 1 IS THE HEADLINE AND IT IS DELIBERATELY LOW. THE ARGUMENT, BEFORE THE RUN.
+
+§32.5 measured mean lexical containment against the cited note at 0.283, with
+only 5.9% of items above the pre-committed 0.5 cut and 0.0% above 0.7, and drew
+the conclusion that matters here: THE DOMINANT REGIME IS PARAPHRASE. A model
+asked to "connect or contrast two notes over items that restate one" writes
+abstractively, so containment mostly measures how little the model copies.
+
+A rubric whose top level requires that EVERY factual assertion be stated in the
+passage or follow directly from it punishes exactly that behaviour. So the
+prediction is not that the feature is broken; it is that a strict groundedness
+rubric and an abstractive generator disagree by construction, and the size of
+that disagreement is the thing worth measuring.
+
+TWO PROBE ITEMS SUPPORT THIS AND THEY ARE NOT EVIDENCE OF A RATE. Drawn by
+LENGTH (median and p90 of claim+passage characters) rather than cherry-picked
+while characterising the judge's token cost, both came back 0, and both look
+right by hand: one item cited a note that only ASKS a question and never answers
+it, and one attached a generic definition of "thermal death time" to a duck
+confit question. n=2 is an existence proof, not a rate — §30.8's label, which
+§32.2 records being ignored for exactly this kind of number.
+
+ROW 15 IS THE ONE THAT TESTS WHETHER THE TWO METRICS SEE THE SAME THING.
+§32.5 reports the cited note is the lexical argmax on 77.3% of items and calls
+the remaining 22.7% "the pile 5.6 will have to sort" — some mis-attributions,
+some correct citations of a note that phrased things differently, and the
+lexical metric cannot tell them apart. If judged groundedness is materially
+lower on that 22.7%, the judge is sorting the pile. If it is not, then either
+the judge is measuring something else or the pile is mostly the benign case.
+
+ROW 7 IS A PREDICTION ABOUT THE INSTRUMENT RATHER THAN THE SYSTEM. Cohen's
+kappa collapses toward 0 under skewed marginals even at high raw agreement. If
+rows 1 and 13 are right, both raters put most items in one or two categories,
+which is precisely that regime. Reporting kappa alone would then understate
+agreement, which is why P_o, P_e, the full confusion matrix and both marginals
+print beside it. A groundedness rate without kappa beside it is a thing CLAUDE.md
+lists under Claim discipline as never to write; a kappa without P_o beside it is
+the same error one level down.
+
+ROWS 10 AND 11 ARE A JUDGE-SPECIFIC COST FIGURE AND THAT IS THE POINT.
+§30.1 measured actual/reserved at 0.40 for single-note calls; §32.2 measured
+0.94 for study packs and established that THE RATIO IS A PROPERTY OF THE
+FEATURE, not of the API — it is how much of max_tokens the feature uses. 5.4
+priced a cluster run at the single-note ratio and stopped at 9 of 30 because of
+it. So neither figure is inherited here: the bands come from six probe calls
+against the judge model itself, at 389-534 prompt tokens and 11-14 completion
+tokens with reasoning disabled.
+
+
+WHAT WOULD MAKE THESE UNSCOREABLE
+
+If the run stops before the ledger is complete, every row is scored on what
+landed and LABELLED PROVISIONAL, with the fraction stated. §32.9 is the record
+of why that label is load-bearing: 5.4's provisional 6-right/7-wrong on a third
+of its set became 9-right/4-wrong on the whole of it, and three rows flipped.
+Two separate partial sets in this project have now produced headlines their own
+completions overturned (§29.5's, §32.9's).
+
+Rows 4-7 and 13-14 need the hand labels. They are collected BEFORE the first
+judge call, which is a sequencing decision rather than a discipline one: a human
+who has seen the judge's answer is no longer an independent rater, and no
+instruction can undo that once it has happened.
+
+
+WHAT THESE NUMBERS WILL NOT BE ABLE TO SAY, WHATEVER THEY COME OUT AT
+
+NO NOISE FLOOR, INHERITED FROM gen-v5 AND NOT FIXED HERE. The 322 items are one
+draw at temperature 0.4 with no repeats; §28.8 measured 32.1% of examQs cells
+flipping verdict on a re-draw and §32.10 states that no gen-v5 figure may be
+compared against a later one until repeats are bought. The judge runs at
+temperature 0, so the JUDGE's own contribution to variance is small, but the
+ITEMS it grades are a single sample.
+
+THE ITEM SET IS CENSORED AT THE CALL LEVEL. The 7 packs that truncated at the
+inherited 2048 ceiling parse to nothing and contribute ZERO items, and they are
+systematically the longer seeds: 140.4 mean words against 87.3, and Q5 keeps
+only 3 of its 6 seeds where Q1 keeps 6 of 6. So groundedness is measured on 23
+of 30 seeds, skewed short. The items themselves are intact — every contributing
+call finished with `stop` — but the seed mix is not the golden set's.
+
+CITATION SUPPORT (§32.5) AND GROUNDEDNESS ARE NOT THE SAME QUANTITY and rows 12
+and 15 are the only places they are compared on purpose.
+
+NOT A RETRIEVER COMPARISON. That is 5.7.
