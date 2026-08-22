@@ -364,7 +364,7 @@ function plan({ arm, pairs, rowsBySeed, judged }) {
   console.log('');
   console.log(`  pairs total        ${pairs.length}   322 items x 2 conditions`);
   console.log(`  already judged     ${done.size}`);
-  console.log(`  to call now        ${todo.length}   (${resolvable} resolve against the gen-v5 ledger)`);
+  console.log(`  to call now        ${todo.length}   (${resolvable} resolve against ${path.relative(REPO, arm.genLedger)})`);
   console.log(`  of those, human-labelled  ${humanTodo}   these carry the kappa`);
   console.log('');
   console.log('  COST — TWO FIGURES, BECAUSE THE TWO LIMITS CHARGE DIFFERENTLY (§30.1):');
@@ -495,7 +495,7 @@ async function run(state) {
   for (const pair of todo) {
     const resolved = resolvePair(pair, rowsBySeed);
     if (!resolved) {
-      append({ pairId: pair.pairId, ok: false, at: new Date().toISOString(), error: { message: 'unresolvable against the gen-v5 ledger' } });
+      append({ pairId: pair.pairId, ok: false, at: new Date().toISOString(), error: { message: `unresolvable against ${path.relative(REPO, arm.genLedger)}` } });
       console.log(`  SKIP ${pair.pairId} — cannot resolve`);
       continue;
     }
