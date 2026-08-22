@@ -1,0 +1,252 @@
+PHASE 5.7 — RETRIEVAL QUALITY AGAINST GENERATION QUALITY
+
+  Study Pack run over the SAME 30 seeds under two retrievers, the resulting
+  items graded by the SAME frozen judge and rubric, and a seed's retrieval
+  score put beside what was generated from it.
+
+  Produced by:  cd backend && npm run eval:v7 -- --write
+  PURE — no key, no network, nothing under data/. Reads only results/.
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  PROVISIONAL — AT LEAST ONE JUDGE ARM IS INCOMPLETE. Every judged figure
+  below is a sample of its arm, and the two arms are sampled to DIFFERENT
+  depths, so a between-arm judged difference contains that difference too.
+
+    gen-v5   judge coverage  644 of  644 pairs   100.0%
+    gen-v7   judge coverage  269 of  644 pairs   41.8%   <- PARTIAL
+
+  The emission order is stratified so a prefix is a BALANCED sample rather
+  than a corner of the set (§33.4) — that is what makes these figures worth
+  printing at all. Balanced is not settled. §32.9: 5.4's provisional
+  6-right/7-wrong became 9-right/4-wrong and three rows flipped.
+
+  THE LEXICAL AND RETRIEVAL FIGURES ARE NOT PROVISIONAL. They need no judge
+  call: both arms' generation ledgers are complete at 30 of 30.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+==============================================================================
+A. THE ONE VARIABLE, AND WHAT IS HELD FIXED
+==============================================================================
+
+  Held fixed across both arms, and checked against the ledgers rather than
+  asserted: the 30 seeds, the prompt, the model, temperature, max_tokens,
+  the context budget, k, the judge, the rubric and the distractor rule.
+
+    model            openai/gpt-oss-120b
+    temperature      0.4
+    max_tokens       2048
+    context budget   1800 tokens
+    k                8
+    judge            qwen/qwen3.6-27b
+
+  A SINGLE VALUE IN EVERY ROW ABOVE IS THE EVIDENCE THAT ONE VARIABLE MOVED.
+  Two values anywhere would mean the arms differ in something besides the
+  retriever, and every comparison below would be unattributable.
+
+    THE VARIABLE:
+      gen-v5   v4-bm25         results/gen-v5.calls.jsonl
+      gen-v7   v5-embeddings   results/gen-v7.calls.jsonl
+
+==============================================================================
+B. RETRIEVAL QUALITY — ALL SIX RUNGS, TWO OF THEM WITH A GENERATION ARM
+==============================================================================
+
+  DENOMINATOR: SEEDS (30). nDCG@8 against the Stack Exchange qrels.
+
+    retriever         nDCG@8    P@8     R@8    MRR    seeds at 0   generation arm
+    ------------------------------------------------------------------------------------
+    v1-overlap       0.1452  0.0375  0.2030  0.1472   22/30        —
+    v2-jaccard       0.1441  0.0375  0.2030  0.1437   22/30        —
+    v3-tfidf         0.2126  0.0708  0.2743  0.2156   18/30        —
+    v4-bm25          0.2173  0.0708  0.3435  0.2103   17/30        gen-v5
+    v5-embeddings    0.3557  0.0958  0.4408  0.3737   11/30        gen-v7
+    v6-hybrid        0.3315  0.0917  0.4243  0.3428   13/30        —
+
+  JUDGED DOCUMENTS PER SEED: median 1, min 1, max 11,
+  mean 2.07. THIS IS THE MOST IMPORTANT CAVEAT IN THE FILE. With a median
+  of one relevant document, a seed's nDCG@8 is close to a BINARY event — was
+  the single linked question in the top 8. Between 11 and 22 of the 30 seeds
+  score exactly zero depending on the rung, so the retrieval axis is mostly
+  ties. §5.1: PostLinks is positive-only and every absolute is a lower bound.
+
+  These are 30 seeds, not the 2,304-query dev set the ladder was measured on.
+  The ladder ordering is reproduced in DIRECTION here; the magnitudes are a
+  property of this draw and the two must not be quoted interchangeably.
+
+==============================================================================
+C. THE PAIRED RETRIEVAL CONTRAST — IS THE INDEPENDENT VARIABLE REAL?
+==============================================================================
+
+  DENOMINATOR: SEEDS. Paired, because both arms ran the identical seeds.
+
+  A DOWNSTREAM COMPARISON IS ONLY WORTH RUNNING IF THE THING BEING VARIED
+  ACTUALLY VARIES ON THIS SAMPLE, and that is not automatic: the ladder's
+  separations were measured over 2,304 queries and this is 30.
+
+    v5-embeddings minus v4-bm25, nDCG@8
+
+    set                        n    mean diff     sd       t     better  worse   tied
+    ------------------------------------------------------------------------------
+    all seeds                 30   +0.1384   0.3620    2.09     14      5     11
+    seeds delivering in BOTH  21   +0.1370   0.3844    1.63     10      4      7
+
+  AND THE SAME CONTRAST FOR EVERY RUNG THAT WAS NOT RUN, because these are what
+  CHOSE the second arm and a design decision needs its evidence in an artifact:
+
+    candidate minus v4-bm25     all 30 seeds        seeds delivering in A     shared
+                              diff        t         diff        t          nbrs/8   tied
+    ------------------------------------------------------------------------------------
+    v1-overlap           -0.0721    -1.30    -0.0221    -0.39       2.20       18
+    v2-jaccard           -0.0733    -1.32    -0.0236    -0.41       2.20       18
+    v3-tfidf             -0.0047    -0.12    -0.0478    -1.26       3.97       17
+    v5-embeddings        +0.1384     2.09    +0.1099     1.38       1.87       11   <- THE ARM RUN
+    v6-hybrid            +0.1141     2.20    +0.1036     1.61       4.03       16
+
+  THIS TABLE IS WHY THE SECOND ARM IS NOT v1-overlap, WHICH IS WHAT ROADMAP 5.7
+  ASKS FOR. v1 does not separate from the paid arm on this sample — the ladder
+  established that difference over 2,304 dev queries and 30 seeds cannot
+  resolve it — so a v1 arm would spend a full session varying an independent
+  variable that does not vary. v6-hybrid separates nearly as well as v5 and is
+  rejected for a subtler reason: it shares half its neighbours with arm A, so
+  half of each context would be the context arm A already ran.
+
+  THE SECOND ROW IS THE ONE THAT GOVERNS EVERY DOWNSTREAM NUMBER, because a
+  truncated call contributes no items and therefore no groundedness. The gap
+  between the two rows is what the output ceiling costs this comparison, and
+  it is the number ROADMAP 5.9 inherits from this phase.
+
+==============================================================================
+D. DELIVERY AND CENSORING, PER ARM
+==============================================================================
+
+  DENOMINATOR: CALLS (30 per arm).
+
+    arm       calls  truncated   rate    mean words trunc / kept   actual tokens
+    ----------------------------------------------------------------------------
+    gen-v5      30        7   23.3%       140.4 / 87.3          97073
+    gen-v7      30        7   23.3%       151.3 / 84.0          97284
+
+  TRUNCATED SEEDS SHARED BY BOTH ARMS: 5 of 7 and 7.
+  SEEDS DELIVERING ITEMS IN BOTH ARMS: 21 of 30.
+
+  THE CENSORING IS COMMON-MODE, WHICH IS WHAT MAKES THE PAIRED DESIGN WORK.
+  Truncation is driven by the seed, and the seeds are identical across arms,
+  so the ceiling removes approximately the same calls from both. It still
+  skews BOTH item sets toward short seeds — that caveat is unchanged from
+  §33.1 — but it is not differentially loaded against one retriever, so it
+  does not masquerade as a retriever effect. Restricting to the seeds that
+  deliver in both arms removes it from the comparison entirely.
+
+==============================================================================
+E. THE 5.7 TABLE — nDCG@8 AND DOWNSTREAM QUALITY SIDE BY SIDE
+==============================================================================
+
+  This is ROADMAP 5.7's Done clause. Each column names its denominator.
+
+    arm      retriever        nDCG@8   items   support   sup null   rate(2)  null
+    --------------------------------------------------------------------------------
+    gen-v5   v4-bm25          0.2173     322   0.2826   0.1193    5.0%   0.0%
+    gen-v7   v5-embeddings    0.3557     322   0.2702   0.1164    3.0%   0.0%
+
+    nDCG@8   denominator SEEDS (30)          support  denominator ITEMS
+    rate(2)  denominator ITEMS (judged)      null     the same items against
+                                                      a note they did NOT cite
+
+    gen-v5: 644 of 644 judge calls (100.0%), 322 cited verdicts, 322 null verdicts, 358852 actual tokens
+    gen-v7: 269 of 644 judge calls (41.8%), 135 cited verdicts, 134 null verdicts, 144006 actual tokens   <- PARTIAL, rate(2) above is provisional
+
+==============================================================================
+F. THE BETWEEN-ARM DIFFERENCES, EACH BESIDE THE EFFECT IT COULD DETECT
+==============================================================================
+
+  DENOMINATOR: ITEMS, with the intra-seed clustering MEASURED and applied.
+
+  Items are nested in calls — ~14 items come from one generation call over
+  one cluster — so item counts are not independent observations. The design
+  effect below is computed from these ledgers, not assumed.
+
+    lexical support   ICC 0.033  items/seed 14.0  design effect 1.424
+    judged level      ICC 0.027  items/seed 14.0  design effect 1.357
+
+    metric                     gen-v5    gen-v7     delta        MDE   verdict
+    --------------------------------------------------------------------------------------------
+    lexical support            0.2826  0.2702   -0.0124   0.0313   INSIDE the MDE — not a difference
+    lexical support GAP        0.1633  0.1539   -0.0094   0.0310   INSIDE the MDE — not a difference
+    judged mean level (0-2)    0.2019  0.1704   -0.0315   0.2030   INSIDE the MDE — not a difference
+    judged rate(2)             0.0497  0.0296   -0.0201   0.0864   INSIDE the MDE — not a difference
+    judged gap (cited - null)  0.1925  0.1642   -0.0284   0.2032   INSIDE the MDE — not a difference
+
+
+  THE JUDGED ROWS ABOVE ARE PROVISIONAL AND THEIR MDE IS COMPUTED ON THE
+  SMALLER ARM's n, which is why it is wide. It narrows as the run completes;
+  the lexical rows are final.
+
+  "INSIDE THE MDE" MEANS THE COMPARISON COULD NOT HAVE SEEN A DIFFERENCE THIS
+  SMALL, NOT THAT THERE IS NONE. results/gen-v7-predictions.txt declares
+  before the run that rate(2) cannot speak here at all: its MDE exceeds its
+  own mean, so any rate(2) delta is uninformative in both directions.
+
+==============================================================================
+G. THE CORRELATION — THE READING OF 5.7 WITH STATISTICAL CONTENT
+==============================================================================
+
+  DENOMINATOR: SEED-ARM OBSERVATIONS. One per seed per arm that delivered.
+
+  Does a seed whose neighbours were retrieved BETTER produce better items?
+  Two arms is two points; this pools every seed in both arms, which both
+  doubles n and puts the retrieval axis over its full range.
+
+    outcome                        n     pearson r   95% CI            spearman   |r| detectable
+    ------------------------------------------------------------------------------------------------
+    mean lexical support           46   -0.273       [-0.522, 0.018]   -0.201      0.290
+    mean judged level              41   -0.316       [-0.568, -0.009]   -0.328      0.308
+    rate(2)                        41   -0.328       [-0.577, -0.022]   -0.427      0.308
+
+  AND PER ARM, so a pooled figure cannot hide two arms disagreeing:
+
+    arm      outcome                  n    pearson r   spearman
+    ------------------------------------------------------------
+    gen-v5   mean lexical support      23   0.047       0.010
+    gen-v5   mean judged level         23   -0.429       -0.463
+    gen-v7   mean lexical support      23   -0.386       -0.324
+    gen-v7   mean judged level         18   -0.166       -0.140
+
+  BOTH r AND rho ARE PRINTED BECAUSE THE RETRIEVAL AXIS IS MOSTLY TIES. With
+  a median of one judged document per seed, most seeds sit at nDCG@8 = 0, and
+  Pearson on a near-binary predictor is a two-group comparison wearing a
+  correlation's clothes. Spearman with average ranks is the honest reading;
+  they are reported together so a reader can see when they disagree.
+
+==============================================================================
+H. WHAT THIS CANNOT SAY
+==============================================================================
+
+  NO NOISE FLOOR UNDER EITHER ARM. One draw per seed at temperature 0.4, no
+  repeats, in both arms alike. §28.8 measured 32.1% of examQs cells flipping
+  verdict on a re-draw. A between-arm difference smaller than the re-draw
+  flip rate is not attributable to the retriever, and NOTHING here or in 5.4
+  establishes what that rate is for a study pack. This is the limitation most
+  likely to be quoted past, because every figure above is a clean number.
+
+  THE GROUNDEDNESS RATE HAS NO HUMAN VALIDATION IN EITHER ARM. §33.8: the
+  human never used the top level in 60 items, so the binary kappa is exactly
+  0.000 with a degenerate marginal. The second arm collects no hand labels by
+  pre-registration, and its figures carry 5.6's three-level kappa of 0.246 at
+  P_o 64.0% by TRANSFER — the instrument is frozen across arms, but transfer
+  is an assumption and not a measurement.
+
+  THE RETRIEVAL AXIS IS SPARSE AND NEARLY BINARY. Median one judged document
+  per seed. A per-seed nDCG@8 answers "was the linked question found", which
+  is a coarser question than "how good were these eight neighbours".
+
+  ASSIGNMENT IS BY DESIGN, SO THE ARM CONTRAST IS CAUSAL; THE PER-SEED
+  CORRELATION IS OBSERVATIONAL. A seed's retrievability may be confounded
+  with properties of the seed nobody here measured.
+
+  THE CLUSTERS ARE NOT APP-SHAPED. Neighbours come from all 27,325 corpus
+  documents rather than a <=500-note user slice, and the seeds are Stack
+  Exchange questions shaped as Notes. §12.2's gap, eleventh instance.
+
+  30 SEEDS IS NOT 2,304 QUERIES. The ladder's separations were established on
+  the dev split; this draw reproduces their direction, not their magnitudes.
+

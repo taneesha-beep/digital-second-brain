@@ -341,6 +341,32 @@ function main() {
       `${String(d.negative).padStart(4)}   ${String(d.zero).padStart(4)}`);
   }
   say('');
+  say('  AND THE SAME CONTRAST FOR EVERY RUNG THAT WAS NOT RUN, because these are what');
+  say('  CHOSE the second arm and a design decision needs its evidence in an artifact:');
+  say('');
+  say(`    candidate minus ${armA.retriever}     all 30 seeds        seeds delivering in A     shared`);
+  say('                              diff        t         diff        t          nbrs/8   tied');
+  say(`    ${'-'.repeat(84)}`);
+  const armANeighbours = new Map(perRung.get(armA.retriever).map((r) => [r.seedId, new Set(r.neighbours)]));
+  for (const rung of rungs) {
+    if (rung === armA.retriever) continue;
+    const all = stats.pairedDiff(seedIds.map((s) => nd(rung, s)), seedIds.map((s) => nd(armA.retriever, s)));
+    const inA = seedIds.filter((s) => deliveringA.has(s));
+    const del = stats.pairedDiff(inA.map((s) => nd(rung, s)), inA.map((s) => nd(armA.retriever, s)));
+    const shared = stats.mean(perRung.get(rung).map((r) => r.neighbours.filter((n) => armANeighbours.get(r.seedId).has(n)).length));
+    say(`    ${rung.padEnd(20)} ${(all.mean >= 0 ? '+' : '') + all.mean.toFixed(4)}   ${all.t === null ? '  n/a' : all.t.toFixed(2).padStart(6)}    ` +
+      `${(del.mean >= 0 ? '+' : '') + del.mean.toFixed(4)}   ${del.t === null ? '  n/a' : del.t.toFixed(2).padStart(6)}       ` +
+      `${shared.toFixed(2)}     ${String(all.zero).padStart(4)}${rung === armB.retriever ? '   <- THE ARM RUN' : ''}`);
+  }
+  say('');
+  say('  THIS TABLE IS WHY THE SECOND ARM IS NOT v1-overlap, WHICH IS WHAT ROADMAP 5.7');
+  say('  ASKS FOR. v1 does not separate from the paid arm on this sample — the ladder');
+  say('  established that difference over 2,304 dev queries and 30 seeds cannot');
+  say('  resolve it — so a v1 arm would spend a full session varying an independent');
+  say('  variable that does not vary. v6-hybrid separates nearly as well as v5 and is');
+  say('  rejected for a subtler reason: it shares half its neighbours with arm A, so');
+  say('  half of each context would be the context arm A already ran.');
+  say('');
   say('  THE SECOND ROW IS THE ONE THAT GOVERNS EVERY DOWNSTREAM NUMBER, because a');
   say('  truncated call contributes no items and therefore no groundedness. The gap');
   say('  between the two rows is what the output ceiling costs this comparison, and');
