@@ -137,7 +137,17 @@ const DAILY_CAP = 200000;
  * Mean ACTUAL tokens per judge call. NOT inherited from §30.1's 0.40 or §32.2's
  * 0.94 — see the header for why the ratio is a property of the feature.
  *
- * 522, FROM THE FIRST SIX REAL CALLS ON THIS RUBRIC (n=6, sd not yet meaningful).
+ * 557, RE-DERIVED FROM THE COMPLETE 644-CALL LEDGER (21 Aug 2026): mean 557.2,
+ * sd 85.3, range 430-914, ratio actual/reserved 0.782. This is now a measured
+ * mean rather than an estimate, and it is the figure to price a future judge
+ * run with.
+ *
+ * IT WAS NOT RE-DERIVED FROM ANY OF THE FOUR PARTIAL LEDGERS along the way (48,
+ * 248, 382, 504 calls), although the plan output reported the running figure at
+ * each stop so a stale constant could not mislead anyone. §32.2's rule: fitting
+ * a constant to a partial stratified set is the same mistake at a smaller scale.
+ *
+ * The previous value was 522, from the first six real calls on this rubric.
  * IT REPLACES 445, AND THE CORRECTION IS §32.2's MISTAKE CAUGHT EARLY RATHER
  * THAN AVOIDED. 445 came from six probe calls made while characterising the
  * judge model — at 389-534 prompt tokens — and the rubric those probes carried
@@ -156,7 +166,7 @@ const DAILY_CAP = 200000;
  * is the same mistake at a smaller scale, and 5.4's noticed list set that rule
  * before it had to be obeyed twice.
  */
-const ACTUAL_TOKENS_PER_CALL = 522;
+const ACTUAL_TOKENS_PER_CALL = 557;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const has = (name) => process.argv.includes(`--${name}`);

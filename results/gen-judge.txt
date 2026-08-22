@@ -20,33 +20,13 @@ A. COVERAGE, AND WHAT EACH DENOMINATOR IS
 
   items in the pair set  322
   pairs in the pair set  644   (each item twice: cited, null)
-  judge calls attempted  506
-  judge calls completed  504   delivery 99.6%   <- denominator: CALLS
+  judge calls attempted  646
+  judge calls completed  644   delivery 99.7%   <- denominator: CALLS
 
-  cited verdicts parsed  252   <- denominator: ITEMS
-  null  verdicts parsed  252   <- denominator: ITEMS
-  items with BOTH        252   <- denominator: PAIRED ITEMS (the gap)
+  cited verdicts parsed  322   <- denominator: ITEMS
+  null  verdicts parsed  322   <- denominator: ITEMS
+  items with BOTH        322   <- denominator: PAIRED ITEMS (the gap)
   hand-labelled items    0   <- denominator: HUMAN ITEMS (the kappa)
-
-  *** THIS RUN IS 78.3% COMPLETE AND EVERY FIGURE BELOW IS PROVISIONAL.
-  *** Two partial sets in this project have produced headlines their own
-  *** completions overturned (§29.5's, §32.9's: 6-right/7-wrong on a third of
-  *** the set became 9-right/4-wrong on all of it, three rows flipping).
-  *** What protects a partial run here is the EMISSION ORDER, not luck: items
-  *** are interleaved so any prefix holds each stratum in proportion to its
-  *** size, and an item's two conditions are emitted back to back.
-
-    stratum          judged   of     share    population share
-    Q1/concepts         38    48   15.1%    14.9%
-    Q1/flashcards       28    36   11.1%    11.2%
-    Q2/concepts         31    40   12.3%    12.4%
-    Q2/flashcards       24    30   9.5%    9.3%
-    Q3/concepts         25    32   9.9%    9.9%
-    Q3/flashcards       19    24   7.5%    7.5%
-    Q4/concepts         31    40   12.3%    12.4%
-    Q4/flashcards       23    30   9.1%    9.3%
-    Q5/concepts         19    24   7.5%    7.5%
-    Q5/flashcards       14    18   5.6%    5.6%
 
 
 ==============================================================================
@@ -74,14 +54,14 @@ G. THE JUDGE AS AN INSTRUMENT — COST, PARSING, AND WHAT DRIFTED
 
   DENOMINATOR: JUDGE CALLS.
 
-    calls completed            504
-    mean ACTUAL tokens         561   (prompt 546, completion 15)
+    calls completed            644
+    mean ACTUAL tokens         557   (prompt 542, completion 15)
     ACTUAL / RESERVED          0.78   <- a JUDGE-specific ratio
-    total ACTUAL tokens        282798
+    total ACTUAL tokens        358852
     parse failures             0   0.0%
     finish_reason 'length'     0   0.0%
     <think> block appeared     0   0.0%   reasoning_effort:'none' should keep this 0
-    latency p50 / p95          181 / 328 ms   one home connection, one afternoon
+    latency p50 / p95          177 / 325 ms   one home connection, one afternoon
 
   §30.1 measured actual/reserved at 0.40 for single-note calls and §32.2 at
   0.94 for study packs, and established that the ratio is a property of the
