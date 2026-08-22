@@ -7,6 +7,32 @@
  *   npm run gen:v5                the plan. Prices the run and calls nothing.
  *   npm run gen:v5 -- --run       spends quota.
  *   npm run gen:v5 -- --run --take N     resume a prefix
+ *   npm run gen:v7                the 5.7 arm — SAME code, different neighbours
+ *
+ * ---------------------------------------------------------------------------
+ * 5.7 MAKES THIS VARIANT-AWARE, WHICH IS 5.5's MOVE ON A DIFFERENT RUNNER
+ * ---------------------------------------------------------------------------
+ *
+ * `gen:v7` is this file with `--variant v7`: it reads
+ * data/gen-eval/clusters.v7.jsonl (the SAME 30 seeds, neighbours retrieved by
+ * v5-embeddings) and appends to results/gen-v7.calls.jsonl. Nothing else
+ * differs — same prompts, same model, same temperature, same max_tokens, same
+ * context budget, same k. §29.4 mechanised "same model" for the 5.5 comparison
+ * because a sentence in a document cannot stop a run; the same argument is why
+ * 5.7 varies the retriever by pointing at a different INPUT FILE rather than by
+ * copying this script.
+ *
+ * A COPY WOULD BE THE DEFECT THIS PROJECT KEEPS FINDING. §33.9a: the same
+ * `err.cause` line was right in this file and wrong in the judge runner, and
+ * nothing distinguished them by reading. One runner, two inputs.
+ *
+ * THE LEDGER GUARD IS §29.4's AND IT NOW RUNS HERE. A run refuses to append to
+ * a ledger whose completed rows disagree with it about variant, model,
+ * max_tokens, temperature or retriever version. 5.3 recorded the model and
+ * refused a mixed ledger; 5.5 found it had recorded neither max_tokens nor
+ * temperature and would have averaged two systems one field short. 5.7 adds the
+ * field that would do it here: the RETRIEVER, which is the only variable this
+ * phase moves.
  *
  * ---------------------------------------------------------------------------
  * THIS SCRIPT SPENDS QUOTA. `npm run eval:gen` DOES NOT, AND THAT IS THE SPLIT.
@@ -114,8 +140,25 @@ const studyPack = require('../services/studyPack.service');
 const { MODEL, TEMPERATURE, MAX_TOKENS } = require('../services/llm.service');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const CLUSTERS = path.join(REPO, 'data', 'gen-eval', 'clusters.jsonl');
-const LEDGER = path.join(REPO, 'results', 'gen-v5.calls.jsonl');
+
+/**
+ * The default arm is 5.4's and its paths are the committed ones. A variant
+ * names its own cluster file and its own ledger, never sharing either.
+ */
+const ARMS = {
+  v5: {
+    clusters: path.join(REPO, 'data', 'gen-eval', 'clusters.jsonl'),
+    ledger: path.join(REPO, 'results', 'gen-v5.calls.jsonl'),
+    retriever: 'v4-bm25',
+    phase: '5.4'
+  },
+  v7: {
+    clusters: path.join(REPO, 'data', 'gen-eval', 'clusters.v7.jsonl'),
+    ledger: path.join(REPO, 'results', 'gen-v7.calls.jsonl'),
+    retriever: 'v5-embeddings',
+    phase: '5.7'
+  }
+};
 
 /** Per-minute token budget, from the x-ratelimit-limit-tokens header (§28.6). */
 const TOKENS_PER_MIN = 8000;
@@ -173,13 +216,75 @@ function readJsonl(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l));
 }
 
-function loadClusters() {
-  if (!fs.existsSync(CLUSTERS)) {
-    console.error(`MISSING ${path.relative(REPO, CLUSTERS)} — build it with \`npm run gen:clusters -- --write\`.`);
+/** Which arm this invocation is. Unknown names fail loudly rather than default. */
+function resolveArm() {
+  const name = arg('variant', 'v5');
+  if (!ARMS[name]) {
+    console.error(`unknown --variant "${name}" — known: ${Object.keys(ARMS).join(', ')}`);
+    process.exit(1);
+  }
+  return { name, ...ARMS[name] };
+}
+
+function loadClusters(arm) {
+  if (!fs.existsSync(arm.clusters)) {
+    console.error(`MISSING ${path.relative(REPO, arm.clusters)} — build it with:`);
+    console.error(arm.name === 'v5'
+      ? '  npm run gen:clusters -- --write'
+      : `  npm run gen:clusters -- --retriever ${arm.retriever} --variant ${arm.name} --write`);
     console.error('It needs the gitignored corpus at data/corpus/cooking.jsonl.');
     process.exit(1);
   }
-  return readJsonl(CLUSTERS);
+  const clusters = readJsonl(arm.clusters);
+
+  // THE CLUSTER FILE MUST CARRY THE RETRIEVER THE ARM CLAIMS. The retriever is
+  // the one variable 5.7 moves, so it is checked against the DATA rather than
+  // against the flag that asked for it — §33.2's rule, which checks the judge
+  // separation against the ledger instead of a constant somebody can edit in
+  // the same commit.
+  const stamped = new Set(clusters.map((c) => c.retriever));
+  if (stamped.size !== 1 || !stamped.has(arm.retriever)) {
+    console.error(
+      `REFUSING: arm "${arm.name}" expects neighbours retrieved by ${arm.retriever}, but\n` +
+      `  ${path.relative(REPO, arm.clusters)} is stamped ${[...stamped].join(', ') || '(nothing)'}.`
+    );
+    process.exit(1);
+  }
+  return clusters;
+}
+
+/**
+ * §29.4's guard, with the field 5.7 needs added.
+ *
+ * A ledger holding two configurations averages two systems, and the report
+ * cannot see it because both rows look complete. 5.3 refused a ledger mixing
+ * MODELS; 5.5 found max_tokens and temperature unrecorded and would have mixed
+ * ceilings one field short. The field that would do it here is the RETRIEVER,
+ * because that is the only thing 5.7 changes — a v7 run appending to the v5
+ * ledger would produce a single file whose 60 rows are two experiments.
+ */
+function assertLedgerHomogeneous(arm, expected) {
+  const rows = readJsonl(arm.ledger).filter((r) => r.ok);
+  if (rows.length === 0) return;
+  const fields = [
+    ['variant', (r) => r.variant, expected.variant],
+    ['model', (r) => r.modelRequested, expected.model],
+    ['maxTokens', (r) => r.maxTokens, expected.maxTokens],
+    ['temperature', (r) => r.temperature, expected.temperature],
+    ['retriever', (r) => (r.retrieval || {}).version, expected.retriever]
+  ];
+  for (const [name, read, want] of fields) {
+    const seen = new Set(rows.map(read));
+    if (seen.size > 1 || !seen.has(want)) {
+      console.error(
+        `REFUSING to append to ${path.relative(REPO, arm.ledger)}: it disagrees about ${name}.\n` +
+        `  ledger holds  ${[...seen].map(String).join(', ')}\n` +
+        `  this run is   ${String(want)}\n` +
+        '  A ledger mixing two configurations silently averages two systems (§29.4).'
+      );
+      process.exit(1);
+    }
+  }
 }
 
 /**
@@ -199,17 +304,30 @@ function buildContext(cluster) {
   return studyPack.assembleContext(seedDoc, hits, docsById);
 }
 
-function plan(clusters) {
-  const done = new Set(readJsonl(LEDGER).filter((r) => r.ok).map((r) => String(r.seedId)));
+function plan(arm, clusters) {
+  const rows = readJsonl(arm.ledger).filter((r) => r.ok);
+  const done = new Set(rows.map((r) => String(r.seedId)));
   const todo = clusters.filter((c) => !done.has(String(c.seedId)));
+
+  // §32.8's rule, pointed at the number that decides whether a run fits: a
+  // hardcoded sentence beside a recomputed number can only rot. The constant
+  // was fitted on the v5 arm's 30 calls; a v7 call is a different population
+  // for §32.2's exact reason, so the ledger's own mean is printed beside it and
+  // the divergence is flagged at the moment somebody types --run.
+  const charged = rows.map((r) => r.totalTokens).filter(Number.isFinite);
+  const measured = charged.length ? Math.round(charged.reduce((a, b) => a + b, 0) / charged.length) : null;
 
   const contexts = clusters.map(buildContext);
   const estPrompt = Math.round(contexts.reduce((a, c) => a + c.estimatedTokens, 0) / contexts.length);
   const reserved = todo.length * (estPrompt + MAX_TOKENS);
-  const actual = todo.length * ACTUAL_TOKENS_PER_CALL;
+  const perCall = measured !== null && charged.length >= 5 ? measured : ACTUAL_TOKENS_PER_CALL;
+  const actual = todo.length * perCall;
   const bound = contexts.filter((c) => c.dropped.length > 0).length;
 
-  console.log('PHASE 5.4 — gen-v5 PLAN. Nothing is called.\n');
+  console.log(`PHASE ${arm.phase} — gen-${arm.name} PLAN. Nothing is called.\n`);
+  console.log(`  arm                ${arm.name}   neighbours by ${arm.retriever}`);
+  console.log(`  clusters           ${path.relative(REPO, arm.clusters)}`);
+  console.log(`  ledger             ${path.relative(REPO, arm.ledger)}`);
   console.log(`  model              ${MODEL}   from llm.service.js, imported`);
   console.log(`  max_tokens         ${MAX_TOKENS}   INHERITED, not derived (§30.9)`);
   console.log(`  temperature        ${TEMPERATURE}`);
@@ -226,7 +344,7 @@ function plan(clusters) {
   console.log(`    RESERVED  ${String(reserved).padStart(7)} tokens   prompt + max_tokens per call.`);
   console.log('                               This is what the PER-MINUTE gate charges and');
   console.log('                               what stops a run mid-flight.');
-  console.log(`    ACTUAL    ${String(actual).padStart(7)} tokens   ~${ACTUAL_TOKENS_PER_CALL}/call, from §30.8's one live call.`);
+  console.log(`    ACTUAL    ${String(actual).padStart(7)} tokens   ~${perCall}/call.`);
   console.log('                               This is what the DAILY cap charges.');
   console.log('');
   console.log(`    daily cap ${DAILY_CAP} per ORGANISATION, refilling at 2.3148 tokens/s.`);
@@ -236,9 +354,20 @@ function plan(clusters) {
     console.log('\n    THIS RUN CANNOT FIT IN ONE DAY even priced on actual tokens.');
   }
   console.log('');
-  console.log(`    ACTUAL_TOKENS_PER_CALL rests on ONE observation (§30.8). It is an`);
-  console.log('    estimate with n=1 behind it, not a measured mean — treat the reserved');
-  console.log('    figure as the safe side until this ledger has rows of its own.');
+  if (measured === null) {
+    console.log(`    ACTUAL_TOKENS_PER_CALL = ${ACTUAL_TOKENS_PER_CALL}, fitted on the v5 arm's complete`);
+    console.log('    30-call ledger. THIS ledger has no rows yet, so nothing corroborates it');
+    console.log('    for this arm — §32.2: a constant from a different population was 46% low');
+    console.log('    and stopped a run at 9 of 30. Treat the reserved figure as the safe side.');
+  } else {
+    const drift = ((measured - ACTUAL_TOKENS_PER_CALL) / ACTUAL_TOKENS_PER_CALL) * 100;
+    console.log(`    constant ${ACTUAL_TOKENS_PER_CALL}   THIS LEDGER'S OWN MEAN ${measured} over ${charged.length} calls  ` +
+      `(${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%)`);
+    console.log(charged.length >= 5
+      ? '    The ledger figure is the one priced above. §32.2.'
+      : '    Fewer than 5 rows — the CONSTANT is priced above, because fitting to a');
+    if (charged.length < 5) console.log('    partial stratified set is the same mistake at a smaller scale.');
+  }
   console.log('');
   console.log(`  pacing             serial, ${DEFAULT_DELAY_MS} ms apart, throttled BEFORE each`);
   console.log(`                     call against its own reservation, under ${TOKENS_PER_MIN}/min`);
@@ -246,7 +375,7 @@ function plan(clusters) {
   console.log(`                     ${MAX_TPM_PAUSES} times, and NOT counted as an attempt. A DAILY (TPD)`);
   console.log('                     429 still STOPS the run; the ledger resumes it');
   console.log('');
-  console.log('  Run it:   npm run gen:v5 -- --run');
+  console.log(`  Run it:   npm run gen:${arm.name} -- --run`);
   console.log('  Check the balance first:   npm run gen:quota\n');
 }
 
@@ -297,14 +426,17 @@ function parseRetryHint(text) {
   return m.length === 3 ? (Number(m[1]) * 60 + Number(m[2])) * 1000 : Number(m[1]) * 1000;
 }
 
-async function run(clusters) {
+async function run(arm, clusters) {
   if (!process.env.GROQ_API_KEY) {
     console.error('MISSING GROQ_API_KEY. It lives in backend/.env — see CLAUDE.md.');
     process.exit(1);
   }
 
   const maxCalls = Number(arg('max-calls', DEFAULT_MAX_CALLS));
-  const done = new Set(readJsonl(LEDGER).filter((r) => r.ok).map((r) => String(r.seedId)));
+  assertLedgerHomogeneous(arm, {
+    variant: arm.name, model: MODEL, maxTokens: MAX_TOKENS, temperature: TEMPERATURE, retriever: arm.retriever
+  });
+  const done = new Set(readJsonl(arm.ledger).filter((r) => r.ok).map((r) => String(r.seedId)));
   let todo = clusters.filter((c) => !done.has(String(c.seedId)));
 
   // --take shortens deliberately; --max-calls REFUSES a long run rather than
@@ -324,7 +456,8 @@ async function run(clusters) {
     }
   }
 
-  console.log('PHASE 5.4 — gen-v5: Study Pack over the 30 golden seeds, n = 1.\n');
+  console.log(`PHASE ${arm.phase} — gen-${arm.name}: Study Pack over the 30 golden seeds, n = 1.\n`);
+  console.log(`  arm              ${arm.name}   neighbours by ${arm.retriever}  — THE ONLY VARIABLE`);
   console.log(`  model            ${MODEL}   imported from llm.service.js`);
   console.log(`  max_tokens       ${MAX_TOKENS}   inherited (§30.9)`);
   console.log(`  issued by        services/studyPack.service.js — THE LIVE FUNCTION`);
@@ -340,7 +473,7 @@ async function run(clusters) {
     return;
   }
 
-  const stream = fs.createWriteStream(LEDGER, { flags: 'a' });
+  const stream = fs.createWriteStream(arm.ledger, { flags: 'a' });
   const append = (row) => stream.write(`${JSON.stringify(row)}\n`);
 
   let attempts = 0;
@@ -440,7 +573,7 @@ async function run(clusters) {
         words: cluster.words,
         ok: true,
         at: new Date().toISOString(),
-        variant: 'v5',
+        variant: arm.name,
         model: observation.model,
         modelRequested: MODEL,
         maxTokens: MAX_TOKENS,
@@ -478,7 +611,7 @@ async function run(clusters) {
         `${String(observation.finishReason).padEnd(6)}  ${mark}\n`
       );
     } else {
-      append({ seedId: cluster.seedId, quintile: cluster.quintile, ok: false, at: new Date().toISOString(), variant: 'v5', error: failure });
+      append({ seedId: cluster.seedId, quintile: cluster.quintile, ok: false, at: new Date().toISOString(), variant: arm.name, error: failure });
       console.log(`  ${String(attempts).padStart(3)}/${todo.length}  seed ${String(cluster.seedId).padStart(6)}  ` +
         `API FAILURE  ${failure.status || ''} ${failure.message}`);
 
@@ -506,13 +639,16 @@ async function run(clusters) {
   console.log(`\n  attempts ${attempts}   completed ${completed}   ` +
     `delivery ${((completed / attempts) * 100).toFixed(1)}%   ${mins} min`);
   console.log(`  ACTUAL tokens charged  ${actualTokens}   (~${completed ? Math.round(actualTokens / completed) : 0}/call)`);
-  console.log('\n  Report it:   npm run eval:gen -- --write     (PURE — no key, no network)\n');
+  console.log(arm.name === 'v5'
+    ? '\n  Report it:   npm run eval:gen -- --write     (PURE — no key, no network)\n'
+    : '\n  Then judge it:   npm run judge:set -- --variant v7 --write   then   npm run judge:v7\n');
 }
 
 async function main() {
-  const clusters = loadClusters();
-  if (has('run')) await run(clusters);
-  else plan(clusters);
+  const arm = resolveArm();
+  const clusters = loadClusters(arm);
+  if (has('run')) await run(arm, clusters);
+  else plan(arm, clusters);
 }
 
 main().catch((err) => {
