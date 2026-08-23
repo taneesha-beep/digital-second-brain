@@ -71,7 +71,7 @@ const retrieval = require('../retrieval');
 const { loadNoteCorpus, APP_RETRIEVER, LINK_CAP } = require('./noteCorpus.service');
 const { MODEL, TEMPERATURE, MAX_TOKENS } = require('./llm.service');
 // Phase 6.1. No-ops entirely unless DSB_TRACING=1 — observability/sdk.js.
-const { withSpan, SPANS, GEN_AI } = require('../observability');
+const { withSpan, SPANS, GEN_AI, llmResponseAttributes } = require('../observability');
 
 /**
  * THE STUDY PACK'S OWN OUTPUT CEILING (5.9, 23 Aug 2026). 2048 -> 4096.
@@ -506,20 +506,33 @@ async function generate(contextText, noteCount) {
   const startedAt = Date.now();
 
   try {
-    // Phase 6.1. THREE attributes, and they are the ones that IDENTIFY the call.
+    // Phase 6.1 set THREE attributes at span START — the ones that identify the
+    // call. Phase 6.2 adds FOUR more at span END, because tokens, finish reason
+    // and therefore cost do not exist until the response does.
+    //
+    // THE SPLIT IS THE WHOLE DESIGN, NOT AN ACCIDENT OF ORDERING. withSpan()
+    // applies its `attributes` argument at START precisely so that a span which
+    // THROWS still says what it was asked to do. A call that 429s or times out
+    // keeps model, provider and operation; it simply has no usage to report. So
+    // a failed LLM span is still identifiable and still queryable, which is the
+    // property PRIMER §8.2's fourth reading depends on.
+    //
     // gen_ai.* is entirely experimental in semantic-conventions@1.43.0 (0 in the
-    // stable root, 40+ in experimental_attributes.js) — see observability/index.js.
-    // Tokens in/out, computed cost and finish reason are ROADMAP 6.2's four
-    // named items and are deliberately NOT set here.
-    const completion = await withSpan(SPANS.LLM_CALL, () => groq.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: STUDY_PACK_SYSTEM_MESSAGE },
-        { role: 'user', content: `${prompt}\n\nNotes:\n${contextText}` }
-      ],
-      temperature: TEMPERATURE,
-      max_tokens: STUDY_PACK_MAX_TOKENS
-    }), {
+    // stable root, 40+ in experimental_attributes.js) and cost has no convention
+    // at all — see observability/index.js for the names and the reasoning.
+    const completion = await withSpan(SPANS.LLM_CALL, async (span) => {
+      const response = await groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: STUDY_PACK_SYSTEM_MESSAGE },
+          { role: 'user', content: `${prompt}\n\nNotes:\n${contextText}` }
+        ],
+        temperature: TEMPERATURE,
+        max_tokens: STUDY_PACK_MAX_TOKENS
+      });
+      span.setAttributes(llmResponseAttributes(response, MODEL));
+      return response;
+    }, {
       [GEN_AI.OPERATION_NAME]: 'chat',
       [GEN_AI.PROVIDER_NAME]: 'groq',
       [GEN_AI.REQUEST_MODEL]: MODEL

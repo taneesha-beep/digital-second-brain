@@ -19,13 +19,20 @@
  *   §22.6  a check that runs and cannot fail. The call-site test below reads
  *          the instrumented files' source, so it fails if a span is removed —
  *          not merely if a constant is renamed.
+ *
+ * UPDATED AT 6.2. One block in here used to assert that tokens, cost and finish
+ * reason were ABSENT, so that 6.1 could not quietly become 6.2. 6.2 has now
+ * arrived deliberately, and that guard is INVERTED rather than deleted — the
+ * same four items are required present and required to be spelled the
+ * convention's way. The VALUES they take are tested in
+ * tests/observability.cost.test.js, which is also pure.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const { SPANS, SPAN_NAMES, GEN_AI, withSpan, tracer } = require('../observability');
+const { SPANS, SPAN_NAMES, GEN_AI, DSB_COST, withSpan, tracer } = require('../observability');
 const { isEnabled, startTracing, ENV_FLAG } = require('../observability/sdk');
 
 const BACKEND = path.join(__dirname, '..');
@@ -64,12 +71,51 @@ describe('GenAI attribute keys are the spec\'s names, and none of them is stable
     expect(GEN_AI.REQUEST_MODEL).toBe('gen_ai.request.model');
   });
 
-  test('6.2\'s four are NOT set at 6.1 — tokens, cost and finish reason are its items', () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // UPDATED AT 6.2, DELIBERATELY, AND THE OLD ASSERTION IS WORTH READING.
+  //
+  // Until this phase this block asserted GEN_AI held exactly THREE keys and
+  // that none of them mentioned usage, finish_reasons or cost — a guard so 6.1
+  // "could not quietly become 6.2". 6.2 has now arrived on purpose, so the
+  // guard is INVERTED rather than deleted: the same four items are now required
+  // to be present and required to be spelled the convention's way. Deleting it
+  // would have left the phase boundary unguarded in both directions.
+  test('6.2\'s three spec-named additions are spelled the convention\'s way', () => {
+    expect(GEN_AI.USAGE_INPUT_TOKENS).toBe('gen_ai.usage.input_tokens');
+    expect(GEN_AI.USAGE_OUTPUT_TOKENS).toBe('gen_ai.usage.output_tokens');
+    // PLURAL. The convention names it finish_reasonS and types it as an array;
+    // a singular key here would be an invented name wearing a spec's clothes.
+    expect(GEN_AI.RESPONSE_FINISH_REASONS).toBe('gen_ai.response.finish_reasons');
+    expect(GEN_AI.RESPONSE_MODEL).toBe('gen_ai.response.model');
+  });
+
+  test('GEN_AI holds exactly the seven, and every one is a gen_ai.* name', () => {
     const keys = Object.values(GEN_AI);
-    expect(keys).toHaveLength(3);
-    expect(keys.some((k) => k.includes('usage'))).toBe(false);
-    expect(keys.some((k) => k.includes('finish_reasons'))).toBe(false);
-    expect(keys.some((k) => k.includes('cost'))).toBe(false);
+    expect(keys).toHaveLength(7);
+    expect(new Set(keys).size).toBe(7);
+    for (const k of keys) expect(k.startsWith('gen_ai.')).toBe(true);
+    expect(Object.isFrozen(GEN_AI)).toBe(true);
+  });
+
+  test('COST IS NOT A gen_ai.* NAME, because the convention has none for it', () => {
+    // §37.5 measured 0 stable / 40+ experimental gen_ai.* attributes. Cost is in
+    // neither set: there is no standard attribute for it at any maturity. So it
+    // gets a dsb. prefix rather than squatting on a name a future spec may
+    // define differently, and a reader in Jaeger can see which two of the nine
+    // attributes on this span were invented here.
+    expect(Object.values(GEN_AI).some((k) => k.includes('cost'))).toBe(false);
+    expect(DSB_COST.USD).toBe('dsb.gen_ai.cost.usd');
+    expect(DSB_COST.RATE_SOURCE).toBe('dsb.gen_ai.cost.rate_source');
+    for (const k of Object.values(DSB_COST)) expect(k.startsWith('dsb.')).toBe(true);
+    expect(Object.isFrozen(DSB_COST)).toBe(true);
+  });
+
+  test('A COST FIGURE NEVER TRAVELS WITHOUT ITS RATE SOURCE', () => {
+    // The rule this encodes is CLAUDE.md's, not OpenTelemetry's: a bare dollar
+    // figure is a measured-looking number with no artifact behind it. There is
+    // no way to express "these two keys must co-occur" in a frozen object, so
+    // the pairing is asserted here and again on a real span below.
+    expect(Object.keys(DSB_COST).sort()).toEqual(['RATE_SOURCE', 'USD']);
   });
 
   test('the superseded gen_ai.system is not used', () => {
@@ -210,6 +256,26 @@ describe('the instrumented call sites use the constants, and all six are wired',
     const { text } = sources.find((s) => s.rel === 'routes/notes.js');
     const present = Object.entries(SPANS).filter(([k]) => text.includes(`SPANS.${k}`)).map(([, v]) => v);
     expect(present.sort()).toEqual(['extract', 'normalize']);
+  });
+
+  test('6.2: the llm-call site annotates the span from the RESPONSE, not just at start', () => {
+    // §22.6's shape is a check that runs and cannot fail. The value-level tests
+    // in observability.cost.test.js prove llmResponseAttributes() is correct;
+    // this proves it is CALLED, so deleting the one line that wires it in turns
+    // a suite red instead of silently returning the span to its 6.1 shape.
+    const { text } = sources.find((s) => s.rel === 'services/studyPack.service.js');
+    expect(text).toContain('llmResponseAttributes');
+    expect(text).toMatch(/span\.setAttributes\(\s*llmResponseAttributes\(/);
+  });
+
+  test('6.2: the identifying THREE are still applied at span START', () => {
+    // They are passed as withSpan's third argument on purpose: a call that 429s
+    // or times out keeps model/provider/operation and simply reports no usage.
+    // Moving them into the callback would make a failed LLM span anonymous.
+    const { text } = sources.find((s) => s.rel === 'services/studyPack.service.js');
+    for (const key of ['OPERATION_NAME', 'PROVIDER_NAME', 'REQUEST_MODEL']) {
+      expect(text).toContain(`GEN_AI.${key}`);
+    }
   });
 
   test('backend/retrieval/ is NOT instrumented — the purity boundary holds', () => {

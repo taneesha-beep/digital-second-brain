@@ -54,7 +54,8 @@
     "gen:v7": "node scripts/run-studypack-eval.js --variant v7",
     "judge:v7": "node scripts/run-judge-eval.js --variant v7",
     "seed:retrieval": "node scripts/measure-seed-retrieval.js",
-    "eval:v7": "node scripts/eval-retrieval-gen.js"
+    "eval:v7": "node scripts/eval-retrieval-gen.js",
+    "cost:pack": "node scripts/price-study-pack.js"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
