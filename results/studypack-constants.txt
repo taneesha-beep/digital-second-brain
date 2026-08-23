@@ -41,13 +41,13 @@ A. THE DAILY CAP IS A CONSTANT-RATE TOKEN BUCKET
 B. TOKENS FROM CHARACTERS, WITHOUT A TOKENIZER
 ==============================================================================
 
-  Fitted on 79 completed API calls in results/gen-v2.calls.jsonl. Each row
+  Fitted on 151 completed API calls in results/gen-v2.calls.jsonl. Each row
   carries the API's own prompt_tokens and the exact character count of the
   content sent, so the input to this fit is measured on both axes.
 
   LEAST SQUARES (what the data says):
-      tokens = 76.4 + chars x 0.20898
-      R2 0.9758   residual sd 8.9 tokens   1 token per 4.785 chars
+      tokens = 78.5 + chars x 0.20898
+      R2 0.9816   residual sd 10.4 tokens   1 token per 4.785 chars
 
   WHAT SHIPS IS A BOUND, NOT THE FIT. A budget that underestimates spends
   room the request does not have, so the shipped estimator is deliberately
@@ -55,10 +55,10 @@ B. TOKENS FROM CHARACTERS, WITHOUT A TOKENIZER
 
       estimateTokens(text) = 90 + ceil(chars / 4.5)
 
-      never underestimates      TRUE   over all 79 calls
-      minimum slack             1 tokens
-      maximum slack             44 tokens
-      mean overestimate         10.4%
+      never underestimates      TRUE   over all 151 calls
+      minimum slack             0 tokens
+      maximum slack             63 tokens
+      mean overestimate         9.3%
 
   CALIBRATED ON SINGLE-NOTE PROMPTS AND USED ON CLUSTER PROMPTS, which are
   ~10x longer. That is an extrapolation, and it is checked on every call:

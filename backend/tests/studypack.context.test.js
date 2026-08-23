@@ -25,7 +25,7 @@ const sp = require('../services/studyPack.service');
 const LEDGER = path.join(__dirname, '..', '..', 'results', 'gen-v2.calls.jsonl');
 
 // ───────────────────────────────────────────────────────────────────────────
-// THE TOKEN ESTIMATOR — checked against 79 real API responses, not asserted.
+// THE TOKEN ESTIMATOR — checked against 151 real API responses, not asserted.
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('the token estimator is a BOUND, and the bound is measured', () => {
@@ -40,13 +40,24 @@ describe('the token estimator is a BOUND, and the bound is measured', () => {
     '\n\nNotes:\n'.length +
     row.contentChars;
 
-  test('the ledger it is calibrated against is actually there', () => {
+  test('the ledger it is calibrated against is actually there, at the size the artifact was fitted on', () => {
     // Without this the three tests below pass vacuously on an empty array —
     // §26.7's defect, in the file whose whole job is to stop a guess shipping.
     expect(rows.length).toBeGreaterThanOrEqual(70);
+
+    // PINNED EXACTLY, 23 Aug 2026, BECAUSE A FLOOR IS WHAT LET THIS DRIFT.
+    // This file read `>= 70` and the ledger grew from 79 to 151 when 5.5
+    // completed gen-v2. Every test below kept passing on the larger set while
+    // this file's comments, its test names and results/studypack-constants.txt
+    // all still described the 79. Nothing was WRONG — the bound holds on all
+    // 151 — but the artifact was stale for three phases and no check could say
+    // so, because a floor cannot notice growth. An equality can: if the ledger
+    // ever grows again, this goes red and the artifact gets regenerated with
+    // it, which is the only thing that keeps the two in step.
+    expect(rows.length).toBe(151);
   });
 
-  test('it NEVER underestimates on any of the 79 completed calls', () => {
+  test('it NEVER underestimates on any of the 151 completed calls', () => {
     // The direction that matters. An underestimate spends budget the request
     // does not have, which is how a context window overflows in production
     // while every local number looks fine.
@@ -56,9 +67,21 @@ describe('the token estimator is a BOUND, and the bound is measured', () => {
     expect(under).toEqual([]);
   });
 
+  test('the bound holds, and on the completed ledger its margin is ZERO', () => {
+    // WORTH ITS OWN TEST BECAUSE THE GUARANTEE GOT WEAKER WITHOUT MOVING.
+    // On the 79 rows the artifact was originally fitted on, the minimum slack
+    // was 1 token. On all 151 it is 0 — the bound is still never violated, but
+    // at least one real call now lands exactly on the estimate. "Never
+    // underestimates" and "never underestimates with room to spare" are two
+    // different claims, and only the first survives on the completed set.
+    const slacks = rows.map((r) => sp.estimateTokens('x'.repeat(charsFor(r))) - r.promptTokens);
+    expect(Math.min(...slacks)).toBe(0);
+  });
+
   test('it is not so loose as to be useless — under 20% over on average', () => {
     // A bound of "one token per character" would also never underestimate and
-    // would make the budget meaningless. Measured: 10.4% mean overestimate.
+    // would make the budget meaningless. Measured: 9.3% mean overestimate over
+    // all 151 (it was 10.4% over the 79 the artifact was first fitted on).
     const overs = rows.map((r) => {
       const est = sp.estimateTokens('x'.repeat(charsFor(r)));
       return (est - r.promptTokens) / r.promptTokens;
