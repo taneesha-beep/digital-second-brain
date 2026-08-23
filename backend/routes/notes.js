@@ -9,8 +9,15 @@ const { loadUserCorpus } = require('../utils/corpus');
 const { buildGlobalGraph } = require('../services/graphBuilder.service');
 const { computeAndSaveLinks, getLinkedNotes } = require('../services/linker.service');
 const { saveVersion, getVersions } = require('../services/version.service');
-// Phase 6.1. No-ops entirely unless DSB_TRACING=1 — observability/sdk.js.
-const { withSpan, SPANS } = require('../observability');
+// Phase 6.1, extended at 6.3. No-ops entirely unless DSB_TRACING=1 —
+// observability/sdk.js. This is the ONLY OpenTelemetry-aware require in this
+// file on purpose: @opentelemetry/api is never imported directly by app code,
+// which is what keeps "how much OTel is in here" answerable by reading one
+// line. A test asserts it.
+const {
+  withSpan, SPANS,
+  fireDetached, currentSpanContext, JOBS, DSB_JOB
+} = require('../observability');
 
 router.use(protect);
 
@@ -46,10 +53,44 @@ function normalizeContent(value) {
   return {};
 }
 
-// Run linking in background — never blocks the response
-function runLinkingAsync(noteId, userId) {
-  computeAndSaveLinks(noteId, userId).catch((err) =>
-    console.error('Background linking error:', err.message)
+/**
+ * Fire one of the two un-awaited background jobs inside a detached, linked
+ * span. Phase 6.3.
+ *
+ * THE JOB IS STILL NOT AWAITED, WHICH IS THE WHOLE CONSTRAINT. Nothing here
+ * adds a round trip to the request: `origin` is read from the active context
+ * synchronously by the caller, the span is created synchronously, and
+ * fireDetached() returns nothing at all — so this cannot be awaited by
+ * accident, which is a stronger guarantee than a comment saying not to. The
+ * awaited operation count on both save routes is unchanged: PUT is still
+ * findOne + loadUserCorpus + save, POST is still create.
+ *
+ * THE SWALLOW LIVES IN fireDetached() AND THE WORDING LIVES HERE. detachedSpan
+ * rethrows on purpose, so something must catch; putting the catch in
+ * observability/ is what lets it be tested without a database, and passing the
+ * log line in from here is what keeps that module out of the business of
+ * choosing words. THE LABELS ARE THE ONES THAT WERE ALREADY THERE, verbatim —
+ * they are the string somebody greps a terminal for, and 6.3 has no business
+ * renaming them.
+ */
+function fireJob(jobName, origin, noteId, run, label) {
+  fireDetached(
+    jobName,
+    origin,
+    run,
+    { [DSB_JOB.NOTE_ID]: String(noteId) },
+    (err) => console.error(`${label}:`, (err && err.message) || err)
+  );
+}
+
+// Run linking in background — never blocks the response.
+function runLinkingAsync(noteId, userId, origin) {
+  fireJob(
+    JOBS.LINK,
+    origin,
+    noteId,
+    () => computeAndSaveLinks(noteId, userId),
+    'Background linking error'
   );
 }
 
@@ -91,8 +132,13 @@ router.post('/', async (req, res) => {
       tags:        [],
       keywords:    []
     });
-    // Run linking in background — don't await so response is instant
-    runLinkingAsync(note._id, req.user._id);
+    // Run linking in background — don't await so response is instant.
+    //
+    // Phase 6.3: the context is captured HERE, synchronously, while the request
+    // is still the active span. By the time the job runs the response has been
+    // sent and there is no active context left to inherit — which is precisely
+    // why propagation has to be explicit rather than ambient.
+    runLinkingAsync(note._id, req.user._id, currentSpanContext());
     res.status(201).json(note);
   } catch (err) {
     console.error('Full create error:', err);
@@ -148,13 +194,27 @@ router.put('/:id', async (req, res) => {
 
     await note.save();
 
-    // Save version snapshot in background
-    saveVersion(note._id, note.content, note.contentText).catch((e) =>
-      console.error('Version save skipped:', e.message)
+    // Phase 6.3. ONE capture for BOTH jobs: they are two effects of one save
+    // and they belong to the same originating request span.
+    const origin = currentSpanContext();
+
+    // Save version snapshot in background.
+    //
+    // ⚠️ THIS CALL CANNOT REJECT. saveVersion() catches internally, logs, and
+    // returns null — so the `.catch` this replaces had never fired and the span
+    // around it would be GREEN on every failure. version.service.js marks the
+    // active span from inside that catch for exactly this reason; without that
+    // line this wrapper is §22.6's shape, a check that runs and cannot fail.
+    fireJob(
+      JOBS.VERSION,
+      origin,
+      note._id,
+      () => saveVersion(note._id, note.content, note.contentText),
+      'Version save skipped'
     );
 
     // Run linking in background
-    runLinkingAsync(note._id, req.user._id);
+    runLinkingAsync(note._id, req.user._id, origin);
 
     res.json(note);
   } catch (err) {

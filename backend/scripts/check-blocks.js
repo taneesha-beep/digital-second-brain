@@ -142,7 +142,20 @@ const WRITEUPS = [
   // passed here and were dead for everyone else. FAILURE-MODES.md is published
   // and can reproduce that exactly, so it cites committed artifacts only and
   // names no path under docs/. That rule is held by hand and stated in its §8.
-  { file: 'docs/FAILURE-MODES.md', mode: 'current', published: true }
+  { file: 'docs/FAILURE-MODES.md', mode: 'current', published: true },
+  // 6.3, and it arrives under the SAME rules FAILURE-MODES.md established at
+  // 7.1. `current` because it describes spans that exist and artifacts that
+  // were committed with it. `published: true` because .gitignore lists docs/
+  // members individually and this one is not among them, so it is TRACKED and
+  // Phase 8.1 links to it from README.
+  //
+  // IT CARRIES THE SAME UNCOVERABLE HAZARD, and one more of its own. This tool
+  // resolves against the working tree and cannot see that a path is gitignored,
+  // so this file cites committed artifacts only and names no §-number under
+  // docs/ — held by hand. The extra hazard is that it embeds an IMAGE, which is
+  // why `png` is in FILE_EXT below: a broken image in the one visual artifact
+  // this repository has would otherwise be invisible to every check.
+  { file: 'docs/OBSERVABILITY.md', mode: 'current', published: true }
 ];
 
 const MANIFESTS = ['backend/package.json', 'scripts/package.json', 'frontend/package.json', 'package.json'];
@@ -192,8 +205,14 @@ const PLANNED = new Map([
   // docs/FAILURE-MODES.md WAS HERE AND WAS REMOVED AT 7.1, when the file was
   // written. A PLANNED entry for a path that now resolves is dead config that
   // would keep reporting a deliverable as outstanding after it shipped.
+  //
+  // docs/OBSERVABILITY.md WAS HERE AND WAS REMOVED AT 6.3, FOR THE SAME REASON
+  // AND AFTER THE SAME MISTAKE. The lookup below short-circuits BEFORE the
+  // existence check, so writing the file changed nothing: the count went 9 -> 10
+  // and every reference still reported PLANNED. **Shipping a deliverable does
+  // not clear its PLANNED entry — an editor has to.** That is worth stating
+  // twice, because it has now been discovered twice.
   ['docs/ARCHITECTURE.md', 'Phase 8 deliverable'],
-  ['docs/OBSERVABILITY.md', 'Phase 6 deliverable, END-STATE §2.11'],
   ['docs/INTERVIEW-NOTES.md', 'gitignored planning doc, may be absent'],
   ['frontend/src/components/graph/LinkExplainPanel.jsx', 'Phase 7.4 deliverable, END-STATE §2.13'],
   ['frontend/src/components/editor/LinkExplainPanel.jsx', 'Phase 7.4 deliverable, END-STATE §2.13']
@@ -201,10 +220,13 @@ const PLANNED = new Map([
 
 // Extensions that make a token a FILE reference rather than prose. Deliberately
 // narrow: adding `.md` catches the doc cross-references, and everything here is
-// a real extension used in this repo. A wide list would start matching version
+// a real extension used in this repo. `png` arrived at 6.3 with the repository's
+// first image — and on its own it did NOTHING, because the tokeniser read only
+// backticks and fences. It works because pathsIn() now also reads markdown link
+// targets; the two changes are one change and neither is useful alone. A wide list would start matching version
 // numbers and sentence fragments, which is how a check earns a reputation for
 // noise and gets switched off.
-const FILE_EXT = /\.(js|jsx|json|md|py|yml|yaml|txt|csv|jsonl|qrels|xml|sh|env|lock|toml|html|css)$/;
+const FILE_EXT = /\.(js|jsx|json|md|py|yml|yaml|txt|csv|jsonl|qrels|xml|sh|env|lock|toml|html|css|png)$/;
 
 // THESE DOCUMENTS WRITE PATHS RELATIVE TO A CONTEXTUAL ROOT, and that is a
 // property of how they read rather than sloppiness: §7 discusses
@@ -369,7 +391,11 @@ function npmScriptsIn(text) {
 function pathsIn(text) {
   const out = [];
   const consider = (raw, index) => {
-    let token = raw.trim().replace(/^\.\//, '');
+    // `../results/x.png` from a file in docs/ is the same reference as
+    // `results/x.png` from the repo root, and ROOTS below already resolves a
+    // token against several bases. Stripping the leading `../` hands it to that
+    // machinery rather than adding a second, doc-relative resolver.
+    let token = raw.trim().replace(/^\.\//, '').replace(/^(\.\.\/)+/, '');
     // Trailing punctuation from prose, and a trailing colon from a listing.
     token = token.replace(/[),.:;'"]+$/, '');
     if (PLACEHOLDER.test(token)) return;
@@ -384,6 +410,22 @@ function pathsIn(text) {
   const backtick = /`([^`\n]+)`/g;
   let m;
   while ((m = backtick.exec(text)) !== null) consider(m[1], m.index);
+
+  // MARKDOWN LINK AND IMAGE TARGETS. Added at 6.3, and the gap it closes is
+  // older than this phase: until now this function read ONLY backticks and
+  // fenced blocks, so **not one markdown link target had ever been checked**.
+  // A published document's links are exactly the references a stranger
+  // follows, and README is about to grow more of them at 8.1.
+  //
+  // Found by mutating a path and watching the checker stay green — the image
+  // embedded in docs/OBSERVABILITY.md was invisible here, and the comment in
+  // FILE_EXT above claimed otherwise before this existed. §22.6's shape, caught
+  // by the mutation pass that §38.6 says is the only thing that finds it.
+  //
+  // The alt text may itself contain brackets and newlines, so the target is
+  // matched from the closing `](` rather than by parsing the whole construct.
+  const mdTarget = /\]\(\s*([^)\s]+)/g;
+  while ((m = mdTarget.exec(text)) !== null) consider(m[1], m.index);
 
   const fence = /^```[^\n]*\n([\s\S]*?)^```/gm;
   while ((m = fence.exec(text)) !== null) {
