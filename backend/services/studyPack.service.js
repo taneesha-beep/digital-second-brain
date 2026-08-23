@@ -27,22 +27,40 @@
  * `results/gen-v2.txt` are measurements OF those five prompts, and the true
  * gen-v1 is permanently unmeasurable (§28.12), so there is no re-baselining.
  *
- * MODEL, TEMPERATURE and MAX_TOKENS are IMPORTED rather than restated, so there
- * is still one model string in this repository and `npm run gen:probe` still
- * covers the one the app asks for. An import changes no source text and no
- * exported value, so the parity suite does not see it.
+ * MODEL and TEMPERATURE are IMPORTED rather than restated, so there is still one
+ * model string in this repository and `npm run gen:probe` still covers the one
+ * the app asks for. An import changes no source text and no exported value, so
+ * the parity suite does not see it.
  *
  * ───────────────────────────────────────────────────────────────────────────
- * MAX_TOKENS IS INHERITED, NOT DERIVED, AND THAT IS SAID RATHER THAN IMPLIED.
+ * THE CEILING IS NO LONGER INHERITED (5.9, 23 Aug 2026), AND THE IMPORT IS KEPT
+ * SO THE DIVERGENCE IS VISIBLE RATHER THAN IMPLIED.
  *
- * §29.2 argues 2048 as SMALLEST-SUFFICIENT from measured `examQs` demand. No
- * such measurement exists for a study pack — it has never been run. Inheriting
- * the shipped ceiling is the one-variable choice; the alternative is picking a
- * number by feel, which is exactly what §29.2's method exists to avoid. What
- * makes the inheritance safe to state is that `finishReason` is returned on
- * every response from the first call onward, so if 2048 binds, it is visible
- * immediately rather than after a phase of silent truncation — which is the
- * defect §28.3 records for the whole of 5.3.
+ * This block used to say MAX_TOKENS was inherited from `llm.service.js`, that
+ * no study-pack measurement existed, and that inheriting was the one-variable
+ * choice. All three were true when written. The second is not any more.
+ *
+ * WHAT THE MEASUREMENT SAYS. §29.2 argued 2048 as smallest-sufficient from
+ * `examQs` demand — a different feature, a single-note prompt. Over 60 study
+ * pack calls across two retriever arms, 2048 stops SEVEN OF THIRTY in each arm
+ * on `length` (23.3%, and identical in both arms, so it is a property of the
+ * seed rather than of retrieval), and because a truncated pack parses to
+ * nothing, that ONE cause produces EVERY conformance failure the feature has.
+ * The successful calls are jammed against the cap: the worst completing call
+ * wrote 2044 of 2048 tokens. §32.6, §33.1, §34.3.
+ *
+ * WHY THE STUDY PACK GETS ITS OWN CONSTANT INSTEAD OF RAISING THAT ONE. The
+ * five single-note features are 5.1's A/B CONTROL, and what makes them a
+ * control is the prompts, the system message, `temperature: 0.4` and the
+ * ceiling `results/gen-v2.txt` was measured at. Raising `llm.service.js`'s
+ * MAX_TOKENS would move the control and the treatment in the same commit,
+ * which is the never-change-two-variables rule broken at its most basic.
+ *
+ * MAX_TOKENS IS THEREFORE STILL IMPORTED, AND IT IS NOT DEAD CODE. It is the
+ * provenance of the number this one replaced, and
+ * `tests/studypack.context.test.js` asserts the two are deliberately different
+ * — so a future edit that quietly re-converges them turns a test red instead of
+ * silently restoring the defect.
  */
 
 const crypto = require('crypto');
@@ -52,6 +70,44 @@ const Note = require('../models/Note');
 const retrieval = require('../retrieval');
 const { loadNoteCorpus, APP_RETRIEVER, LINK_CAP } = require('./noteCorpus.service');
 const { MODEL, TEMPERATURE, MAX_TOKENS } = require('./llm.service');
+
+/**
+ * THE STUDY PACK'S OWN OUTPUT CEILING (5.9, 23 Aug 2026). 2048 -> 4096.
+ *
+ * PICKED, NOT DERIVED, AND THE DIFFERENCE IS THE WHOLE POINT OF THIS COMMENT.
+ * §29.2 derived 2048 for `examQs` by counting completions against a ceiling
+ * that was not binding. That method CANNOT be repeated here, because every run
+ * this project has is censored at exactly the quantity to be estimated: a
+ * truncated call is recorded at 2048 rather than at what it wanted, so the
+ * observed mean is dragged DOWN precisely as the truncation rate goes UP.
+ * §32.6's ↳ is the record of that trap being walked into — a 20-45% truncation
+ * rate predicted at ~4% from a sample bunched against the cap, and measured at
+ * 23.3%.
+ *
+ * SO 4096 RATHER THAN 3072, AND THE REASON IS THAT LESSON. Any value chosen to
+ * sit just above the observed distribution is an implicit estimate of the
+ * censored region. 4096 is the smallest doubling that does not require one.
+ *
+ * WHAT IT COSTS, COUNTABLE FROM CODE RATHER THAN MEASURED. §29.6: the
+ * per-minute limit is charged on the RESERVATION, `prompt + max_tokens`,
+ * however little the model writes. At a ~1412-token mean cluster prompt the
+ * reservation goes 3460 -> 5508, so 8000/min buys 1.45 calls a minute instead
+ * of 2.31. §30.1: the DAILY cap is charged on ACTUAL usage, so headroom the
+ * model does not use costs nothing there. A user pressing the button makes ONE
+ * call — calls-per-minute is a property of the eval harness, not of the
+ * feature — so the cost of this change falls on eval runs.
+ *
+ * WHAT IS NOT CLAIMED: the truncation rate AFTER this change. It is UNMEASURED.
+ * Establishing it needs a run at this ceiling, which is quota ROADMAP 5.10 was
+ * declined for. `results/gen-v5.calls.jsonl` and `results/gen-v7.calls.jsonl`
+ * are baselines taken at 2048 and must never be appended across ceilings —
+ * §29.4's guard enforces that mechanically, by refusing a ledger whose rows
+ * disagree about `maxTokens`.
+ *
+ * The provider is not the constraint: `models.list()` reports
+ * `max_completion_tokens` of 65,536 for this model.
+ */
+const STUDY_PACK_MAX_TOKENS = 4096;
 
 /**
  * THE TOKEN ESTIMATOR, FITTED ON THIS PROJECT'S OWN LEDGER RATHER THAN ASSUMED.
@@ -99,8 +155,15 @@ function estimateTokens(text) {
  * `openai/gpt-oss-120b` takes far more than this. The binding constraint is
  * §29.6's finding: the per-minute token limit is charged on what a call
  * RESERVES, `prompt + max_tokens`, however little the model writes. At 1800 +
- * 2048 = ~3850 reserved, 8000/min buys ~2 calls per minute and the 200,000/day
- * organisation cap buys ~52 study packs per day.
+ * 4096 = ~5900 reserved, 8000/min buys ~1.4 calls per minute and the
+ * 200,000/day organisation cap buys ~34 study packs per day on the RESERVATION.
+ * (Updated at 5.9 when the ceiling went 2048 -> 4096; it read ~3850, ~2 and ~52.
+ * The daily figure is the pessimistic one — §30.1 measured the daily cap as
+ * charged on ACTUAL usage, where a study pack spends ~3,240.)
+ *
+ * THIS BUDGET ITSELF IS UNCHANGED AND MUST STAY SO. 5.9 moved the OUTPUT
+ * ceiling; moving the INPUT budget in the same change would be a second
+ * variable, and it is what `results/studypack-constants.txt` rests on.
  *
  * Measured against the golden set for scale: a cluster of a seed plus 8
  * neighbours averages 1,001 words, p95 1,473, max 2,058 — against a seed alone
@@ -441,7 +504,7 @@ async function generate(contextText, noteCount) {
         { role: 'user', content: `${prompt}\n\nNotes:\n${contextText}` }
       ],
       temperature: TEMPERATURE,
-      max_tokens: MAX_TOKENS
+      max_tokens: STUDY_PACK_MAX_TOKENS
     });
 
     const choice = completion.choices?.[0] || {};
@@ -531,7 +594,7 @@ async function buildStudyPack(noteId, userId, options = {}) {
     generation: {
       model: observation.model,
       temperature: TEMPERATURE,
-      maxTokens: MAX_TOKENS,
+      maxTokens: STUDY_PACK_MAX_TOKENS,
       finishReason: observation.finishReason,
       latencyMs: observation.latencyMs,
       completionTokens: observation.completionTokens,
@@ -591,6 +654,8 @@ module.exports = {
   renderNote,
   contextDigest,
   CONTEXT_TOKEN_BUDGET,
+  STUDY_PACK_MAX_TOKENS,
+  INHERITED_MAX_TOKENS: MAX_TOKENS,
   TOKENIZER_OVERHEAD,
   CHARS_PER_TOKEN,
   FLASHCARD_COUNT,

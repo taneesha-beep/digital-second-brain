@@ -137,7 +137,22 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const studyPack = require('../services/studyPack.service');
-const { MODEL, TEMPERATURE, MAX_TOKENS } = require('../services/llm.service');
+const { MODEL, TEMPERATURE } = require('../services/llm.service');
+
+/**
+ * THE CEILING COMES FROM THE STUDY PACK, NOT FROM llm.service.js (5.9).
+ *
+ * It used to be imported from `llm.service` alongside the model and the
+ * temperature, because the service inherited it. 5.9 gave Study Pack its own
+ * (2048 -> 4096) and left `llm.service`'s at 2048 for the five single-note
+ * features, which are 5.1's A/B control. A runner still reading the control's
+ * ceiling would reserve, throttle and LEDGER the wrong number — and the ledger
+ * is the half that matters, because §29.4's guard compares `maxTokens` on every
+ * completed row against the run being started. A stale import here would make
+ * that guard compare 2048 to 2048 and wave through a run the service issued at
+ * 4096: the guard intact, its input wrong.
+ */
+const MAX_TOKENS = require('../services/studyPack.service').STUDY_PACK_MAX_TOKENS;
 
 const REPO = path.resolve(__dirname, '..', '..');
 
@@ -329,7 +344,7 @@ function plan(arm, clusters) {
   console.log(`  clusters           ${path.relative(REPO, arm.clusters)}`);
   console.log(`  ledger             ${path.relative(REPO, arm.ledger)}`);
   console.log(`  model              ${MODEL}   from llm.service.js, imported`);
-  console.log(`  max_tokens         ${MAX_TOKENS}   INHERITED, not derived (§30.9)`);
+  console.log(`  max_tokens         ${MAX_TOKENS}   the STUDY PACK's own, from 5.9 (was 2048, inherited)`);
   console.log(`  temperature        ${TEMPERATURE}`);
   console.log(`  budget             ${studyPack.CONTEXT_TOKEN_BUDGET} context tokens`);
   console.log('');
@@ -459,7 +474,7 @@ async function run(arm, clusters) {
   console.log(`PHASE ${arm.phase} — gen-${arm.name}: Study Pack over the 30 golden seeds, n = 1.\n`);
   console.log(`  arm              ${arm.name}   neighbours by ${arm.retriever}  — THE ONLY VARIABLE`);
   console.log(`  model            ${MODEL}   imported from llm.service.js`);
-  console.log(`  max_tokens       ${MAX_TOKENS}   inherited (§30.9)`);
+  console.log(`  max_tokens       ${MAX_TOKENS}   the study pack's own (5.9); llm.service still 2048`);
   console.log(`  issued by        services/studyPack.service.js — THE LIVE FUNCTION`);
   console.log(`  seeds to call    ${todo.length} of ${clusters.length}`);
   console.log(`  retries          TPM 429 retried (<=${MAX_TPM_PAUSES}, not an attempt); TPD 429 STOPS\n`);

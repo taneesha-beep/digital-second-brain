@@ -50,6 +50,8 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const Groq = require('groq-sdk');
 const live = require('../services/llm.service');
+// 5.9: the study pack reserves on its OWN ceiling, which is not llm.service's.
+const studyPack = require('../services/studyPack.service');
 
 const DAILY_LIMIT = 200000; // measured, free tier — see the 429 body
 
@@ -68,7 +70,9 @@ async function main() {
 
   console.log('GROQ QUOTA — asked, not guessed\n');
   console.log(`  model         ${live.MODEL}`);
-  console.log(`  max_tokens    ${live.MAX_TOKENS}   (what each real call RESERVES)`);
+  console.log(`  max_tokens    ${live.MAX_TOKENS}   (what each single-note call RESERVES)`);
+  console.log(`  study pack    ${studyPack.STUDY_PACK_MAX_TOKENS}   ITS OWN CEILING SINCE 5.9 — a study pack reserves ~${
+    studyPack.CONTEXT_TOKEN_BUDGET + studyPack.STUDY_PACK_MAX_TOKENS}`);
   console.log(`  daily limit   ${DAILY_LIMIT} tokens, per ORGANISATION, rolling 24h\n`);
 
   const groq = new Groq({ apiKey, maxRetries: 0 });

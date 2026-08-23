@@ -234,8 +234,12 @@ function budgetBinding() {
   w(`      ratio                      ${(meanCluster / meanSingle).toFixed(1)}x` +
     `   (the same clusters are ${(clusterWords.reduce((a, b) => a + b, 0) / seedWords.reduce((a, b) => a + b, 0)).toFixed(1)}x in WORDS)`);
   w();
-  const reserved = meanCluster + live.MAX_TOKENS;
-  w(`      reserved per study pack    ${Math.round(reserved)} tokens   (prompt + max_tokens ${live.MAX_TOKENS})`);
+  // 5.9: the study pack's ceiling is its OWN, not llm.service's. Reading the
+  // control's 2048 here would under-report this feature's reservation by half.
+  const packMaxTokens = sp.STUDY_PACK_MAX_TOKENS;
+  const reserved = meanCluster + packMaxTokens;
+  w(`      reserved per study pack    ${Math.round(reserved)} tokens   (prompt + max_tokens ${packMaxTokens})`);
+  w(`      the five single-note features still reserve at max_tokens ${live.MAX_TOKENS} (5.1's A/B control)`);
   w(`      study packs per day        ${Math.floor(200000 / reserved)}   against the 200000 organisation cap`);
   w(`      calls per minute           ${(8000 / reserved).toFixed(2)}   against the 8000/min limit`);
   w();

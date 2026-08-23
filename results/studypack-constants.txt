@@ -87,9 +87,10 @@ C. HOW OFTEN THE CONTEXT BUDGET BINDS, OVER THE 30 GOLDEN CLUSTERS
       mean single-note prompt    290 tokens
       ratio                      4.9x   (the same clusters are 10.0x in WORDS)
 
-      reserved per study pack    3460 tokens   (prompt + max_tokens 2048)
-      study packs per day        57   against the 200000 organisation cap
-      calls per minute           2.31   against the 8000/min limit
+      reserved per study pack    5508 tokens   (prompt + max_tokens 4096)
+      the five single-note features still reserve at max_tokens 2048 (5.1's A/B control)
+      study packs per day        36   against the 200000 organisation cap
+      calls per minute           1.45   against the 8000/min limit
 
   THE RATIO IS THE NUMBER THAT SURPRISED ME. A cluster is 10x the seed in
   WORDS but under 5x in prompt tokens, because the instruction block and

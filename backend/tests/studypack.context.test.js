@@ -307,13 +307,38 @@ describe('Study Pack did not disturb the A/B control', () => {
     expect(live.PROMPTS.concepts).toContain(String(sp.CONCEPT_COUNT));
   });
 
-  test('it inherits the model, temperature and ceiling rather than restating them', () => {
+  test('it inherits the model and temperature, and sets its OWN ceiling deliberately', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'services', 'studyPack.service.js'), 'utf8');
     expect(source).toContain("require('./llm.service')");
-    // A literal ceiling here would be a second number to keep in step with the
-    // one §29.2 argued for, and nothing would notice them diverging.
-    expect(source).not.toMatch(/max_tokens:\s*\d/);
-    expect(source).toContain('max_tokens: MAX_TOKENS');
+
+    // UPDATED AT 5.9, AND THE EXPECTATION FLIPPED RATHER THAN THE CHECK BEING
+    // DELETED. This assertion used to forbid a ceiling in this file at all, on
+    // the grounds that "a literal ceiling here would be a second number to keep
+    // in step with the one §29.2 argued for, and nothing would notice them
+    // diverging." §29.2 argued that number from `examQs` demand, and 5.4/5.7
+    // measured it stopping 7 of 30 study-pack calls in each of two arms — so
+    // the two numbers SHOULD diverge, and the old assertion was pinning the
+    // defect in place. The check is now equally strict in the other direction:
+    // the divergence has to be deliberate, named, and visible in one file.
+    expect(source).not.toMatch(/max_tokens:\s*\d/);            // still no magic literal at the call
+    expect(source).toContain('max_tokens: STUDY_PACK_MAX_TOKENS');
+    expect(sp.STUDY_PACK_MAX_TOKENS).toBe(4096);
+
+    // The inherited value is still imported, so this file shows where its own
+    // number came from. Not dead code: it is the provenance, and the assertion
+    // below is what stops a later edit quietly re-converging them.
+    expect(sp.INHERITED_MAX_TOKENS).toBe(live.MAX_TOKENS);
+    expect(sp.STUDY_PACK_MAX_TOKENS).not.toBe(sp.INHERITED_MAX_TOKENS);
+  });
+
+  test('5.9 moved the OUTPUT ceiling and left the INPUT budget alone', () => {
+    // The one-variable rule, pinned. CONTEXT_TOKEN_BUDGET is what
+    // results/studypack-constants.txt rests on and what every committed
+    // estimator row was fitted against; moving it in the same change as the
+    // ceiling would have been two variables.
+    expect(sp.CONTEXT_TOKEN_BUDGET).toBe(1800);
+    expect(sp.FLASHCARD_COUNT).toBe(6);
+    expect(sp.CONCEPT_COUNT).toBe(8);
   });
 
   test('its system message differs from the shipped one, and only in the JSON shape', () => {
