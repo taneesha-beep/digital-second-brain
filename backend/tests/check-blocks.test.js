@@ -92,6 +92,49 @@ describe('pathsIn', () => {
     expect(tokens(text)).toEqual(['retrieval/index.js', 'eval/metrics.js']);
   });
 
+  // ── Phase 6.3. MARKDOWN LINK AND IMAGE TARGETS ────────────────────────────
+  //
+  // Until 6.3 this function read ONLY backticks and fenced blocks, so not one
+  // markdown link target had ever been checked. The gap was found by mutating
+  // the image path in docs/OBSERVABILITY.md and watching the checker stay
+  // green — and it mattered because README grows links at 8.1, which are
+  // exactly the references a stranger follows.
+
+  test('collects a markdown IMAGE target — 6.3, the repo\'s first image', () => {
+    expect(tokens('![a red span](../results/tracing-background-failure.png)'))
+      .toEqual(['results/tracing-background-failure.png']);
+  });
+
+  test('collects a markdown LINK target', () => {
+    expect(tokens('see [the catalog](docs/FAILURE-MODES.md) for rates'))
+      .toEqual(['docs/FAILURE-MODES.md']);
+  });
+
+  test('strips a leading ../ so a doc-relative target resolves against ROOTS', () => {
+    // A path written from inside docs/ names the same file as one written from
+    // the repo root. Stripping hands it to the existing ROOTS machinery rather
+    // than adding a second, document-relative resolver.
+    expect(tokens('[x](../results/holm-family.txt)')).toEqual(['results/holm-family.txt']);
+    expect(tokens('[x](../../results/holm-family.txt)')).toEqual(['results/holm-family.txt']);
+  });
+
+  test('alt text spanning brackets does not break the target', () => {
+    // The target is matched from the closing `](`, not by parsing the whole
+    // construct, precisely so alt text may contain brackets.
+    expect(tokens('![a [red] span](results/holm-family.txt)')).toEqual(['results/holm-family.txt']);
+  });
+
+  test('ignores an external URL and a bare anchor in a link target', () => {
+    expect(tokens('[docs](https://example.com/a/b.md)')).toEqual([]);
+    expect(tokens('[jump](#section-two)')).toEqual([]);
+  });
+
+  test('a placeholder inside a link target is still a placeholder', () => {
+    // docs/EVALUATION.md §39.6 writes the markdown syntax as an EXAMPLE. An
+    // illustration of a form is not a reference to a file.
+    expect(tokens('![alt](../results/<file>.png)')).toEqual([]);
+  });
+
   test('does NOT collect an unbackticked path from running prose', () => {
     // These documents write ordinary sentences. Matching prose would bury the
     // real findings under punctuation, and a noisy check gets switched off.

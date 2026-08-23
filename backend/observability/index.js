@@ -162,6 +162,59 @@ const DSB_COST = Object.freeze({
 });
 
 /**
+ * ───────────────────────────────────────────────────────────────────────────
+ * PHASE 6.3. THE TWO UN-AWAITED BACKGROUND JOBS, AND WHY THEY ARE NOT `SPANS`.
+ *
+ * `SPANS` above is ROADMAP 6.1's contract: six PIPELINE STAGES, pinned by
+ * tests/observability.spans.test.js against exactly those six strings. These
+ * two are not stages of that pipeline and adding them to `SPANS` would have
+ * quietly widened a list a test exists to hold still. They are a different
+ * KIND of span — work that outlives the request that caused it — and the
+ * separate object says so at every call site.
+ *
+ *   background-link      services/linker.service.js  computeAndSaveLinks()
+ *   background-version   services/version.service.js saveVersion()
+ *
+ * Both fire from routes/notes.js WITHOUT await, on POST and on PUT, so that a
+ * save returns to the user before either has run. That is the shipped design
+ * and 6.3 does not change it — see detachedSpan() below for what it does
+ * change.
+ */
+const JOBS = Object.freeze({
+  LINK: 'background-link',
+  VERSION: 'background-version'
+});
+
+/** The same two, as an array, for the same reason SPAN_NAMES exists. */
+const JOB_NAMES = Object.freeze(Object.values(JOBS));
+
+/**
+ * 6.3's attributes, and all three carry the `dsb.` prefix for §38.2's reason:
+ * the convention has no name for any of them.
+ *
+ * ORIGIN_TRACE_ID / ORIGIN_SPAN_ID DUPLICATE THE SPAN LINK ON PURPOSE. The
+ * Link is the semantically correct record of causality and it is what a
+ * conformant backend reads. But Jaeger's v1 model renders links as
+ * FOLLOWS_FROM references in the span DETAIL panel, not in the waterfall and
+ * not in the tag search — the same class of gap §38.2 measured when the v1 tag
+ * API flattened `gen_ai.response.finish_reasons` to a JSON string and a UI
+ * filter silently matched nothing. An attribute is searchable in every UI, so
+ * the causal edge is recorded twice: once correctly, once findably.
+ *
+ * NOTE_ID IS PRESENT AND USER ID IS DELIBERATELY ABSENT. A failed background
+ * job is only actionable if you can tell WHICH note it was computing links
+ * for, and a note id is already all over this app's URLs. A user id is a
+ * durable identifier for a person, and a trace UI is a surface with no
+ * authorisation model in front of it; there is no debugging question here that
+ * needs one, so it is not written.
+ */
+const DSB_JOB = Object.freeze({
+  ORIGIN_TRACE_ID: 'dsb.job.origin_trace_id',
+  ORIGIN_SPAN_ID: 'dsb.job.origin_span_id',
+  NOTE_ID: 'dsb.note.id'
+});
+
+/**
  * One tracer for the whole app. The name is the instrumentation scope and shows
  * in Jaeger beside every span this file creates, which is how a manual span is
  * told apart from one the Express auto-instrumentation produced.
@@ -224,6 +277,188 @@ function failSpan(span, err) {
 }
 
 /**
+ * The active span's SpanContext, or undefined when nothing is active.
+ * Phase 6.3.
+ *
+ * WHY THIS EXISTS RATHER THAN `trace.getActiveSpan()` AT THE CALL SITE. This
+ * file's header states that it is the app-side interface and the only
+ * `@opentelemetry/api` import in app code, and that is a property worth more
+ * than the one line it saves: it is what makes "how much OTel is in this
+ * codebase" answerable by reading one require. routes/notes.js needs the
+ * caller's context and gets it here. tests/observability.spans.test.js asserts
+ * no instrumented file imports the api package directly.
+ *
+ * `undefined` is the honest answer with tracing off, and every caller below
+ * treats it as "no origin to link to" rather than as an error.
+ */
+function currentSpanContext() {
+  const span = trace.getActiveSpan();
+  return span ? span.spanContext() : undefined;
+}
+
+/**
+ * Run `fn` inside a NEW ROOT span that LINKS BACK to `origin`. Phase 6.3.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * THIS IS THE PHASE. `saveVersion` and `computeAndSaveLinks` fire un-awaited on
+ * every note save; their failures have reached nothing but console.error since
+ * the app was written, and PRIMER §9.1 has predicted that failure since the
+ * plan was drafted while 7.1 had to REJECT it from the catalog for having no
+ * frequency — there was no instrument that could count it.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * A LINK, NOT A CHILD, AND THE REASON IS A NUMBER RATHER THAN A PREFERENCE.
+ *
+ * `withSpan` would have made this a child of the request span, which is one
+ * line shorter and wrong. A child that outlives its parent is exactly what
+ * un-awaited MEANS — the response is sent first, by design, and that design is
+ * not 6.3's to change. The consequence is concrete: Jaeger derives a trace's
+ * duration from `max(end) - min(start)` over ALL its spans, so a background job
+ * finishing after the response would inflate the note-save trace's listed
+ * duration above the time the user actually waited.
+ *
+ * That is a latency-shaped false claim, manufactured inside the one artifact
+ * this phase exists to produce, and §37.4 and §35.5a are precisely about not
+ * making those. `root: true` keeps the request's trace honest about what the
+ * request paid for, and the Link keeps the causality.
+ *
+ * It is also what all three planning documents already asked for in the same
+ * word — ROADMAP 6.3, PRIMER §8.2 and END-STATE §2.10 each say "linked span".
+ *
+ * THE COST OF THE CHOICE IS STATED RATHER THAN HIDDEN: a link is harder to find
+ * in a UI than a child, because Jaeger v1 renders links as FOLLOWS_FROM
+ * references in the span detail panel rather than in the waterfall. DSB_JOB's
+ * two origin-id attributes exist to pay that back — see their comment.
+ *
+ * SpanKind is left INTERNAL. PRODUCER/CONSUMER describe a message crossing a
+ * broker; nothing is queued here and 3.9's rejection of Redis + BullMQ is why.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * IT RETHROWS, LIKE withSpan, AND THE CALLER MUST STILL SWALLOW.
+ *
+ * Instrumentation that swallows an error is a worse defect than none, so this
+ * records and rethrows. That puts an obligation on the caller which is NOT
+ * optional: an un-awaited promise rejecting with no handler is an
+ * `unhandledRejection`, and modern Node terminates the process on one. 6.3
+ * turning a logged background failure into a crash on the note-save path would
+ * be a far worse regression than the silence it set out to fix.
+ * routes/notes.js keeps the existing `.catch(console.error)` outermost, and a
+ * test asserts the swallow survives.
+ */
+function detachedSpan(name, origin, fn, attributes = {}) {
+  const attrs = { ...attributes };
+  if (origin && origin.traceId) {
+    attrs[DSB_JOB.ORIGIN_TRACE_ID] = origin.traceId;
+    attrs[DSB_JOB.ORIGIN_SPAN_ID] = origin.spanId;
+  }
+
+  const options = { root: true, attributes: attrs };
+  // An empty `links` array is not the same as no links to every exporter, and
+  // there is genuinely no origin when tracing is off or when a job is fired
+  // from a script rather than a request. Omit the key rather than send [].
+  if (origin && origin.traceId) options.links = [{ context: origin }];
+
+  return tracer().startActiveSpan(name, options, (span) => {
+    let result;
+    try {
+      result = fn(span);
+    } catch (err) {
+      failSpan(span, err);
+      span.end();
+      throw err;
+    }
+
+    if (result && typeof result.then === 'function') {
+      return result.then(
+        (value) => {
+          span.end();
+          return value;
+        },
+        (err) => {
+          failSpan(span, err);
+          span.end();
+          throw err;
+        }
+      );
+    }
+
+    span.end();
+    return result;
+  });
+}
+
+/**
+ * Fire a background job inside a detached, linked span and NEVER let it reach
+ * the caller. Phase 6.3. Returns nothing, deliberately.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * THIS IS THE SAFETY-CRITICAL HALF AND IT LIVES HERE RATHER THAN AT THE CALL
+ * SITE SO THAT IT CAN BE TESTED WITHOUT A DATABASE.
+ *
+ * detachedSpan() rethrows, because instrumentation that eats an error is worse
+ * than none. That makes handling MANDATORY, and an un-awaited promise rejecting
+ * with no handler is an `unhandledRejection` — which modern Node answers by
+ * terminating the process. 6.3 turning a logged background failure into a crash
+ * on the note-save path would be a far worse regression than the silence it set
+ * out to fix, so the guard is not left to a caller to remember.
+ *
+ * TWO PATHS OUT OF `fn`, AND BOTH ARE COVERED. Both jobs are `async` today and
+ * therefore reject rather than throw; a future synchronous throw would
+ * propagate out of detachedSpan SYNCHRONOUSLY, i.e. into the request handler,
+ * turning a failed background job into a 500 on a save that had already
+ * succeeded. The try/catch costs nothing and removes that as a possibility.
+ *
+ * RETURNING NOTHING IS THE POINT. "Do not await this" is the entire constraint
+ * 6.3 works under, and a function that returns no promise cannot be awaited by
+ * accident. The policy of what to SAY on failure stays with the caller, which
+ * is why `onError` is a parameter: this module should not own log wording.
+ *
+ * `onError` is itself wrapped, because a throwing error handler on an
+ * un-awaited path is the same crash by a longer route.
+ */
+function fireDetached(name, origin, fn, attributes = {}, onError = () => {}) {
+  const handle = (err) => {
+    try {
+      onError(err);
+    } catch (_) {
+      // A logger must never be able to take the process down.
+    }
+  };
+
+  try {
+    const result = detachedSpan(name, origin, fn, attributes);
+    if (result && typeof result.then === 'function') result.catch(handle);
+  } catch (err) {
+    handle(err);
+  }
+}
+
+/**
+ * Mark the CURRENTLY ACTIVE span failed, and return it (or null). Phase 6.3.
+ *
+ * FOR THE JOB THAT CATCHES ITS OWN ERRORS, WHICH IS §22.6's SHAPE ONE LAYER
+ * DEEPER THAN THE ONE 6.3 SET OUT TO FIX.
+ *
+ * CLAUDE.md says the two background jobs' failures "only reach console.error".
+ * That is true of `computeAndSaveLinks`. It is NOT true of `saveVersion`, which
+ * has its own try/catch, logs, and returns `null` — so its rejection never
+ * reaches the call site at all. A span wrapped only around the call would
+ * therefore be GREEN on every failure: a check that runs and cannot fail, the
+ * exact shape §22.6 names and the one this project has now met in three
+ * consecutive phases (§37.3's positive control, §38.6's vacuous assertions).
+ *
+ * One line inside that existing catch closes it. The return value, the log line
+ * and the control flow are all unchanged; what changes is that the span above
+ * it stops lying.
+ */
+function failActiveSpan(err) {
+  const span = trace.getActiveSpan();
+  if (!span) return null;
+  failSpan(span, err);
+  return span;
+}
+
+/**
  * Build 6.2's attributes from a Groq chat completion. PURE — takes the response
  * object, returns a plain object, touches no span and no clock.
  *
@@ -279,5 +514,7 @@ function llmResponseAttributes(completion, requestedModel) {
 }
 
 module.exports = {
-  SPANS, SPAN_NAMES, GEN_AI, DSB_COST, TRACER_NAME, withSpan, tracer, llmResponseAttributes
+  SPANS, SPAN_NAMES, GEN_AI, DSB_COST, TRACER_NAME, withSpan, tracer, llmResponseAttributes,
+  // Phase 6.3 — the detached background jobs.
+  JOBS, JOB_NAMES, DSB_JOB, detachedSpan, fireDetached, currentSpanContext, failActiveSpan
 };

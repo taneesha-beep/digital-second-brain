@@ -475,11 +475,23 @@ Victorian almond-icing recipe). Two of twenty is not a rate and no computed freq
 > document because nothing supports it, and the mode that replaces it points the opposite way.
 
 **Silent background link failure.** On save, two jobs fire un-awaited — version capture and link
-computation — and their failures reach only `console.error` (`routes/notes.js:50`,
-`services/version.service.js:35`). A user whose links silently failed to compute sees an empty
-panel, which is indistinguishable from having no related notes. **Never observed firing and never
-counted.** No instrumentation exists that could produce a number; the phase item that would have
-built it is not done.
+computation — and their failures reach `console.error` (`backend/routes/notes.js`,
+`backend/services/version.service.js`). A user whose links silently failed to compute sees an
+empty panel, which is indistinguishable from having no related notes. **Still no frequency, and
+it stays in this section.**
+
+> **↳ IT HAS NOW BEEN OBSERVED FIRING (23 Aug 2026), AND THAT CHANGES ITS STATUS BUT NOT ITS
+> SECTION.** Phase 6.3 gives each job a detached, linked span, so a failed job is a red span
+> carrying its exception and a reference back to the save that caused it, instead of a line of
+> stdout — `results/tracing-background-failure.txt`, and the screenshot in
+> `docs/OBSERVABILITY.md`. Two sentences this entry used to carry are now false: it *has* been
+> observed firing, and instrumentation that could produce a number *does* exist.
+>
+> **What has not changed is the only thing that would move it into a table: there is still no
+> number.** Observing a mode once, on a failure induced on purpose in a throwaway database, is an
+> existence proof and not a rate. Counting it needs the system run at scale with tracing on, and
+> that has not happened. §1.2's third category — observed, real, uncounted — is exactly where it
+> belongs, and 6.3 making it *countable* is not the same as counting it.
 
 **A different match set for users with more than 500 notes.** `routes/search.js:79` loads the user
 corpus without excluding the query note, so semantic search over a corpus at the 500-note cap

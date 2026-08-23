@@ -103,6 +103,14 @@ const WRITEUPS = [
   // nDCG figures are covered and every percentage and integer count in the file
   // is out of scope by construction. That is the documented trade, not a hole.
   'docs/FAILURE-MODES.md',
+  // ADDED AT 6.3, THE SECOND PUBLISHED WRITEUP, AND ITS DECIMALS ARE FEW AND
+  // LOAD-BEARING. docs/OBSERVABILITY.md is tracked for FAILURE-MODES.md's
+  // reason — README links to it from 8.1 — and it quotes one full-precision
+  // figure, the cost on the llm-call span, which must keep tracing to
+  // results/tracing-attributes.txt. Its other numbers are percentages and
+  // millisecond pairs, out of the four-decimal scope by construction, exactly
+  // as §3.6 intends.
+  'docs/OBSERVABILITY.md',
   // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
   // That makes it the first document to be both a writeup and, by path, a
   // candidate artifact — so it would justify its own figures: every decimal in
