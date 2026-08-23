@@ -50,7 +50,11 @@
     "judge:set": "node scripts/build-judge-set.js",
     "judge:label": "node scripts/label-judge-set.js",
     "judge:run": "node scripts/run-judge-eval.js",
-    "eval:judge": "node scripts/eval-judge.js"
+    "eval:judge": "node scripts/eval-judge.js",
+    "gen:v7": "node scripts/run-studypack-eval.js --variant v7",
+    "judge:v7": "node scripts/run-judge-eval.js --variant v7",
+    "seed:retrieval": "node scripts/measure-seed-retrieval.js",
+    "eval:v7": "node scripts/eval-retrieval-gen.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

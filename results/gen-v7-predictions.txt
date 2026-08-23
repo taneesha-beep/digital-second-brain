@@ -1,0 +1,245 @@
+PHASE 5.7 — PREDICTIONS, WRITTEN BEFORE THE FIRST gen-v7 API CALL
+================================================================================
+
+Committed in its own commit so the ordering is checkable in git, the same way
+results/gen-predictions.txt (5.3), results/gen-v2-predictions.txt (5.5),
+results/gen-v5-predictions.txt (5.4) and results/gen-judge-predictions.txt (5.6)
+were.
+
+Priors, so the hit rate below is read against something: 5.6 finished 7 right /
+9 wrong / 0 untestable — the worst since 4.6 — 5.4 scored 9/4/0, 5.5 9/6/0, 5.1
+3/3/1, 5.3 9 of 16, the README pass 4 of 6, and 4.6 5 of 10.
+
+
+WHAT IS BEING PREDICTED
+--------------------------------------------------------------------------------
+
+Study Pack run over the SAME 30 golden seeds under a SECOND retriever, and the
+resulting items judged by the SAME judge under the SAME frozen rubric, so that
+retrieval quality (nDCG@8, against the Stack Exchange qrels) and downstream
+generation quality can be put in one table.
+
+  arm A   gen-v5 + gen-judge   v4-bm25         ALREADY BOUGHT, not re-run
+  arm B   gen-v7 + judge-v7    v5-embeddings   what this phase spends
+
+THE RETRIEVER IS THE ONLY VARIABLE. Held fixed: the 30 seeds, the five control
+prompts, the Study Pack prompt, openai/gpt-oss-120b, temperature 0.4,
+max_tokens 2048, CONTEXT_TOKEN_BUDGET 1800, k=8, the corpus sha; and on the
+judging side qwen/qwen3.6-27b, temperature 0, reasoning_effort 'none',
+max_tokens 128, scripts/lib/judge-rubric.js, scripts/lib/judge-metrics.js,
+scripts/lib/gen-schema.js, scripts/lib/studypack-metrics.js and the distractor
+draw rule. §29.4's same-grader guarantee, one phase on.
+
+
+THE RETRIEVAL HALF WAS MEASURED BEFORE THESE PREDICTIONS WERE WRITTEN, AND
+SAYING SO IS THE POINT
+--------------------------------------------------------------------------------
+
+nDCG@8 per seed costs no quota, so the retrieval side of the table existed
+before the design was fixed and WAS USED TO FIX IT. That is a design input, not
+an outcome, and the honest record is that arm B was chosen because of it:
+
+  v4-bm25 minus the candidate, paired over the 30 seeds, nDCG@8
+
+    v1-overlap       -0.072   t = -1.30   18 of 30 seeds TIED   2.20/8 shared
+    v5-embeddings    +0.138   t =  2.09   11 of 30 seeds tied   1.87/8 shared
+    v6-hybrid        +0.114   t =  2.20   16 of 30 seeds tied   4.03/8 shared
+
+ROADMAP 5.7 SAYS "v1 versus the winning retriever" AND THIS RUNS v4 VERSUS THE
+WINNER INSTEAD. The departure is deliberate and it is the never-change-two-
+variables rule applied to the INPUT side: on this 30-seed sample v1 and v4 are
+not measurably different (t = -1.30 over 30 seeds, and t = -0.39 over the 23
+that survive the output ceiling), so a v1 arm would spend ~456,000 tokens
+varying an independent variable that does not vary on the sample it is varied
+on. v5-embeddings is the ladder winner, gives roughly double the contrast, and
+shares the fewest neighbours with arm A.
+
+EVERY PREDICTION BELOW IS ABOUT A GENERATION OR JUDGING OUTCOME. None of them
+is about the retrieval column, because that column is already known.
+
+
+THE DENOMINATORS, NAMED IN ADVANCE — §32's CENTRAL FINDING APPLIED FORWARD
+--------------------------------------------------------------------------------
+
+  calls (arm B)            30      rows 1, 4, 14, 17
+  seeds paired both arms  ~23      rows 2, 3
+  items (arm B)          ~322      rows 5, 6, 8, 9, 10
+  items (both arms)      ~644      rows 7, 11
+  seed-arm observations   ~46      rows 12, 13
+  judge calls (arm B)    ~644      rows 15, 16, 17
+
+"n IS NOT ONE NUMBER FOR A RUN" (§32). A call-level figure here rests on 30 and
+an item-level figure on 322, and 5.4 is the record of what happens when the two
+are quoted under one seed count: 196 more items moved support by 0.001 while 21
+more calls moved conformance by 23 points.
+
+
+POWER, DECLARED BEFORE THE RUN RATHER THAN DISCOVERED AFTER IT
+--------------------------------------------------------------------------------
+
+Minimum detectable effect, 80% power, alpha .05, two-sample, computed on arm A's
+own committed ledgers with the intra-seed clustering MEASURED (ICC 0.033 for
+lexical support, 0.027 for the judged level, ~14 items per seed, design effect
+1.42 and 1.36):
+
+  metric                    mean     MDE            MDE as % of the mean
+  ----------------------------------------------------------------------
+  rate(2), cited            5.0%     5.60 points    113%   <- CANNOT SPEAK
+  judged mean level (0-2)   0.202    0.132           65%   <- weak
+  lexical support           0.283    0.031           11%   <- the powered one
+
+SO THE HEADLINE OF 5.7 IS THE CORRELATION, NOT THE BETWEEN-ARM DIFFERENCE, and
+that is a pre-registered choice rather than a retreat after a null. Two arms is
+two points and two points have no correlation; the quantity with content is the
+PER-SEED correlation between nDCG@8 and downstream quality, pooled to ~46
+seed-arm observations where a |r| of 0.29 is detectable.
+
+RATE(2) IS REPORTED AND IS PRE-DECLARED INCAPABLE OF SHOWING A DIFFERENCE. Its
+MDE exceeds its own mean, so a null on row 9 is not evidence of no difference
+and must never be written up as one. §33.8: the human never used the top level
+in 60 items and the binary kappa is exactly 0.000, so the 5.0% has no human
+validation either. Nothing in this phase repairs that and nothing here re-scales
+the rubric — that would be fitting a rubric to results.
+
+AND A BIGGER SAMPLE DOES NOT RESCUE THE JUDGED BETWEEN-ARM CONTRAST. Detecting
+the effect implied by arm A's own correlation needs roughly 8,450 items per arm,
+about 600 seeds per arm — 20x this design. That is out of reach permanently, not
+just this month.
+
+
+  #    PREDICTION                                             BAND
+  --------------------------------------------------------------------------
+   1   arm B packs truncating at the 2048 ceiling             4-11 of 30 calls
+   2   truncated seeds shared with arm A's 7                  >= 4 of 7
+   3   seeds delivering items in BOTH arms                    19-24 of 30
+   4   arm B schema conformance                               63-87% of calls
+   5   arm B citation validity                                >= 98% of items
+   6   arm B lexical citation support, mean                   0.26-0.31
+   7   DELTA lexical support (arm B minus arm A)              -0.02 to +0.02
+                                                              i.e. INSIDE the
+                                                              0.031 MDE
+   8   arm B lexical null (uncited notes, same prompt)        0.10-0.14
+   9   arm B judged rate(2), cited                            1-11% of items
+  10   arm B judged rate(2), null                             0.0-0.6% of items
+  11   DELTA judged mean level (arm B minus arm A)            -0.13 to +0.13
+                                                              i.e. INSIDE the
+                                                              0.132 MDE
+  12   POOLED per-seed correlation, nDCG@8 vs judged mean     -0.55 to -0.10,
+       level, n ~ 46 seed-arm observations                    AND NEGATIVE
+  13   POOLED per-seed correlation, nDCG@8 vs lexical         -0.25 to +0.25
+       support, n ~ 46                                        i.e. null
+  14   arm B mean ACTUAL tokens per generation call           2,900-3,500
+  15   mean ACTUAL tokens per judge call                      520-590
+  16   judge verdicts that fail to parse                      0-2% of calls
+  17   delivery (completed / attempted), both runs            >= 95%
+
+
+ROW 12 IS THE ONE CARRYING REAL RISK, AND IT IS AN OUT-OF-SAMPLE REPLICATION
+--------------------------------------------------------------------------------
+
+Arm A's own committed ledgers already contain a per-seed correlation between
+nDCG@8 and mean judged level of -0.429 (Spearman -0.463) over its 23 delivering
+seeds. That is NEGATIVE: the seeds where retrieval did better are the seeds
+where the judge scored the generated items lower. Group means rather than an
+outlier — 13 seeds at nDCG@8 = 0 average a judged level of 0.269, and the 10
+with nDCG@8 > 0 average 0.114.
+
+It is not a length artefact. nDCG@8 against seed word count is r = 0.185 and the
+judged level against word count is r = -0.101, so the obvious confound does not
+carry it.
+
+BUT AT n = 23 THE DETECTABLE |r| IS 0.412 AND THIS IS 0.429, so it sits on the
+edge, it is one test among several, and it has no correction applied. Row 12
+predicts it REPLICATES in a differently-retrieved arm. If it does, "better
+retrieval produces better generation" is false on this system and that is the
+finding. If it does not, the arm A figure was noise and the honest write-up
+says so.
+
+The mechanism I would offer if it replicates, stated now so it cannot be
+invented afterwards: a seed whose linked duplicate IS retrieved gets a
+near-duplicate neighbour, the prompt asks for items that "connect or contrast"
+rather than restate, and a strict groundedness rubric punishes exactly that.
+§32.5's paraphrase finding, one level up. That is a story, not a measurement,
+and n=46 cannot separate it from the alternative.
+
+ROW 13 PREDICTS THE TWO DOWNSTREAM METRICS DISAGREE, WHICH THEY ALREADY DO IN
+ARM A: lexical support is 0.283 on the nDCG=0 seeds and 0.282 on the nDCG>0
+seeds — flat to three places — while the judged level moves by a factor of 2.4
+across the same split. If rows 12 and 13 both land, the phase's real result is
+that groundedness and lexical containment are not measuring the same thing, and
+§32.5's "proxy" label is understated.
+
+
+WHY MOST OF THE BANDS PREDICT NO MOVEMENT, AND WHY THAT IS NOT HEDGING
+--------------------------------------------------------------------------------
+
+5.6 scored 7/9 and SIX of the nine wrong rows were ONE assumption spent six
+times: that the top rubric level would fire at a moderate rate, when §32.5 had
+already measured, one phase earlier, why it would not. The failure was not
+optimism; it was spending a single un-rechecked belief across most of the
+sheet.
+
+So the assumption most at risk here — that a better retriever moves the
+downstream metrics at all — is the one I am deliberately NOT making. Arm A's own
+data says lexical support is flat across the retrieval-quality split. Rows 7 and
+11 therefore predict differences INSIDE their own MDEs, which is a prediction
+that the experiment will return a null, made in advance, with the null's size
+stated so it cannot later be dressed up as a finding.
+
+And the rows are spread across four independent beliefs on purpose — retrieval
+and truncation mechanics (1, 2, 3), harness cost and delivery (14, 15, 16, 17),
+outcome levels (4, 5, 6, 8, 9, 10), and the correlation (7, 11, 12, 13) — so one
+wrong belief cannot take six rows with it the way it did at 5.6.
+
+
+WHAT WOULD MAKE THESE UNSCOREABLE
+--------------------------------------------------------------------------------
+
+If either run stops before its ledger is complete, every row is scored on what
+landed and LABELLED PROVISIONAL, with the fraction stated. §32.9 is the record
+of why that label is load-bearing: 5.4's provisional 6-right/7-wrong on a third
+of its set became 9-right/4-wrong on the whole of it, and three rows flipped.
+Two separate partial sets in this project have produced headlines their own
+completions overturned (§29.5, §32.9).
+
+The judge emission order is stratified so any stop leaves a BALANCED and PAIRED
+sample rather than a prefix, re-derived for this phase's axis rather than
+inherited from 5.6 — §32.8's lesson, which has now recurred on four axes.
+
+Rows 12 and 13 need enough seeds in BOTH arms. Below about 16 paired seeds the
+pooled correlation's own interval is wider than the band and the rows are marked
+UNTESTABLE rather than scored against a number that cannot support them.
+
+
+WHAT THESE NUMBERS WILL NOT BE ABLE TO SAY, WHATEVER THEY COME OUT AT
+--------------------------------------------------------------------------------
+
+NO NOISE FLOOR UNDER EITHER ARM. One draw per seed at temperature 0.4, no
+repeats, in arm A and in arm B alike. §28.8 measured 32.1% of examQs cells
+flipping verdict on a re-draw and §32.10 forbids comparing a gen-v5 figure
+against a later one until repeats are bought. A between-arm difference smaller
+than the re-draw flip rate is not attributable to the retriever, and NOTHING
+here establishes what that rate is for a study pack.
+
+BOTH ARMS ARE CENSORED AT THE CALL LEVEL BY THE 2048 CEILING, and the censoring
+is not neutral for this comparison. Arm A's 7 truncated packs are the longer
+seeds and they are also where the retrievers separate most: v4 scores 0.274 on
+them against v1's 0.038, so the ceiling eats 69% of the v1 contrast and 21% of
+the v5 one. That attenuation is the number ROADMAP 5.9 inherits from this phase.
+Holding the ceiling fixed keeps this a one-variable change; it does not make the
+censoring go away, and pairing on seeds that deliver in both arms is what
+neutralises it.
+
+THE CLUSTERS ARE NOT APP-SHAPED. Neighbours come from all 27,325 corpus
+documents, not a <=500-note user slice, and the seeds are Stack Exchange
+questions shaped as Notes. §12.2's gap, eleventh instance.
+
+THE GROUNDEDNESS RATE STILL HAS NO HUMAN VALIDATION. 5.6's binary kappa is
+0.000 with a degenerate marginal, and no hand labels are collected for arm B.
+Any groundedness figure from this phase carries 5.6's kappa beside it or is not
+quoted at all.
+
+CORRELATION IS NOT CAUSATION AND n=46 IS SMALL. The retriever is assigned by
+design, so the between-arm contrast is causal; the per-seed correlation is
+observational and a seed's retrievability may be confounded with properties of
+the seed nobody here measured.

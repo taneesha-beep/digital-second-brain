@@ -7,6 +7,14 @@
  *   npm run judge:run                 the plan. Prices the run and calls nothing.
  *   npm run judge:run -- --run        spends quota.
  *   npm run judge:run -- --run --take N     buy a prefix
+ *   npm run judge:v7 -- --run         the 5.7 arm — SAME judge, SAME rubric
+ *
+ * 5.7 ADDS A SECOND ARM AND CHANGES NOTHING ABOUT THE JUDGE. Same model, same
+ * rubric module, same temperature 0, same reasoning_effort, same max_tokens,
+ * same distractor rule. What differs is which generation ledger the claims and
+ * passages resolve from, because that ledger was produced under a different
+ * RETRIEVER. §29.4's same-grader guarantee, applied one phase on and to a
+ * grader that is a model rather than a predicate.
  *
  * ---------------------------------------------------------------------------
  * THIS SCRIPT SPENDS QUOTA. `npm run eval:judge` DOES NOT.
@@ -103,10 +111,39 @@ const { RUBRIC, buildUserMessage, parseVerdict } = require('./lib/judge-rubric')
 const studyPackMetrics = require('./lib/studypack-metrics');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const GEN_LEDGER = path.join(REPO, 'results', 'gen-v5.calls.jsonl');
-const SET = path.join(REPO, 'results', 'gen-judge-set.jsonl');
-const LEDGER = path.join(REPO, 'results', 'gen-judge.calls.jsonl');
-const HUMAN = path.join(REPO, 'results', 'gen-judge-human.jsonl');
+
+/**
+ * ARMS — 5.7. The default is 5.6's and its paths are the committed ones.
+ *
+ * A second arm is the SAME judge, the SAME rubric, the SAME temperature and the
+ * SAME reasoning effort over items produced under a different retriever. That
+ * is §29.4's same-grader guarantee one phase on, and it is the reason 5.7 adds
+ * a lookup table here rather than a second runner: two runners would be two
+ * copies of the rubric call, and §33.9a is this repo's record of the same line
+ * being right in one file and wrong in another.
+ *
+ * `human` is false for a variant arm — the hand labels validate the INSTRUMENT
+ * and the instrument is frozen across arms. build-judge-set.js's header carries
+ * the full argument and what it costs.
+ */
+const ARMS = {
+  default: {
+    genLedger: path.join(REPO, 'results', 'gen-v5.calls.jsonl'),
+    set: path.join(REPO, 'results', 'gen-judge-set.jsonl'),
+    ledger: path.join(REPO, 'results', 'gen-judge.calls.jsonl'),
+    human: path.join(REPO, 'results', 'gen-judge-human.jsonl'),
+    retriever: 'v4-bm25',
+    phase: '5.6'
+  },
+  v7: {
+    genLedger: path.join(REPO, 'results', 'gen-v7.calls.jsonl'),
+    set: path.join(REPO, 'results', 'gen-judge-v7-set.jsonl'),
+    ledger: path.join(REPO, 'results', 'gen-judge-v7.calls.jsonl'),
+    human: path.join(REPO, 'results', 'gen-judge-v7-human.jsonl'),
+    retriever: 'v5-embeddings',
+    phase: '5.7'
+  }
+};
 
 /** The judge. MUST differ from the model whose output it grades. */
 const JUDGE_MODEL = 'qwen/qwen3.6-27b';
@@ -204,13 +241,26 @@ function resolvePair(pair, rowsBySeed) {
   return null;
 }
 
-function load() {
-  const pairs = readJsonl(SET);
-  if (pairs.length === 0) {
-    console.error('No pair set. Build it first:  npm run judge:set -- --write');
+function resolveArm() {
+  const name = arg('variant', 'default');
+  if (!ARMS[name]) {
+    console.error(`unknown --variant "${name}" — known: ${Object.keys(ARMS).join(', ')}`);
     process.exit(1);
   }
-  const genRows = readJsonl(GEN_LEDGER).filter((r) => r.ok === true);
+  return { name, ...ARMS[name] };
+}
+
+function load() {
+  const arm = resolveArm();
+  const pairs = readJsonl(arm.set);
+  if (pairs.length === 0) {
+    console.error(`No pair set at ${path.relative(REPO, arm.set)}. Build it first:`);
+    console.error(arm.name === 'default'
+      ? '  npm run judge:set -- --write'
+      : `  npm run judge:set -- --variant ${arm.name} --write`);
+    process.exit(1);
+  }
+  const genRows = readJsonl(arm.genLedger).filter((r) => r.ok === true);
   const rowsBySeed = new Map(genRows.map((r) => [String(r.seedId), r]));
 
   // THE SEPARATION IS ENFORCED AGAINST THE LEDGER, NOT AGAINST A CONSTANT.
@@ -220,7 +270,31 @@ function load() {
     console.error(`items it would grade (${judged.join(', ')}). ROADMAP 5.6 requires them to differ.`);
     process.exit(1);
   }
-  return { pairs, rowsBySeed, judged };
+
+  // 5.7. THE ARM'S GENERATION LEDGER MUST CARRY THE ARM'S RETRIEVER. The
+  // retriever is the only variable across arms, so a set built from one arm
+  // and judged against another's ledger would silently grade claims against
+  // passages from the wrong context — every rate would compute and all of them
+  // would be wrong. Checked against the stamped data, per §33.2.
+  const stamped = new Set(genRows.map((r) => (r.retrieval || {}).version));
+  if (stamped.size !== 1 || !stamped.has(arm.retriever)) {
+    console.error(
+      `REFUSING: arm "${arm.name}" expects a generation ledger retrieved by ${arm.retriever}; ` +
+      `${path.relative(REPO, arm.genLedger)} is stamped ${[...stamped].map(String).join(', ') || '(nothing)'}.`
+    );
+    process.exit(1);
+  }
+
+  // And the pair set must be OF that ledger: every pair's seed has to resolve.
+  const missing = pairs.filter((p) => !rowsBySeed.has(String(p.seedId))).length;
+  if (missing > 0) {
+    console.error(
+      `REFUSING: ${missing} of ${pairs.length} pairs name a seed absent from ` +
+      `${path.relative(REPO, arm.genLedger)}. The set and the ledger are not the same arm.`
+    );
+    process.exit(1);
+  }
+  return { arm, pairs, rowsBySeed, judged };
 }
 
 function estimateReservation(resolved) {
@@ -263,8 +337,8 @@ function parseRetryHint(text) {
   return m.length === 3 ? (Number(m[1]) * 60 + Number(m[2])) * 1000 : Number(m[1]) * 1000;
 }
 
-function plan({ pairs, rowsBySeed, judged }) {
-  const done = new Set(readJsonl(LEDGER).filter((r) => r.ok).map((r) => r.pairId));
+function plan({ arm, pairs, rowsBySeed, judged }) {
+  const done = new Set(readJsonl(arm.ledger).filter((r) => r.ok).map((r) => r.pairId));
   const todo = pairs.filter((p) => !done.has(p.pairId));
 
   let reserved = 0;
@@ -278,7 +352,10 @@ function plan({ pairs, rowsBySeed, judged }) {
   const actual = todo.length * ACTUAL_TOKENS_PER_CALL;
   const humanTodo = todo.filter((p) => p.humanLabelled).length;
 
-  console.log('PHASE 5.6 — JUDGE PLAN. Nothing is called.\n');
+  console.log(`PHASE ${arm.phase} — JUDGE PLAN${arm.name === 'default' ? '' : ` — ARM "${arm.name}"`}. Nothing is called.\n`);
+  console.log(`  retriever behind the items  ${arm.retriever}   THE ONLY VARIABLE ACROSS ARMS`);
+  console.log(`  pair set                    ${path.relative(REPO, arm.set)}`);
+  console.log(`  ledger                      ${path.relative(REPO, arm.ledger)}`);
   console.log(`  judge              ${JUDGE_MODEL}`);
   console.log(`  judged model(s)    ${judged.join(', ')}   <- MUST differ, and does`);
   console.log(`  temperature        ${JUDGE_TEMPERATURE}   an instrument, not a sample`);
@@ -287,7 +364,7 @@ function plan({ pairs, rowsBySeed, judged }) {
   console.log('');
   console.log(`  pairs total        ${pairs.length}   322 items x 2 conditions`);
   console.log(`  already judged     ${done.size}`);
-  console.log(`  to call now        ${todo.length}   (${resolvable} resolve against the gen-v5 ledger)`);
+  console.log(`  to call now        ${todo.length}   (${resolvable} resolve against ${path.relative(REPO, arm.genLedger)})`);
   console.log(`  of those, human-labelled  ${humanTodo}   these carry the kappa`);
   console.log('');
   console.log('  COST — TWO FIGURES, BECAUSE THE TWO LIMITS CHARGE DIFFERENTLY (§30.1):');
@@ -306,7 +383,7 @@ function plan({ pairs, rowsBySeed, judged }) {
     console.log('    construction, which is why the emission order makes a prefix a sample.');
   }
   console.log('');
-  const seen = readJsonl(LEDGER).filter((r) => r.ok && Number.isFinite(r.totalTokens));
+  const seen = readJsonl(arm.ledger).filter((r) => r.ok && Number.isFinite(r.totalTokens));
   if (seen.length) {
     const mean = Math.round(seen.reduce((a2, r) => a2 + r.totalTokens, 0) / seen.length);
     const res = seen.reduce((a2, r) => a2 + (r.reservationTokens || 0), 0);
@@ -326,9 +403,10 @@ function plan({ pairs, rowsBySeed, judged }) {
   console.log(`  retries            TPM 429 slept off and retried (<=${MAX_TPM_PAUSES}), NOT an attempt.`);
   console.log('                     TPD 429 STOPS; the ledger resumes it');
   console.log('');
-  console.log('  Label first (no quota):   npm run judge:label');
+  if (pairs.some((p) => p.humanLabelled)) console.log('  Label first (no quota):   npm run judge:label');
+  else console.log('  No hand labels on this arm — pre-registered. build-judge-set.js says why.');
   console.log('  Check the balance:        npm run gen:quota');
-  console.log('  Run it:                   npm run judge:run -- --run\n');
+  console.log(`  Run it:                   npm run ${arm.name === 'default' ? 'judge:run' : `judge:${arm.name}`} -- --run\n`);
 }
 
 async function run(state) {
@@ -336,10 +414,10 @@ async function run(state) {
     console.error('MISSING GROQ_API_KEY. It lives in backend/.env — see CLAUDE.md.');
     process.exit(1);
   }
-  const { pairs, rowsBySeed } = state;
+  const { arm, pairs, rowsBySeed } = state;
 
   const maxCalls = Number(arg('max-calls', DEFAULT_MAX_CALLS));
-  const done = new Set(readJsonl(LEDGER).filter((r) => r.ok).map((r) => r.pairId));
+  const done = new Set(readJsonl(arm.ledger).filter((r) => r.ok).map((r) => r.pairId));
   let todo = pairs.filter((p) => !done.has(p.pairId));
 
   const take = arg('take', null);
@@ -376,12 +454,12 @@ async function run(state) {
     process.exit(1);
   }
 
-  console.log('\nPHASE 5.6 — JUDGE RUN\n');
+  console.log(`\nPHASE ${arm.phase} — JUDGE RUN${arm.name === 'default' ? '' : ` — ARM "${arm.name}", items retrieved by ${arm.retriever}`}\n`);
   console.log(`  judge            ${JUDGE_MODEL}   resolves`);
   console.log(`  pairs to call    ${todo.length} of ${pairs.length}`);
   console.log(`  retries          TPM 429 retried (<=${MAX_TPM_PAUSES}, not an attempt); TPD 429 STOPS\n`);
 
-  const stream = fs.createWriteStream(LEDGER, { flags: 'a' });
+  const stream = fs.createWriteStream(arm.ledger, { flags: 'a' });
   const append = (row) => stream.write(`${JSON.stringify(row)}\n`);
 
   let attempts = 0;
@@ -406,9 +484,23 @@ async function run(state) {
    * The ledger is written in full either way. This withholds a display, not a
    * measurement.
    */
-  const humanDone = new Set(readJsonl(HUMAN).map((h) => h.pairId));
+  /**
+   * 5.7 FIXED A GATE THAT WAS INVERTED FOR AN ARM WITH NO HUMAN SAMPLE.
+   *
+   * The condition was `humanWanted > 0 && humanDone >= humanWanted`, which
+   * withholds when `humanWanted` is ZERO — i.e. it hid verdicts on an arm that
+   * has no rater to anchor, protecting nobody and reporting "0 of 0 hand labels
+   * are in" as if something were missing. `eval-judge.js` had the equivalent
+   * condition the right way round (`blind = humanWanted > 0 && incomplete`), so
+   * the two display paths DISAGREED — and §33.6's whole point is that a
+   * guarantee holding on one of two paths is not a guarantee.
+   *
+   * The rule is unchanged and exactly as strict where it applies: withhold iff
+   * this arm HAS a pre-registered human sample and it is not yet complete.
+   */
+  const humanDone = new Set(readJsonl(arm.human).map((h) => h.pairId));
   const humanWanted = pairs.filter((p) => p.humanLabelled).length;
-  const showVerdicts = humanWanted > 0 && humanDone.size >= humanWanted;
+  const showVerdicts = humanWanted === 0 || humanDone.size >= humanWanted;
   if (!showVerdicts) {
     console.log(`  verdicts are WITHHELD from this terminal: ${humanDone.size} of ${humanWanted} hand`);
     console.log('  labels are in, and a rater who has seen them is not an independent rater.\n');
@@ -417,7 +509,7 @@ async function run(state) {
   for (const pair of todo) {
     const resolved = resolvePair(pair, rowsBySeed);
     if (!resolved) {
-      append({ pairId: pair.pairId, ok: false, at: new Date().toISOString(), error: { message: 'unresolvable against the gen-v5 ledger' } });
+      append({ pairId: pair.pairId, ok: false, at: new Date().toISOString(), error: { message: `unresolvable against ${path.relative(REPO, arm.genLedger)}` } });
       console.log(`  SKIP ${pair.pairId} — cannot resolve`);
       continue;
     }
@@ -598,6 +690,7 @@ async function run(state) {
     console.log(`  verdicts   2:${tally[2]}  1:${tally[1]}  0:${tally[0]}  parse-fail:${tally.fail}`);
   } else {
     console.log(`  verdicts   WITHHELD until the hand labels are in — ${tally.fail} failed to parse.`);
+    console.log(`             ${humanDone.size} of ${humanWanted} pre-registered labels exist.`);
   }
   console.log(`  ACTUAL ${actualTokens} tokens (~${completed ? Math.round(actualTokens / completed) : 0}/call)   ` +
     `RESERVED ${reservedTokens}   ratio ${reservedTokens ? (actualTokens / reservedTokens).toFixed(2) : 'n/a'}`);

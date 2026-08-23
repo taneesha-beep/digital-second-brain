@@ -6,6 +6,28 @@
  *
  *   npm run gen:clusters                 report only
  *   npm run gen:clusters -- --write      also write data/gen-eval/
+ *   npm run gen:clusters -- --retriever v5-embeddings --variant v7 --write
+ *
+ * ---------------------------------------------------------------------------
+ * 5.7 IS THE PHASE THIS FILE WAS WRITTEN FOR, AND THE FLAGS ARE THE MECHANISM
+ * ---------------------------------------------------------------------------
+ *
+ * The header below has said since 5.2 that neighbours are DERIVED and that
+ * roadmap 5.7 exists to rebuild them under a different retriever. Until now
+ * nothing could: the retriever was `APP_RETRIEVER`, a constant. `--retriever`
+ * and `--variant` are that promise made executable.
+ *
+ * THE DEFAULT PATH IS UNCHANGED AND MUST STAY BYTE-IDENTICAL. With no flags
+ * this still builds v4-bm25 into data/gen-eval/clusters.jsonl, the file
+ * results/gen-v5.calls.jsonl and results/gen-judge.calls.jsonl were produced
+ * from. A variant writes clusters.<variant>.jsonl BESIDE it and never over it —
+ * §29.4's guard, which forbids one artifact holding two configurations, applied
+ * to an input instead of to a ledger.
+ *
+ * THE SEEDS DO NOT MOVE. Selection reads neither the retriever nor the variant:
+ * it is word count over the dev split, which is why `clusters.jsonl` fixes the
+ * SEEDS and not the clusters. A variant differs from the default in exactly the
+ * neighbour lists and the three stamped fields that explain them.
  *
  * Needs data/corpus/cooking.jsonl and data/splits/cooking.dev.txt, both
  * gitignored, so THIS CANNOT RUN IN CI — the same limit `characterize:graph`
@@ -95,7 +117,9 @@ const path = require('path');
 const crypto = require('crypto');
 
 const retrieval = require('../retrieval');
+const { versions } = retrieval;
 const { APP_RETRIEVER, LINK_CAP } = require('../services/noteCorpus.service');
+const { attachVectors } = require('./lib/vectors');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const CORPUS = path.join(REPO, 'data', 'corpus', 'cooking.jsonl');
@@ -103,8 +127,23 @@ const CORPUS_MANIFEST = path.join(REPO, 'data', 'corpus', 'cooking.manifest.json
 const DEV_SPLIT = path.join(REPO, 'data', 'splits', 'cooking.dev.txt');
 const SPLIT_MANIFEST = path.join(REPO, 'data', 'splits', 'cooking.manifest.json');
 const OUT_DIR = path.join(REPO, 'data', 'gen-eval');
-const OUT_CLUSTERS = path.join(OUT_DIR, 'clusters.jsonl');
-const OUT_MANIFEST = path.join(OUT_DIR, 'clusters.manifest.json');
+
+/**
+ * Where a variant's clusters land. The default (no --variant) is the 5.2 path
+ * and its bytes are load-bearing: two committed ledgers were produced from it.
+ */
+function outputPaths(variant) {
+  const infix = variant ? `.${variant}` : '';
+  return {
+    clusters: path.join(OUT_DIR, `clusters${infix}.jsonl`),
+    manifest: path.join(OUT_DIR, `clusters${infix}.manifest.json`)
+  };
+}
+
+function argOf(name, fallback = null) {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 || i === process.argv.length - 1 ? fallback : process.argv[i + 1];
+}
 
 const SEEDS = 30;
 const QUINTILES = 5;
@@ -153,6 +192,33 @@ function requireInput(file, what) {
 function main() {
   const write = process.argv.includes('--write');
 
+  // The retriever is a FLAG with the app's as its default, so `npm run
+  // gen:clusters` with no arguments is the 5.2 command and produces the 5.2
+  // bytes. A variant name is REQUIRED whenever the retriever is not the
+  // default: without one, a second retriever's neighbours would overwrite the
+  // file two committed ledgers were built from, which is the accident §29.4
+  // exists to prevent one level up.
+  const retrieverVersion = argOf('retriever', APP_RETRIEVER);
+  const variant = argOf('variant', null);
+  if (!versions().includes(retrieverVersion)) {
+    console.error(`unknown retriever "${retrieverVersion}" — known: ${versions().join(', ')}`);
+    process.exit(1);
+  }
+  if (retrieverVersion !== APP_RETRIEVER && !variant) {
+    console.error(
+      `REFUSING: --retriever ${retrieverVersion} without --variant would overwrite\n` +
+      '  data/gen-eval/clusters.jsonl, which results/gen-v5.calls.jsonl and\n' +
+      '  results/gen-judge.calls.jsonl were both produced from. Name the arm:\n' +
+      `    npm run gen:clusters -- --retriever ${retrieverVersion} --variant v7 --write`
+    );
+    process.exit(1);
+  }
+  if (variant && !/^[a-z0-9-]+$/.test(variant)) {
+    console.error(`--variant must be lowercase alphanumeric or dashes; got "${variant}"`);
+    process.exit(1);
+  }
+  const { clusters: OUT_CLUSTERS, manifest: OUT_MANIFEST } = outputPaths(variant);
+
   for (const [file, what] of [
     [CORPUS, 'corpus'], [CORPUS_MANIFEST, 'corpus manifest'],
     [DEV_SPLIT, 'dev split'], [SPLIT_MANIFEST, 'split manifest']
@@ -178,7 +244,9 @@ function main() {
   const devSha = sha256(devBytes);
   const devIds = devBytes.toString('utf8').split('\n').map((s) => s.trim()).filter(Boolean);
 
-  console.log('BUILDING THE GENERATION GOLDEN SET — Phase 5.2\n');
+  console.log(`BUILDING THE GENERATION GOLDEN SET — ${variant ? `Phase 5.7, arm "${variant}"` : 'Phase 5.2'}\n`);
+  console.log(`  retriever         ${retrieverVersion}${retrieverVersion === APP_RETRIEVER ? '   (the app\'s — the default arm)' : '   A VARIANT ARM'}`);
+  console.log(`  output            ${path.relative(REPO, OUT_CLUSTERS)}`);
   console.log(`  corpus            ${docs.length} documents  sha256 ${corpusSha.slice(0, 16)}…`);
   console.log(`  dev split         ${devIds.length} queries    sha256 ${devSha.slice(0, 16)}…`);
 
@@ -251,8 +319,25 @@ function main() {
 
   // ---- B. THE DERIVED PART: neighbours at a NAMED retriever ----------------
 
+  // A rung that declares a `vectors` slug gets them attached and BOUND — the
+  // same three assertions run-eval.js runs, from the one copy both call. v5's
+  // embeddings are corpus preparation, not a retriever parameter, so a cluster
+  // set built on stale vectors would look exactly like a cluster set built on
+  // fresh ones. scripts/lib/vectors.js.
+  const resolved = retrieval.resolvedParamsFor(retrieverVersion, {});
+  if (resolved.vectors !== undefined) {
+    attachVectors({
+      site: 'cooking',
+      slug: resolved.vectors,
+      docs,
+      repoRoot: REPO,
+      fail: (m) => { console.error(m); process.exit(1); },
+      log: console.log
+    });
+  }
+
   const t0 = Date.now();
-  const handle = retrieval.index(APP_RETRIEVER, docs);
+  const handle = retrieval.index(retrieverVersion, docs);
   const described = retrieval.describe(handle);
   const indexMs = Date.now() - t0;
 
@@ -311,8 +396,11 @@ function main() {
   const jsonl = `${ordered.map((c) => JSON.stringify(c)).join('\n')}\n`;
 
   const manifest = {
-    phase: '5.2',
-    what: 'Generation golden set — 30 seed documents. Neighbours are DERIVED and are one arm, not the definition.',
+    phase: variant ? '5.7' : '5.2',
+    variant: variant || null,
+    what: variant
+      ? `Generation golden set, ${retrieverVersion} arm — SAME 30 seeds, different neighbours. Roadmap 5.7.`
+      : 'Generation golden set — 30 seed documents. Neighbours are DERIVED and are one arm, not the definition.',
     selection: {
       population: 'data/splits/cooking.dev.txt — all 2,304 dev queries',
       whyDev: 'roadmap 5.7 needs qrels for the seeds; test is spent (EVALUATION.md §19.9)',
@@ -324,6 +412,9 @@ function main() {
     },
     neighbours: {
       status: 'DERIVED — rebuilt per run by 5.4 and 5.7',
+      isArm: variant
+        ? 'ONE ARM of roadmap 5.7. The seeds are shared with the default set byte for byte; only these lists differ.'
+        : 'the 5.2 default arm, and the one results/gen-v5.calls.jsonl was produced from',
       retriever: described.version,
       digest: described.digest,
       k: LINK_CAP,
@@ -334,7 +425,7 @@ function main() {
       corpus: { file: 'data/corpus/cooking.jsonl', sha256: corpusSha, documents: docs.length },
       split: { file: 'data/splits/cooking.dev.txt', sha256: devSha, queries: devIds.length }
     },
-    output: { file: 'data/gen-eval/clusters.jsonl', sha256: sha256(jsonl), bytes: Buffer.byteLength(jsonl) }
+    output: { file: path.relative(REPO, OUT_CLUSTERS), sha256: sha256(jsonl), bytes: Buffer.byteLength(jsonl) }
   };
 
   console.log(`\nC. OUTPUT\n`);

@@ -7,6 +7,35 @@
  *   npm run judge:set                 print the plan; write nothing
  *   npm run judge:set -- --write      write results/gen-judge-set.jsonl
  *                                     and  results/gen-judge-rubric.txt
+ *   npm run judge:set -- --variant v7 --write     the 5.7 arm
+ *
+ * ---------------------------------------------------------------------------
+ * 5.7's ARM CARRIES NO HUMAN SAMPLE, AND THAT IS PRE-REGISTERED, NOT SKIPPED
+ * ---------------------------------------------------------------------------
+ *
+ * A variant set is built by the SAME buildPairSet over a different generation
+ * ledger, with one difference: `humanLabelled` is false on every row.
+ *
+ * WHY. The hand labels validate the INSTRUMENT — this judge, at this
+ * temperature, under this rubric — and the instrument is byte-identically
+ * frozen across the two arms (scripts/lib/judge-rubric.js and
+ * scripts/lib/judge-metrics.js are untouched by 5.7, and the run refuses to
+ * start if the model moves). A second kappa would therefore measure the same
+ * instrument twice rather than validate a new one. What it WOULD buy is a
+ * second three-level agreement figure on a different item population, which is
+ * a real experiment and a different one.
+ *
+ * WHAT IT COSTS, STATED HERE RATHER THAN DISCOVERED IN THE WRITEUP: arm B's
+ * groundedness figures carry 5.6's kappa beside them by TRANSFER, and transfer
+ * is an assumption. §33.8 already establishes that the binary kappa is 0.000
+ * with a degenerate marginal, so the headline rate has no human validation in
+ * either arm — collecting 60 more labels would not change that, and pretending
+ * it would is the misreading this paragraph exists to block.
+ *
+ * THE WITHHOLDING MECHANISM IS UNCHANGED AND STILL EXACTLY AS STRICT. Both
+ * display paths gate on `humanWanted > 0 && labels incomplete`. Arm A wants 60
+ * and has 60. Arm B wants none, so there is no rater to anchor and nothing to
+ * withhold. §33.6's guarantee is untouched where it applies.
  *
  * PURE. No key, no network, nothing under data/. It reads one committed ledger
  * and regenerates byte-identically, the same property `npm run
@@ -37,11 +66,43 @@ const judge = require('./lib/judge-metrics');
 const { RUBRIC } = require('./lib/judge-rubric');
 
 const REPO = path.resolve(__dirname, '..', '..');
-const LEDGER = path.join(REPO, 'results', 'gen-v5.calls.jsonl');
-const SET = path.join(REPO, 'results', 'gen-judge-set.jsonl');
-const RUBRIC_FILE = path.join(REPO, 'results', 'gen-judge-rubric.txt');
+
+/**
+ * The default arm is 5.6's and its three paths are the committed ones. A
+ * variant names its own everywhere and shares nothing but the code.
+ */
+const ARMS = {
+  default: {
+    ledger: path.join(REPO, 'results', 'gen-v5.calls.jsonl'),
+    set: path.join(REPO, 'results', 'gen-judge-set.jsonl'),
+    rubricFile: path.join(REPO, 'results', 'gen-judge-rubric.txt'),
+    retriever: 'v4-bm25',
+    human: true,
+    phase: '5.6'
+  },
+  v7: {
+    ledger: path.join(REPO, 'results', 'gen-v7.calls.jsonl'),
+    set: path.join(REPO, 'results', 'gen-judge-v7-set.jsonl'),
+    rubricFile: null,
+    retriever: 'v5-embeddings',
+    human: false,
+    phase: '5.7'
+  }
+};
 
 const has = (name) => process.argv.includes(`--${name}`);
+function argOf(name, fallback = null) {
+  const i = process.argv.indexOf(`--${name}`);
+  return i === -1 || i === process.argv.length - 1 ? fallback : process.argv[i + 1];
+}
+function resolveArm() {
+  const name = argOf('variant', 'default');
+  if (!ARMS[name]) {
+    console.error(`unknown --variant "${name}" — known: ${Object.keys(ARMS).join(', ')}`);
+    process.exit(1);
+  }
+  return { name, ...ARMS[name] };
+}
 
 function readJsonl(file) {
   if (!fs.existsSync(file)) return [];
@@ -142,22 +203,46 @@ function rubricArtifact(built) {
 }
 
 function main() {
-  const rows = readJsonl(LEDGER).filter((r) => r.ok === true);
+  const arm = resolveArm();
+  const rows = readJsonl(arm.ledger).filter((r) => r.ok === true);
   if (rows.length === 0) {
-    console.error(`No completed rows in ${path.relative(REPO, LEDGER)}.`);
+    console.error(`No completed rows in ${path.relative(REPO, arm.ledger)}.`);
+    process.exit(1);
+  }
+
+  // THE LEDGER MUST BE THE ARM'S OWN, CHECKED AGAINST ITS STAMPED RETRIEVER
+  // RATHER THAN ITS FILENAME. §33.2's rule: a guard that follows the data
+  // cannot be defeated by editing a constant in the same commit as the thing
+  // it guards.
+  const stamped = new Set(rows.map((r) => (r.retrieval || {}).version));
+  if (stamped.size !== 1 || !stamped.has(arm.retriever)) {
+    console.error(
+      `REFUSING: arm "${arm.name}" expects a ledger retrieved by ${arm.retriever}; ` +
+      `${path.relative(REPO, arm.ledger)} is stamped ${[...stamped].map(String).join(', ') || '(nothing)'}.`
+    );
     process.exit(1);
   }
 
   const built = judge.buildPairSet(rows);
+  // A variant arm collects no hand labels — see the header. buildPairSet is
+  // FROZEN and always nominates 60, so the flag is cleared here, in the
+  // script that owns the pre-registration, rather than by editing the metric
+  // library 5.6's fifteen mutations are pinned against.
+  if (!arm.human) for (const p of built.pairs) p.humanLabelled = false;
   const cited = built.pairs.filter((p) => p.condition === 'cited').length;
   const nulls = built.pairs.filter((p) => p.condition === 'null').length;
 
-  console.log('PHASE 5.6 — JUDGE PAIR SET\n');
-  console.log(`  source                results/gen-v5.calls.jsonl  (${rows.length} ok rows)`);
+  console.log(`PHASE ${arm.phase} — JUDGE PAIR SET${arm.name === 'default' ? '' : ` — ARM "${arm.name}"`}\n`);
+  console.log(`  retriever             ${arm.retriever}   THE ONLY VARIABLE ACROSS ARMS`);
+  console.log(`  source                ${path.relative(REPO, arm.ledger)}  (${rows.length} ok rows)`);
   console.log(`  items judgeable       ${built.items.length}`);
   console.log(`  not judgeable         ${built.unciteable}`);
   console.log(`  pairs                 ${built.pairs.length}   cited ${cited}, null ${nulls}`);
-  console.log(`  human sample          ${built.human.cited.length} cited + ${built.human.null.length} null`);
+  console.log(arm.human
+    ? `  human sample          ${built.human.cited.length} cited + ${built.human.null.length} null`
+    : '  human sample          0   PRE-REGISTERED — the instrument is frozen and was\n' +
+      '                            validated on the default arm; a second kappa would\n' +
+      '                            measure the same instrument twice. Header says why.');
   console.log(`  null seed             ${judge.NULL_SEED}`);
   console.log('');
   const strata = [...built.human.strata.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
@@ -169,10 +254,17 @@ function main() {
     return;
   }
 
-  fs.writeFileSync(SET, built.pairs.map((p) => JSON.stringify(p)).join('\n') + '\n');
-  fs.writeFileSync(RUBRIC_FILE, rubricArtifact(built));
-  console.log(`  wrote ${path.relative(REPO, SET)}`);
-  console.log(`  wrote ${path.relative(REPO, RUBRIC_FILE)}\n`);
+  fs.writeFileSync(arm.set, built.pairs.map((p) => JSON.stringify(p)).join('\n') + '\n');
+  console.log(`  wrote ${path.relative(REPO, arm.set)}`);
+  // The rubric artifact is written once, by the default arm. Both arms receive
+  // the same frozen rubric, so a second rendering would be the same bytes under
+  // a second name — §33.3's "a rubric in two places is committed twice and
+  // verbatim nowhere", which is the reason the rendering exists at all.
+  if (arm.rubricFile) {
+    fs.writeFileSync(arm.rubricFile, rubricArtifact(built));
+    console.log(`  wrote ${path.relative(REPO, arm.rubricFile)}`);
+  }
+  console.log('');
 }
 
 main();
