@@ -70,6 +70,8 @@ const Note = require('../models/Note');
 const retrieval = require('../retrieval');
 const { loadNoteCorpus, APP_RETRIEVER, LINK_CAP } = require('./noteCorpus.service');
 const { MODEL, TEMPERATURE, MAX_TOKENS } = require('./llm.service');
+// Phase 6.1. No-ops entirely unless DSB_TRACING=1 — observability/sdk.js.
+const { withSpan, SPANS, GEN_AI } = require('../observability');
 
 /**
  * THE STUDY PACK'S OWN OUTPUT CEILING (5.9, 23 Aug 2026). 2048 -> 4096.
@@ -371,19 +373,26 @@ async function buildCluster(noteId, userId, { retriever = APP_RETRIEVER, k = LIN
   // exception from a layer the user never hears about.
   const seedDoc = seedFromCorpus || { id, title: note.title || '', body: note.contentText || '' };
 
-  let hits = [];
-  let provenance = null;
-  let reason = null;
-
-  if (seedFromCorpus) {
+  // ONE span covering index+search, with no `index-lookup` child. PRIMER §8.2
+  // draws that child; creating it would mean instrumenting inside
+  // backend/retrieval/, and tests/retrieval.interface.test.js fails any require
+  // there that resolves outside the directory. Retrieval stays pure and this is
+  // timed from the caller. Attributes are 6.2's, and 6.2 CUT the retrieval-side
+  // ones, so this span carries none.
+  const { hits, provenance, reason } = withSpan(SPANS.RETRIEVE, () => {
+    if (!seedFromCorpus) {
+      return { hits: [], provenance: null, reason: 'seed outside the corpus slice — no neighbours retrieved' };
+    }
     const handle = retrieval.index(retriever, docs, {});
-    provenance = retrieval.describe(handle);
-    hits = retrieval.search(handle, id, k).map((hit, i) => ({ ...hit, rank: i + 1 }));
-  } else {
-    reason = 'seed outside the corpus slice — no neighbours retrieved';
-  }
+    const described = retrieval.describe(handle);
+    return {
+      hits: retrieval.search(handle, id, k).map((hit, i) => ({ ...hit, rank: i + 1 })),
+      provenance: described,
+      reason: null
+    };
+  });
 
-  const context = assembleContext(seedDoc, hits, docsById, budget);
+  const context = withSpan(SPANS.BUILD_CONTEXT, () => assembleContext(seedDoc, hits, docsById, budget));
 
   return {
     seed: { noteId: id, title: note.title || 'Untitled' },
@@ -497,7 +506,12 @@ async function generate(contextText, noteCount) {
   const startedAt = Date.now();
 
   try {
-    const completion = await groq.chat.completions.create({
+    // Phase 6.1. THREE attributes, and they are the ones that IDENTIFY the call.
+    // gen_ai.* is entirely experimental in semantic-conventions@1.43.0 (0 in the
+    // stable root, 40+ in experimental_attributes.js) — see observability/index.js.
+    // Tokens in/out, computed cost and finish reason are ROADMAP 6.2's four
+    // named items and are deliberately NOT set here.
+    const completion = await withSpan(SPANS.LLM_CALL, () => groq.chat.completions.create({
       model: MODEL,
       messages: [
         { role: 'system', content: STUDY_PACK_SYSTEM_MESSAGE },
@@ -505,6 +519,10 @@ async function generate(contextText, noteCount) {
       ],
       temperature: TEMPERATURE,
       max_tokens: STUDY_PACK_MAX_TOKENS
+    }), {
+      [GEN_AI.OPERATION_NAME]: 'chat',
+      [GEN_AI.PROVIDER_NAME]: 'groq',
+      [GEN_AI.REQUEST_MODEL]: MODEL
     });
 
     const choice = completion.choices?.[0] || {};
@@ -562,7 +580,7 @@ async function buildStudyPack(noteId, userId, options = {}) {
 
   const noteCount = cluster.context.included.length;
   const observation = await generate(cluster.context.text, noteCount);
-  const parsed = parseStudyPackJson(observation.rawText);
+  const parsed = withSpan(SPANS.PARSE, () => parseStudyPackJson(observation.rawText));
 
   const rawFlashcards = Array.isArray(parsed.value?.flashcards) ? parsed.value.flashcards : [];
   const rawConcepts = Array.isArray(parsed.value?.concepts) ? parsed.value.concepts : [];

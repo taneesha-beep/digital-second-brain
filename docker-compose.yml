@@ -64,6 +64,30 @@ services:
     depends_on:
       - api
 
+  # Phase 6.1 — the collector PRIMER §8.1 describes. Spans arrive over OTLP/HTTP
+  # on 4318; the UI is on 16686. The app stores nothing and blocks on nothing:
+  # it batches spans and forgets them, so this container being down degrades
+  # tracing to silence rather than breaking a request.
+  #
+  # Pinned by digest, the convention this file has held since 1.6 and the same
+  # one mongo:7 above uses. A collector's version changes what a trace looks
+  # like when you go back to reproduce a screenshot.
+  #
+  # Jaeger v2 (jaegertracing/jaeger), not v1's all-in-one: v2 speaks OTLP
+  # natively, so there is no agent, no jaeger-thrift exporter and no extra
+  # protocol for the app to know about.
+  #
+  # PROFILED OUT of `docker compose up`, exactly like corpus below. Tracing is
+  # OFF by default in the app (DSB_TRACING), and a collector that starts anyway
+  # would be a running service nobody asked for. Bring it up with:
+  #   docker compose --profile tracing up -d jaeger
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0@sha256:b585df1b6299bbbd16bf7c679da30389349736e4b6bc8f4f500142a75bf26ca8
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP/HTTP — what exporter-trace-otlp-http posts to
+    profiles: ["tracing"]
+
   corpus:
     build:
       context: .

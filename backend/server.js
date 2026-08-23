@@ -1,5 +1,13 @@
 require('dotenv').config();
 
+// Phase 6.1 — MUST come before express/http are required. The HTTP and Express
+// instrumentations patch those modules as they load, so starting the SDK after
+// `require('express')` silently yields no server spans: an install that looks
+// correct and a Jaeger UI that stays empty. dotenv is allowed to run first
+// because it loads only fs/path, and reading backend/.env is what lets
+// DSB_TRACING be set there. OFF unless DSB_TRACING=1 — see observability/sdk.js.
+require('./observability/sdk').startTracing();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');

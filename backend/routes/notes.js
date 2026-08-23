@@ -9,6 +9,8 @@ const { loadUserCorpus } = require('../utils/corpus');
 const { buildGlobalGraph } = require('../services/graphBuilder.service');
 const { computeAndSaveLinks, getLinkedNotes } = require('../services/linker.service');
 const { saveVersion, getVersions } = require('../services/version.service');
+// Phase 6.1. No-ops entirely unless DSB_TRACING=1 — observability/sdk.js.
+const { withSpan, SPANS } = require('../observability');
 
 router.use(protect);
 
@@ -109,20 +111,40 @@ router.put('/:id', async (req, res) => {
     if (!note) return res.status(404).json({ message: 'Note not found' });
 
     if (title !== undefined)     note.title   = title;
-    if (content !== undefined)   note.content = normalizeContent(content);
-    if (contentText !== undefined) {
-      note.contentText = contentText;
-    } else if (Array.isArray(content)) {
-      note.contentText = blockNoteToPlainText(content);
-    } else if (content !== undefined) {
-      note.contentText = blockNoteToPlainText(note.content);
-    }
+
+    // Phase 6.1's `normalize` span. THE WHOLE content-shaping block, not just
+    // normalizeContent(): this is the stage that turns the three historical
+    // content shapes into contentText, and blockNoteToPlainText is half of it.
+    //
+    // ⚠️ THIS STAGE EXISTS ONLY ON PUT. `POST /api/notes` stores req.body
+    // content verbatim with `keywords: []` — so a freshly created note is
+    // un-normalized and un-extracted until its first update. Noticed at 6.1,
+    // out of scope, not fixed.
+    withSpan(SPANS.NORMALIZE, () => {
+      if (content !== undefined)   note.content = normalizeContent(content);
+      if (contentText !== undefined) {
+        note.contentText = contentText;
+      } else if (Array.isArray(content)) {
+        note.contentText = blockNoteToPlainText(content);
+      } else if (content !== undefined) {
+        note.contentText = blockNoteToPlainText(note.content);
+      }
+    });
+
     if (Array.isArray(tags))       note.tags      = tags;
     if (category !== undefined)    note.category  = category;
 
-    // Extract keywords from updated text, using the user's other notes as the corpus
-    const corpus = await loadUserCorpus(req.user._id, { excludeId: note._id });
-    note.keywords = extractKeywords(note.title, note.contentText, corpus);
+    // Extract keywords from updated text, using the user's other notes as the corpus.
+    //
+    // The corpus load is INSIDE the span deliberately. It is a Mongo round trip
+    // rather than computation, but extractKeywords cannot run without the
+    // document-frequency table it returns, so timing them apart would report a
+    // fast `extract` beside an unattributed gap — PRIMER §8.2's second reading,
+    // manufactured on purpose. One stage, one span, I/O included.
+    await withSpan(SPANS.EXTRACT, async () => {
+      const corpus = await loadUserCorpus(req.user._id, { excludeId: note._id });
+      note.keywords = extractKeywords(note.title, note.contentText, corpus);
+    });
 
     await note.save();
 
