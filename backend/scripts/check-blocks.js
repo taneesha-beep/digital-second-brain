@@ -128,7 +128,21 @@ const WRITEUPS = [
   { file: 'docs/EVALUATION.md', mode: 'current', published: false },
   { file: 'docs/PRIMER.md', mode: 'current', published: false },
   { file: 'docs/ROADMAP.md', mode: 'forward-looking', published: false },
-  { file: 'docs/END-STATE.md', mode: 'forward-looking', published: false }
+  { file: 'docs/END-STATE.md', mode: 'forward-looking', published: false },
+  // 7.1. `current` because the catalog describes modes that HAVE been observed
+  // and artifacts that DO exist — an unresolved path in it is a defect, not a
+  // deliverable being named ahead of time. `published: true` because it is
+  // tracked: Phase 8.1 links to it from README, so unlike the four writeups
+  // above it IS present in a fresh clone and in every CI checkout, and its
+  // absence would be a defect rather than an environment.
+  //
+  // THE HAZARD THIS ENTRY DOES NOT COVER, AND IT IS THE ONE THAT ALREADY BIT.
+  // See the header: this tool resolves against the WORKING TREE and cannot see
+  // that a path is gitignored. README's two references to docs/EVALUATION.md
+  // passed here and were dead for everyone else. FAILURE-MODES.md is published
+  // and can reproduce that exactly, so it cites committed artifacts only and
+  // names no path under docs/. That rule is held by hand and stated in its §8.
+  { file: 'docs/FAILURE-MODES.md', mode: 'current', published: true }
 ];
 
 const MANIFESTS = ['backend/package.json', 'scripts/package.json', 'frontend/package.json', 'package.json'];
@@ -175,7 +189,9 @@ const CREATED_BY_READER = new Map([
 ]);
 
 const PLANNED = new Map([
-  ['docs/FAILURE-MODES.md', 'Phase 7 deliverable, END-STATE §2.12'],
+  // docs/FAILURE-MODES.md WAS HERE AND WAS REMOVED AT 7.1, when the file was
+  // written. A PLANNED entry for a path that now resolves is dead config that
+  // would keep reporting a deliverable as outstanding after it shipped.
   ['docs/ARCHITECTURE.md', 'Phase 8 deliverable'],
   ['docs/OBSERVABILITY.md', 'Phase 6 deliverable, END-STATE §2.11'],
   ['docs/INTERVIEW-NOTES.md', 'gitignored planning doc, may be absent'],

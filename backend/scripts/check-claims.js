@@ -86,6 +86,23 @@ const WRITEUPS = [
   'docs/ROADMAP.md',
   'docs/PRIMER.md',
   'docs/END-STATE.md',
+  // ADDED AT 7.1, AND IT IS THE FIRST WRITEUP IN THIS LIST THAT IS PUBLISHED.
+  // docs/FAILURE-MODES.md is TRACKED — README links to it from Phase 8.1, and a
+  // gitignored target would be a broken link in the only document a stranger
+  // reads. That inverts this list's usual situation without changing the rule:
+  // a published document has MORE reason to be checked, not less.
+  //
+  // README.md is still deliberately absent from this list. The rule keeping a
+  // rotting figure out of README is "no numbers at all", and this check only
+  // requires a decimal to TRACE to an artifact, which would license the test
+  // count 4.5 removed. FAILURE-MODES.md is the opposite case: it is nothing but
+  // numbers, so "no numbers" cannot apply to it and tracing is the right rule.
+  //
+  // WHAT THIS BUYS IS PARTIAL AND THE DOCUMENT SAYS SO IN ITS OWN §8. The scope
+  // is four-or-more decimal places (§3.6), so the handful of full-precision
+  // nDCG figures are covered and every percentage and integer count in the file
+  // is out of scope by construction. That is the documented trade, not a hole.
+  'docs/FAILURE-MODES.md',
   // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
   // That makes it the first document to be both a writeup and, by path, a
   // candidate artifact — so it would justify its own figures: every decimal in
