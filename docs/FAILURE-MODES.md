@@ -62,6 +62,20 @@ the ladder's winning retriever `v5-embeddings`, from run file sha256
 Source artifact: [`results/error-analysis.dev.txt`](../results/error-analysis.dev.txt),
 narrative in [`results/error-analysis.md`](../results/error-analysis.md).
 
+> **⚠️ THE MEASURED RETRIEVER AND THE SHIPPED RETRIEVER ARE NOT THE SAME ONE, AND READING THIS
+> SECTION AS "WHAT THE APP DOES" WOULD BE WRONG.** `v5-embeddings` won the ladder; the
+> application ships **`v4-bm25`**, chosen on storage cost rather than on score — a dense
+> retriever needs a vector per note kept in sync with the text, and a stale vector has no
+> symptom. So R1–R3 describe **the best retriever measured**, and are the right rows for
+> "how hard is this problem", while R4 and R5 are about configurations the app has actually
+> run. Where a row is about the shipped retriever it says so.
+>
+> The two are not far apart on this key and the gap is stated rather than waved at: on the
+> held-out test split `v4-bm25` scores **0.2391** against `v1-overlap`'s **0.1361**, and
+> `v5-embeddings` beats `v4` by roughly 0.08 on dev. Both sit inside the band that is
+> unremarkable and probably real for lexical retrieval against duplicate judgments; anything
+> above ~0.7 here would mean a bug, not a success.
+
 ### 2.1 The partition — where the winner scores zero
 
 **45.1% of dev queries score exactly nDCG@8 = 0** (1,039 of 2,304). That is not one failure mode,
