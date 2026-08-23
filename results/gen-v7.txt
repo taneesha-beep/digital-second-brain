@@ -13,7 +13,7 @@ PHASE 5.7 — RETRIEVAL QUALITY AGAINST GENERATION QUALITY
   depths, so a between-arm judged difference contains that difference too.
 
     gen-v5   judge coverage  644 of  644 pairs   100.0%
-    gen-v7   judge coverage  303 of  644 pairs   47.0%   <- PARTIAL
+    gen-v7   judge coverage  569 of  644 pairs   88.4%   <- PARTIAL
 
   The emission order is stratified so a prefix is a BALANCED sample rather
   than a corner of the set (§33.4) — that is what makes these figures worth
@@ -146,14 +146,14 @@ E. THE 5.7 TABLE — nDCG@8 AND DOWNSTREAM QUALITY SIDE BY SIDE
     arm      retriever        nDCG@8   items   support   sup null   rate(2)  null
     --------------------------------------------------------------------------------
     gen-v5   v4-bm25          0.2173     322   0.2826   0.1193    5.0%   0.0%
-    gen-v7   v5-embeddings    0.3557     322   0.2702   0.1164    2.6%   0.0%
+    gen-v7   v5-embeddings    0.3557     322   0.2702   0.1164    2.8%   0.0%
 
     nDCG@8   denominator SEEDS (30)          support  denominator ITEMS
     rate(2)  denominator ITEMS (judged)      null     the same items against
                                                       a note they did NOT cite
 
     gen-v5: 644 of 644 judge calls (100.0%), 322 cited verdicts, 322 null verdicts, 358852 actual tokens
-    gen-v7: 303 of 644 judge calls (47.0%), 152 cited verdicts, 151 null verdicts, 162629 actual tokens   <- PARTIAL, rate(2) above is provisional
+    gen-v7: 569 of 644 judge calls (88.4%), 285 cited verdicts, 284 null verdicts, 312392 actual tokens   <- PARTIAL, rate(2) above is provisional
 
 ==============================================================================
 F. THE BETWEEN-ARM DIFFERENCES, EACH BESIDE THE EFFECT IT COULD DETECT
@@ -172,9 +172,9 @@ F. THE BETWEEN-ARM DIFFERENCES, EACH BESIDE THE EFFECT IT COULD DETECT
     --------------------------------------------------------------------------------------------
     lexical support            0.2826  0.2702   -0.0124   0.0313   INSIDE the MDE — not a difference
     lexical support GAP        0.1633  0.1539   -0.0094   0.0310   INSIDE the MDE — not a difference
-    judged mean level (0-2)    0.2019  0.1711   -0.0308   0.1913   INSIDE the MDE — not a difference
-    judged rate(2)             0.0497  0.0263   -0.0234   0.0815   INSIDE the MDE — not a difference
-    judged gap (cited - null)  0.1925  0.1656   -0.0270   0.1915   INSIDE the MDE — not a difference
+    judged mean level (0-2)    0.2019  0.1719   -0.0299   0.1397   INSIDE the MDE — not a difference
+    judged rate(2)             0.0497  0.0281   -0.0216   0.0595   INSIDE the MDE — not a difference
+    judged gap (cited - null)  0.1925  0.1690   -0.0235   0.1399   INSIDE the MDE — not a difference
 
 
   THE JUDGED ROWS ABOVE ARE PROVISIONAL AND THEIR MDE IS COMPUTED ON THE
@@ -214,10 +214,10 @@ G. THE CORRELATION — THE READING OF 5.7 WITH STATISTICAL CONTENT
     ------------------------------------------------------------------------------------------------------
     mean lexical support         naive        46   -0.273       [-0.522, 0.018]   -0.201     0.290
                                  within-arm   46   -0.255       [-0.508, 0.038]   -0.270     0.290   <- QUOTE THIS
-    mean judged level            naive        41   -0.371       [-0.609, -0.072]   -0.395     0.308
-                                 within-arm   41   -0.358       [-0.600, -0.057]   -0.338     0.308   <- QUOTE THIS
-    rate(2)                      naive        41   -0.379       [-0.615, -0.081]   -0.439     0.308
-                                 within-arm   41   -0.352       [-0.595, -0.049]   -0.377     0.308   <- QUOTE THIS
+    mean judged level            naive        46   -0.340       [-0.574, -0.055]   -0.367     0.290
+                                 within-arm   46   -0.324       [-0.562, -0.038]   -0.325     0.290   <- QUOTE THIS
+    rate(2)                      naive        46   -0.286       [-0.532, 0.005]   -0.308     0.290
+                                 within-arm   46   -0.254       [-0.507, 0.039]   -0.289     0.290   <- QUOTE THIS
 
   AND PER ARM, so a pooled figure cannot hide two arms disagreeing:
 
@@ -226,7 +226,7 @@ G. THE CORRELATION — THE READING OF 5.7 WITH STATISTICAL CONTENT
     gen-v5   mean lexical support      23   0.047       0.010
     gen-v5   mean judged level         23   -0.429       -0.463
     gen-v7   mean lexical support      23   -0.386       -0.324
-    gen-v7   mean judged level         18   -0.302       -0.285
+    gen-v7   mean judged level         23   -0.245       -0.241
 
   BOTH r AND rho ARE PRINTED BECAUSE THE RETRIEVAL AXIS IS MOSTLY TIES. With
   a median of one judged document per seed, most seeds sit at nDCG@8 = 0, and
