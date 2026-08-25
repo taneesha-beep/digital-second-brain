@@ -373,9 +373,3 @@ Work continuing: an independent judge model for groundedness with a human agreem
 score beside it, the same generation run repeated across retrievers to test whether
 better retrieval measurably improves output, request tracing, and a failure-mode catalog
 with measured frequencies.
-
----
-
-## License
-
-Not yet licensed.
