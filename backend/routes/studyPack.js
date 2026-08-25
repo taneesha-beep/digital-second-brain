@@ -1,10 +1,22 @@
 const express = require('express');
 const { protect } = require('../middleware/auth');
+const { studyPackLimiter, quotaDailyLimiter } = require('../middleware/rateLimit');
 const { buildStudyPack } = require('../services/studyPack.service');
 
 const router = express.Router();
 
 router.use(protect);
+
+// Phase 0.3's criterion EXTENDED, 25 Aug 2026. 0.3 was written on 31 Jul 2026
+// and names /api/llm/* only, because this endpoint did not exist until 5.1.
+// services/studyPack.service.js:504 constructs its own `new Groq()` and never
+// touches llm.service.js, so nothing mounted on /api/llm covers this route —
+// and results/studypack-constants.txt §C prices a pack at 5508 reserved tokens
+// against a single-note feature's ~2338, making the uncovered one the expensive
+// one. A tighter per-user limit than /api/llm for that reason; the same shared
+// daily budget, because there is only one organisation quota.
+router.use(studyPackLimiter);
+router.use(quotaDailyLimiter);
 
 /**
  * POST /api/study-pack/:noteId — Phase 5.1.

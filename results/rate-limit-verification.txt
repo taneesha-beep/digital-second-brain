@@ -1,0 +1,158 @@
+RATE LIMITING ON THE TWO QUOTA-SPENDING ROUTES — Phase 0.3, finished
+==============================================================================
+
+Produced by hand against a REAL server on a real socket, not by jest.
+tests/rate-limit.test.js is the repeatable proof; this is the end-to-end one,
+and it is what 0.3's Done criterion is phrased as: a client that keeps asking
+gets a 429 with Retry-After.
+
+  server        node server.js, backend/ at the branch head
+  database      throwaway mongo:7 container, dsb_ratelimit_check
+  GROQ_API_KEY  UNSET for this run
+
+  ZERO GROQ QUOTA IS SPENT AND IT CANNOT BE. Every request below names a note
+  id that does not exist, so routes/llm.js returns 400 at the ownership check
+  and buildStudyPack() returns null before generate() is reached. The limiters
+  sit above both handlers, so a 400 and a 200 cost the same against them.
+
+  THE 400s BELOW ARE THE SUCCESSFUL CASE. They mean the limiter let the
+  request through to the handler, which then refused it for its own reason.
+  Read 400 as "not rate limited".
+
+  limits in force (backend/middleware/rateLimit.js)
+     per user, /api/llm          10 per 15 min
+     per user, /api/study-pack   6 per 15 min
+     GLOBAL, both routes         18 per 24 h, shared by every user
+
+==============================================================================
+A. 0.3's CRITERION, VERBATIM: /api/llm/* returns 429 with Retry-After
+==============================================================================
+
+  user A, 10 requests to POST /api/llm/:noteId/summarize
+     10x 400
+     RateLimit header on the last one   "10-in-15min"; r=0; t=900, "18-in-1day"; r=8; t=86400
+
+  user A, request 11
+     status                             429
+     Retry-After                        900 seconds
+     RateLimit                          "10-in-15min"; r=0; t=900
+     RateLimit-Policy                   "10-in-15min"; q=10; w=900; pk=:NzNjM2MzZTQ3NTZh:
+     body.message                       "Too many AI requests. This app shares one Groq quota with its evaluation runs, so each account is limited to 10 AI requests every 15 minutes. Try again shortly."
+     body.retryAfterSeconds             900
+
+  CRITERION MET: 429, with Retry-After, past the limit.
+
+==============================================================================
+B. THE EXTENSION: /api/study-pack IS COVERED TOO, AND MORE TIGHTLY
+==============================================================================
+
+  0.3 was written 31 Jul 2026 and names /api/llm/* only. Study Pack arrived
+  at 5.1 on 19 Aug 2026 with its own `new Groq()`, so it spends the same
+  organisation quota on a path /api/llm does not cover — and at 5508 reserved
+  tokens against ~2338 it is the expensive one
+  (results/studypack-constants.txt §C).
+
+  user B, 6 requests to POST /api/study-pack/:noteId
+     6x 400
+
+  user B, request 7
+     status                             429
+     Retry-After                        900 seconds
+     RateLimit-Policy                   "6-in-15min"; q=6; w=900; pk=:MjIxMDMwYjgxZTMz:
+     body.message                       "Too many study packs. A study pack reserves about 5,500 tokens against a shared daily quota, so each account is limited to 6 every 15 minutes. Try again shortly."
+
+==============================================================================
+C. THE LIMIT IS PER USER, SO ONE ACCOUNT CANNOT REFUSE ANOTHER
+==============================================================================
+
+  user A is exhausted on /api/llm (429 above). user C, first request:
+     status                             400   <- not 429
+     RateLimit                          "10-in-15min"; r=9; t=900, "18-in-1day"; r=1; t=86400
+
+  The key is req.user.id, which is why the limiters mount inside the routers
+  AFTER protect. Keyed on the client address instead, every user behind
+  Railway's edge would share one bucket and this line would read 429.
+
+==============================================================================
+D. THE GLOBAL DAILY BUDGET, WHICH IS THE ONLY DERIVED NUMBER
+==============================================================================
+
+  Per-user limits do not bound a per-ORGANISATION cap: registration is open,
+  so N accounts multiply any per-user number by N. One shared budget does.
+
+     18 requests x 5508 reserved tokens = 99144
+     99144 / 200000 = 49.6% of the daily organisation cap
+
+  — so even if every one of them were a study pack rather than a cheaper
+  single-note call, over half the day survives for an eval run.
+
+  spent against the shared budget so far   17 of 18
+     (user A 10, user B 6, user C 1 — and NONE of the per-user 429s above,
+      because the per-user limiter runs first and a request it refuses never
+      reaches the shared one)
+
+  user C draws the remaining 1
+     1x 400
+
+  user D now asks for a study pack. D HAS SPENT NOTHING — its own per-user
+  budget is untouched at 6 of 6 — but the SHARED budget is gone, so:
+     status                             429
+     Retry-After                        86400 seconds  = 24.0 h
+     RateLimit-Policy                   "6-in-15min"; q=6; w=900; pk=:N2MyOGJkM2U4YmE3:, "18-in-1day"; q=18; w=86400; pk=:NzE1Mzc4NjQxYzJl:
+     body.message                       "This demo has used its shared daily AI budget. The app runs on a free Groq tier whose quota is shared with the project's evaluation runs, so total AI requests are capped at 18 per day across all users. Try again tomorrow."
+
+  THE PROBE HAD TO COME FROM A FRESH USER, AND THE FIRST ATTEMPT DID NOT.
+  It reused user B, which was still inside its own exhausted 15-minute
+  window, and got a 429 carrying Retry-After 900 and the per-user message —
+  a refusal indistinguishable from the one being demonstrated except by
+  reading the text. Two limiters answering with the same status code is
+  exactly the shape a verification can pass on by accident.
+
+  THAT REFUSAL IS THE DESIGN AND ITS COST IS REAL: a budget shared across
+  users means one user can exhaust it for everybody, a recruiter opening the
+  demo included. Taken deliberately, because the resource being protected is
+  itself shared — a per-user bound on a per-organisation cap is not a bound.
+
+==============================================================================
+E. WHAT THIS DOES NOT ESTABLISH
+==============================================================================
+
+  - NOTHING ABOUT RESTARTS, AND THAT LIMITATION WAS OBSERVED RATHER THAN
+    REASONED ABOUT. The store is in-process memory, so the 24-hour window is
+    24 hours OF ONE PROCESS LIFETIME. Producing this file took two runs, and
+    the second needed the server restarted precisely because the first had
+    spent the whole global budget and nothing gives it back. Railway restarts
+    on every deploy and under railway.json's restart policy, so the same
+    thing happens there. A shared store means Redis, and PRIMER §11's
+    argument against adding Redis for an unmeasured problem is untouched.
+    Named, not fixed.
+  - NOTHING ABOUT MULTIPLE INSTANCES. One process, one counter. Two replicas
+    would each get their own budget and the global bound would double.
+  - IT COUNTS REQUESTS, NOT TOKENS. The global bound is priced at the WORST
+    case — every request a study pack — for exactly this reason.
+  - IT IS NOT AN ABUSE DEFENCE. Open registration means the per-user limit is
+    available N times. The global limiter is what stops that reaching the
+    quota, and it stops it by refusing everybody. That converts a quota
+    exhaustion into a denial of service, which is the better failure, not a
+    fixed one.
+  - THE `pk=` IN EVERY RateLimit-Policy ABOVE IS NOT A USER ID, AND THAT WAS
+    CHECKED RATHER THAN ASSUMED. This file is committed to a public
+    repository and the draft-8 partition key is derived from the limiter key,
+    which here IS a user id. Read from the installed source
+    (express-rate-limit/dist/index.cjs:252): it is base64 of the first 12 hex
+    characters of a SHA-256 of the key. Opaque, and the users below are
+    throwaway ones in a dropped database either way. 6.3 recorded the general
+    hazard — an artifact cannot be redacted after it is committed.
+  - NOTHING ABOUT THE EVAL HARNESS, because it is not affected. No script
+    under backend/scripts/ holds an HTTP client at all — asserted in
+    tests/rate-limit.test.js — so every run calls the services directly and
+    never passes through this middleware. PRIMER §7.3 offered a bypass or a
+    direct-calling harness; it was already the second.
+
+==============================================================================
+ENVIRONMENT
+==============================================================================
+
+  darwin 25.6.0 arm64, Node v25.8.1
+  MongoDB 7.0.39 in Docker, image pinned by digest in docker-compose.yml
+  express-rate-limit 8.6.2, pinned exactly in backend/package.json
