@@ -322,9 +322,22 @@ function main() {
   let allowed = 0;
   let illustrative = 0;
 
+  // ABSENT WRITEUPS ARE COLLECTED, NOT SILENTLY SKIPPED. Four of this list are
+  // gitignored, so a fresh clone — which is what CI checks out — has only the
+  // published ones and this check runs at a fraction of its local coverage. It
+  // used to `continue` here and still print "PASS", with the drop visible only
+  // to a reader who knew the local writeup count by heart. check:blocks hits
+  // the identical condition and DECLARES it ("RULE 3 DID NOT RUN, AND THAT IS
+  // DECLARED RATHER THAN SILENT"); this now does the same. It is deliberately
+  // NOT a failure: the documents cannot be in CI and are not meant to be.
+  const absentWriteups = [];
+
   for (const rel of WRITEUPS) {
     const file = path.join(REPO_ROOT, rel);
-    if (!fs.existsSync(file)) continue;
+    if (!fs.existsSync(file)) {
+      absentWriteups.push(rel);
+      continue;
+    }
     const text = fs.readFileSync(file, 'utf8');
     const lineStarts = [];
     for (let i = 0; i < text.length; i += 1) if (i === 0 || text[i - 1] === '\n') lineStarts.push(i);
@@ -388,12 +401,26 @@ function main() {
   // --- report ---------------------------------------------------------------
   console.log('check:claims — every decimal of 4+ places in the writeups must be the');
   console.log('correct rounding of a decimal in a committed artifact.\n');
-  console.log(`  writeups        ${WRITEUPS.filter((f) => fs.existsSync(path.join(REPO_ROOT, f))).length}`);
+  console.log(`  writeups        ${WRITEUPS.length - absentWriteups.length} of ${WRITEUPS.length}`);
   console.log(`  artifacts       ${artifactFiles.length} files, ${artifactValues} decimals indexed`);
   console.log(`  decimals checked ${checked}`);
   console.log(`    structural      ${allowed}   arithmetic on a protocol constant`);
   console.log(`    illustrative    ${illustrative}   invented figures in format examples`);
   console.log('');
+  if (absentWriteups.length > 0) {
+    console.log('  PARTIAL RUN — DECLARED RATHER THAN SILENT.');
+    console.log('  These writeups are gitignored by design and are absent here, so not one');
+    console.log('  of their decimals was checked:\n');
+    for (const rel of absentWriteups) console.log(`    ${rel}`);
+    console.log('');
+    console.log(`  So "${checked} decimals checked" is the coverage of this run, not of the`);
+    console.log('  document set. A fresh clone and CI both land here. That is expected —');
+    console.log('  the absent files hold personal career material and are never published —');
+    console.log('  but it means a green step in CI is a much weaker claim than the same');
+    console.log('  step locally, and the count above is the only place that shows it.');
+    console.log('  Run with docs/ present for full coverage.');
+    console.log('');
+  }
   if (gapsHit.size > 0) {
     console.log('  KNOWN GAPS — correct, measured, and written by no script. Reported every');
     console.log('  run rather than suppressed. Not failures: the fix is a writer on a');
@@ -405,7 +432,11 @@ function main() {
   }
 
   if (failures.length === 0) {
-    console.log('  PASS — every checked decimal traces to an artifact.');
+    console.log(
+      absentWriteups.length > 0
+        ? `  PASS (PARTIAL) — every checked decimal traces to an artifact, over ${WRITEUPS.length - absentWriteups.length} of ${WRITEUPS.length} writeups.`
+        : '  PASS — every checked decimal traces to an artifact.'
+    );
     return;
   }
 
