@@ -29,8 +29,9 @@ services:
     environment:
       PORT: 5001
       MONGO_URI: mongodb://mongo:27017/digital_second_brain
-      # A labelled local default, not a credential. Production is Railway with
-      # its own environment. Override by exporting JWT_SECRET before `up`.
+      # A labelled local default, not a credential. Production is Render with
+      # its own environment (Railway until 26 Aug 2026, when the trial expired).
+      # Override by exporting JWT_SECRET before `up`.
       JWT_SECRET: ${JWT_SECRET:-dev-only-not-a-secret-change-me}
       JWT_EXPIRE: ${JWT_EXPIRE:-7d}
       # Empty unless you export it. The app boots and works without one; only
