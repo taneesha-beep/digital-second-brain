@@ -437,3 +437,104 @@ describe('rule 3 — reverse coverage (4.3)', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// RULE 2's ROOTS — the docs-relative subpath, Phase 8.2
+// ---------------------------------------------------------------------------
+//
+// docs/ARCHITECTURE.md links into docs/adr/ the only way that works for a
+// READER: `adr/0003-no-job-queue.md`, relative to its own directory, which is
+// what GitHub resolves. That token carries a slash, so rule 2 checks it — and
+// before 8.2 it resolved against none of the roots, because `docs` was not one.
+// Ten correct links went red on the first run of the checker after they were
+// written.
+//
+// No writeup had ever written a docs-relative SUBPATH before: the gitignored
+// planning documents refer to each other by bare basename, which pathsIn skips
+// for having no slash. So the gap was real and had simply never been reachable.
+describe('rule 2 — a docs-relative subpath resolves (8.2)', () => {
+  const { ROOTS, resolveAmongRoots, pathsIn } = require('../scripts/check-blocks');
+
+  test('`docs` is one of the roots', () => {
+    expect(ROOTS).toContain('docs');
+  });
+
+  // THE ONE THAT WOULD HAVE CAUGHT IT. Driving the REAL resolver, not a
+  // re-expression of it — see the function's own comment for why that matters.
+  test('a docs-relative subpath resolves, and names the root it resolved under', () => {
+    expect(resolveAmongRoots('adr/0003-no-job-queue.md')).toBe('docs');
+    expect(resolveAmongRoots('adr/README.md')).toBe('docs');
+  });
+
+  test('a token that exists nowhere still does not resolve', () => {
+    expect(resolveAmongRoots('adr/0099-not-a-real-record.md')).toBeUndefined();
+    expect(resolveAmongRoots('nonsense/nothing-here.md')).toBeUndefined();
+  });
+
+  // THE JOIN, and it is the half that survives a mutation of either part.
+  // `docs` in ROOTS and a main() that never calls the resolver are both
+  // individually "correct"; the wiring between them is the thing that broke in
+  // three of the last session's surviving mutations. This drives the real
+  // extractor into the real resolver, in the order the checker does.
+  test('the markdown link syntax ARCHITECTURE.md actually uses resolves end to end', () => {
+    const line = 'declined ([ADR-0003](adr/0003-no-job-queue.md)) and made observable instead';
+    const tokens = pathsIn(line).map((p) => p.token);
+    expect(tokens).toContain('adr/0003-no-job-queue.md');
+    for (const t of tokens) expect(resolveAmongRoots(t)).toBeDefined();
+  });
+
+  // The published tree this depends on. If an ADR is renamed and the links are
+  // not, the tests above go red for the right reason rather than silently
+  // passing on a different file.
+  test('every ADR docs/ARCHITECTURE.md links to is present', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const REPO = path.resolve(__dirname, '..', '..');
+    const text = fs.readFileSync(path.join(REPO, 'docs', 'ARCHITECTURE.md'), 'utf8');
+    const targets = [...text.matchAll(/\]\((adr\/[^)]+)\)/g)].map((m) => m[1]);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const t of new Set(targets)) {
+      expect(fs.existsSync(path.join(REPO, 'docs', t))).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE WIRING, AND IT IS HERE BECAUSE A MUTATION SURVIVED WITHOUT IT
+// ---------------------------------------------------------------------------
+//
+// The block above tests pathsIn and resolveAmongRoots, and tests them driving
+// each other. That is still not enough, and the 8.2 mutation pass proved it:
+// replacing `resolveAmongRoots(token)` inside main() with the pre-8.2 predicate
+// inlined — the exact regression this phase fixed — left EVERY test above green
+// and the checker broken on ten correct links.
+//
+// Both halves stay individually correct under that mutation. Only the wiring
+// moves, and nothing was reading the wiring. This is the third time in three
+// sessions that the surviving mutation has been a join rather than a logic
+// error, so it gets a guard of its own rather than another note about it.
+//
+// BEHAVIOURAL, NOT A SOURCE GREP. Asserting that main()'s text contains a call
+// would be defeated by a comment mentioning the function — this repository has
+// hit exactly that, twice, and once had a comment stripper eat the code it was
+// checking. Running the real checker and reading its exit status cannot be
+// fooled that way.
+describe('rule 2 — main() actually uses the resolver (8.2 mutation pass)', () => {
+  const { execFileSync } = require('child_process');
+  const path = require('path');
+
+  test('the checker exits 0 on this repository, with every reference resolving', () => {
+    const script = path.resolve(__dirname, '..', 'scripts', 'check-blocks.js');
+    let out;
+    let status = 0;
+    try {
+      out = execFileSync('node', [script], { encoding: 'utf8' });
+    } catch (e) {
+      out = `${e.stdout || ''}${e.stderr || ''}`;
+      status = e.status === undefined ? 1 : e.status;
+    }
+    // Reported together: a bare exit code says a run failed and not what it saw.
+    expect({ status, unresolved: /do not resolve/.test(out) })
+      .toEqual({ status: 0, unresolved: false });
+  });
+});

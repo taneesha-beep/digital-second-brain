@@ -412,9 +412,15 @@ the budget is well clear of the model's context window.
 *Why it is here anyway:* **a budget's guarantee is set by its worst call, and the worst case got
 54% worse under a second retriever.** The −63 was not the tail; it was the tail *of one
 retriever's neighbour lengths*. The rate converged across three readings and the bound did not.
-*Not fixed:* changing the divisor is a one-variable product change and was out of scope.
-*A test cannot currently fail on it,* because the test checks the single-note rows the constant was
-fitted on.
+*Fixed 27 Aug 2026, and every figure above is retained as the measurement that produced the fix.*
+The divisor was changed from 4.5 to 4.2 — a one-variable product change — after the tightest
+bounding value across **both** arms' committed cluster calls was derived rather than fitted on one
+of them. **The counts and rates in this entry measure the previous constant**, which is what
+shipped when they were taken; the post-change rate is unmeasured and would need a fresh run.
+[`results/estimator-bound.txt`](../results/estimator-bound.txt)
+*The test can now fail on it.* It previously read only the single-note rows the constant was fitted
+on — a check that could not fail on the population the constant actually shipped against — and it
+now reads the cluster ledgers.
 *Detection:* every response reports the estimate beside the API's actual figure, so the
 extrapolation is measured on every call.
 
@@ -451,7 +457,7 @@ output-length prediction; the rest run long, and the spread does not track outpu
 | G6 | item not supported by the note it cites | 273 UNSUPPORTED of 322 | items |
 | G7 | citation to a note not in context | **0 of 322 — 0.0%** | items |
 | G8 | shipped model string retired | 1 | occurrences |
-| G9 | context estimator underestimates | 27 of 60 — 45.0% | cluster prompts |
+| G9 | context estimator underestimates | 27 of 60 — 45.0% | cluster prompts · **fixed 27 Aug 2026; this rate measures the previous constant** |
 | G10 | generation latency tail | p95 25,223 ms | calls |
 
 ---

@@ -166,7 +166,41 @@ const WRITEUPS = [
   // docs/ — held by hand. The extra hazard is that it embeds an IMAGE, which is
   // why `png` is in FILE_EXT below: a broken image in the one visual artifact
   // this repository has would otherwise be invisible to every check.
-  { file: 'docs/OBSERVABILITY.md', mode: 'current', published: true }
+  { file: 'docs/OBSERVABILITY.md', mode: 'current', published: true },
+  // 8.2. ARCHITECTURE.md and the eight ADRs, all TRACKED and all `current`.
+  //
+  // WHY EACH IS DECLARED RATHER THAN GLOBBED. `docs/adr/*.md` would be one line
+  // instead of nine, and it would convert this list from a DECLARATION into a
+  // PROBE — the exact distinction the header above spends a paragraph on and
+  // that tests/helpers/preconditions.js makes for the same reason. A glob
+  // answers "which files are there", which is satisfied by an empty directory;
+  // this list answers "which files were MEANT to be there", so a deleted ADR is
+  // a FAILURE rather than a silently shorter run.
+  //
+  // WHAT THIS SLIGHTLY LOOSENS, said plainly rather than left to be found: rule
+  // 3 counts a file as covered if its BASENAME appears in any writeup, so nine
+  // more documents naming real source files widens what rule 3 forgives. That
+  // is the intended direction — these documents genuinely describe those files —
+  // but it is a loosening and not a free addition.
+  //
+  // WHAT IT DOES NOT COVER, AND CANNOT. pathsIn() requires a slash or a
+  // ROOT_FILES entry, so the ADRs' links to EACH OTHER — `0003-no-job-queue.md`
+  // and the like — are invisible to rules 1, 2 and 4 alike. There are 105 link
+  // targets across these files; 30 are inter-ADR and remain unchecked, and all
+  // 105 were resolved by hand at 8.2. ARCHITECTURE.md's nine links INTO adr/
+  // are checked, because they carry a slash and `docs` is now a ROOT — see the
+  // note there. A doc-relative resolver for the other thirty is a real, small
+  // task and it is not this one.
+  { file: 'docs/ARCHITECTURE.md', mode: 'current', published: true },
+  { file: 'docs/adr/README.md', mode: 'current', published: true },
+  { file: 'docs/adr/0001-canonical-edge-storage.md', mode: 'current', published: true },
+  { file: 'docs/adr/0002-lexical-first-retrieval.md', mode: 'current', published: true },
+  { file: 'docs/adr/0003-no-job-queue.md', mode: 'current', published: true },
+  { file: 'docs/adr/0004-microbenchmark-not-load-test.md', mode: 'current', published: true },
+  { file: 'docs/adr/0005-no-response-caching.md', mode: 'current', published: true },
+  { file: 'docs/adr/0006-offline-retriever-interface.md', mode: 'current', published: true },
+  { file: 'docs/adr/0007-in-memory-per-user-index.md', mode: 'current', published: true },
+  { file: 'docs/adr/0008-external-ground-truth.md', mode: 'current', published: true }
 ];
 
 const MANIFESTS = ['backend/package.json', 'scripts/package.json', 'frontend/package.json', 'package.json'];
@@ -223,7 +257,13 @@ const PLANNED = new Map([
   // and every reference still reported PLANNED. **Shipping a deliverable does
   // not clear its PLANNED entry — an editor has to.** That is worth stating
   // twice, because it has now been discovered twice.
-  ['docs/ARCHITECTURE.md', 'Phase 8 deliverable'],
+  // docs/ARCHITECTURE.md WAS HERE AND WAS REMOVED AT 8.2, WHICH IS THE THIRD
+  // TIME THIS HAS HAD TO BE DONE BY HAND — after docs/FAILURE-MODES.md at 7.1
+  // and docs/OBSERVABILITY.md at 6.3, each of which left a comment saying so.
+  // The lookup below short-circuits BEFORE the existence check, so writing the
+  // file changes nothing on its own: every reference keeps reporting PLANNED.
+  // Three recordings is enough to stop calling it a surprise: SHIPPING A
+  // DELIVERABLE DOES NOT CLEAR ITS PLANNED ENTRY. An editor has to.
   ['docs/INTERVIEW-NOTES.md', 'gitignored planning doc, may be absent'],
   ['frontend/src/components/graph/LinkExplainPanel.jsx', 'Phase 7.4 deliverable, END-STATE §2.13'],
   ['frontend/src/components/editor/LinkExplainPanel.jsx', 'Phase 7.4 deliverable, END-STATE §2.13']
@@ -250,7 +290,26 @@ const FILE_EXT = /\.(js|jsx|json|md|py|yml|yaml|txt|csv|jsonl|qrels|xml|sh|env|l
 // check — `index.js` alone would resolve against several roots — and that cost
 // is bounded by requiring a slash in the token, so a bare filename is never
 // checked at all.
-const ROOTS = ['', 'backend', 'results', 'frontend', 'frontend/src', 'scripts', 'data'];
+// `docs` ADDED AT 8.2, AND IT CLOSED A GAP RATHER THAN LOOSENING A CHECK.
+// docs/ARCHITECTURE.md links to docs/adr/0003-no-job-queue.md the only way that
+// works for a READER — as `adr/0003-no-job-queue.md`, relative to its own
+// directory, which is what GitHub resolves. That token has a slash, so rule 2
+// checked it, and it resolved against none of the roots below because `docs`
+// was not one of them. Ten correct links went red.
+//
+// No writeup had ever written a docs-relative SUBPATH before, which is why this
+// never fired: the four gitignored documents refer to each other by bare
+// basename, and pathsIn skips a token with no slash. So this is the same
+// contextual-root argument the paragraph above makes for `backend` and
+// `results`, arriving the first time a published document acquired a
+// subdirectory.
+//
+// WHAT IT DOES NOT FIX, and the distinction is worth keeping straight: the
+// ADRs link to EACH OTHER as `0003-no-job-queue.md`, with no slash at all, so
+// those remain invisible to every rule here. Adding `docs` makes the nine links
+// from ARCHITECTURE.md checked; it does not make the thirty between ADRs
+// checked. Those were resolved by hand at 8.2 and nothing re-checks them.
+const ROOTS = ['', 'backend', 'results', 'frontend', 'frontend/src', 'scripts', 'data', 'docs'];
 
 // Placeholder syntax. `data/corpus/<site>.jsonl` and
 // `data/splits/cooking.{train,dev,test}.txt` are templates describing a family
@@ -579,6 +638,25 @@ function gitignoredAmong(paths, run = defaultCheckIgnore) {
   }
 }
 
+/**
+ * RULE 2's RESOLVER, EXTRACTED AT 8.2 SO A TEST CAN DRIVE THE REAL ONE.
+ *
+ * Returns the ROOT the token resolves under, or undefined. It is a named
+ * function for the reason gitignoredAmong and publishedLinkFailures are:
+ * a test that re-expresses `ROOTS.find(...)` inline proves only that the test
+ * agrees with itself, and the pre-Phase-8 sweep recorded exactly that mutation
+ * surviving two passes in check-claims.js — "a test that reimplemented the
+ * prefix predicate and agreed with itself".
+ *
+ * The JOIN is the part worth guarding. Adding `docs` to ROOTS and failing to
+ * call this from main() leaves both halves correct and the checker broken, and
+ * that shape is why the last three mutations to survive this repository's
+ * mutation passes were all wiring rather than logic.
+ */
+function resolveAmongRoots(token) {
+  return ROOTS.find((r) => fs.existsSync(path.join(REPO_ROOT, r, token)));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -644,7 +722,7 @@ function main() {
         readerHit.set(token, (readerHit.get(token) || 0) + 1);
         continue;
       }
-      const root = ROOTS.find((r) => fs.existsSync(path.join(REPO_ROOT, r, token)));
+      const root = resolveAmongRoots(token);
       if (root !== undefined) {
         // RULE 4's INPUT. A path that resolves is not yet a path a stranger can
         // follow — see the rule below. Only published documents are collected;
@@ -916,4 +994,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { npmScriptsIn, pathsIn, expandBraces, COVERED_ROOTS, UNDOCUMENTED, ROOT_FILES, gitignoredAmong, publishedLinkFailures };
+module.exports = { npmScriptsIn, pathsIn, expandBraces, COVERED_ROOTS, UNDOCUMENTED, ROOT_FILES, ROOTS, resolveAmongRoots, gitignoredAmong, publishedLinkFailures };

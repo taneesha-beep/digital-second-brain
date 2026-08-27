@@ -225,6 +225,16 @@ assumed, and a limitation nobody writes down is one nobody fixes:
 
 ## Architecture
 
+> The diagram below is the shape. **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** is how the
+> pieces actually fit — the retrieval path in detail, the boundary that makes the numbers above
+> claims about shipped code, and the things in here that will surprise you.
+>
+> **[`docs/adr/`](docs/adr/README.md) — eight architecture decision records, four of which document
+> a decision *not* to build something**, each with the price of the thing declined and the
+> conditions that would change the answer. No job queue, no load test, no response cache, no
+> persisted document-frequency table — and the retriever that won the ladder is not the one that
+> ships.
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    FRONTEND (React 18 + Vite)                │

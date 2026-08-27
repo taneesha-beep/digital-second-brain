@@ -208,6 +208,39 @@ const WRITEUPS = [
   // values can do. The two are complements: this narrows what an invented digit
   // can hide behind, that one pins what belongs in each slot.
   { file: 'README.md', artifacts: ['results/runs/', 'results/test-ladder.txt'] },
+  // ADDED AT 8.2 — nine more published documents, and all of them UNSCOPED.
+  //
+  // WHY UNSCOPED, WHEN README IS NOT. README quotes ONE table drawn from ONE
+  // family of artifacts, so naming that family is both possible and a 4.2x
+  // narrowing. These nine cite deliberately WIDE: the ladder, the comparisons,
+  // the parity proofs, the write-cost fixture, the graph characterization, the
+  // generation ledgers. A scope listing all of those is the global index with
+  // extra steps, and a scope that MISSES one turns a correct figure red — which
+  // is the false-positive failure this tool's header calls the worst output it
+  // can produce. So they take the same unscoped treatment as the two published
+  // documents already on this list.
+  //
+  // tests/check-claims.test.js asserts README is the ONLY scoped writeup and
+  // that every other entry has `artifacts: null`. These additions keep that
+  // true, which is the assertion working rather than a coincidence.
+  //
+  // WHAT IS ACTUALLY COVERED HERE IS SMALL, AND EACH DOCUMENT SAYS SO IN ITS
+  // OWN TEXT. MIN_PLACES is 4, so the nDCG figures and the exponent-form
+  // Sigma_t df_t^2 values are checked and every count, percentage, millisecond
+  // and MiB figure in these files is out of scope BY CONSTRUCTION. That is the
+  // documented trade (§3.6), not a hole — and 8.1 measured what even the
+  // covered half buys: this checker catches an INVENTED digit and not a
+  // MISPLACED one.
+  'docs/ARCHITECTURE.md',
+  'docs/adr/README.md',
+  'docs/adr/0001-canonical-edge-storage.md',
+  'docs/adr/0002-lexical-first-retrieval.md',
+  'docs/adr/0003-no-job-queue.md',
+  'docs/adr/0004-microbenchmark-not-load-test.md',
+  'docs/adr/0005-no-response-caching.md',
+  'docs/adr/0006-offline-retriever-interface.md',
+  'docs/adr/0007-in-memory-per-user-index.md',
+  'docs/adr/0008-external-ground-truth.md',
   // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
   // That makes it the first document to be both a writeup and, by path, a
   // candidate artifact — so it would justify its own figures: every decimal in
