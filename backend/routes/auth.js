@@ -2,6 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const jwt     = require('jsonwebtoken');
 const User    = require('../models/User');
+const { registerLimiter } = require('../middleware/rateLimit');
 
 // Helper: generate JWT
 const generateToken = (user) =>
@@ -15,7 +16,19 @@ const generateToken = (user) =>
   });
 
 // ── POST /api/auth/register ──────────────────────────────────────────────────
-router.post('/register', async (req, res) => {
+//
+// registerLimiter is ROUTE-level, not router.use(), and that is the whole
+// design. This router has no `protect` on it, so a router-level mount would
+// cover /login as well — and a limiter keyed globally on login turns one
+// credential-stuffing attempt into an outage for every existing user. See
+// middleware/rateLimit.js's header: register is once-per-lifetime and can
+// tolerate a shared budget; login is per-session and cannot.
+//
+// It is FIRST in the chain, before the body is read, so a flood is refused
+// before it reaches the User.findOne() and the bcrypt hash it would otherwise
+// pay for. That ordering is the point of putting it here rather than inside
+// the handler.
+router.post('/register', registerLimiter, async (req, res) => {
   const { name, username, email, password } = req.body;
 
   if (!name || !username || !email || !password) {

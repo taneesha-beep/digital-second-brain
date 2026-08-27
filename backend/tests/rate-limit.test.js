@@ -50,7 +50,8 @@ const {
   identityKey,
   llmLimiter,
   studyPackLimiter,
-  quotaDailyLimiter
+  quotaDailyLimiter,
+  registerLimiter
 } = require('../middleware/rateLimit');
 
 const BACKEND = path.resolve(__dirname, '..');
@@ -351,6 +352,169 @@ describe('the global daily limiter, which is the only DERIVED number here', () =
 
 // ───────────────────────────────────────────────────────────────────────────
 
+describe('the registration limiter, added 27 Aug 2026 because the app went public', () => {
+  const read = (rel) => fs.readFileSync(path.join(BACKEND, rel), 'utf8');
+  const codeOnly = (text) => text
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const auth = codeOnly(read('routes/auth.js'));
+
+  test('the stripper works on routes/auth.js too, or the structural half is vacuous', () => {
+    // Same positive control the router block runs, re-run on this file because
+    // its comments name registerLimiter several times in prose.
+    expect(read('routes/auth.js')).toMatch(/^\s*\/\/.*registerLimiter/mi);
+    expect(auth).not.toMatch(/^\s*\/\//m);
+  });
+
+  test(`${LIMITS.register.max} pass, the next is 429, and it carries Retry-After`, async () => {
+    spend(registerLimiter, 'register:global');
+    const { server, base } = await listen(appWith(registerLimiter));
+    try {
+      for (let i = 0; i < LIMITS.register.max; i += 1) {
+        expect((await hit(base, null)).status).toBe(200);
+      }
+      const refused = await hit(base, null);
+      expect(refused.status).toBe(429);
+      expect(refused.retryAfter).not.toBeNull();
+      expect(Number(refused.retryAfter)).toBeGreaterThan(0);
+      expect(Number(refused.retryAfter)).toBeLessThanOrEqual(LIMITS.register.windowMs / 1000);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('it counts requests that carry NO user at all, which is the whole point', async () => {
+    // /api/auth/register runs before `protect` — it is the route that CREATES
+    // the user — so every real request to it is unauthenticated. A limiter that
+    // only counted authenticated requests would count nothing here. The harness
+    // sends no x-test-user below for exactly that reason.
+    spend(registerLimiter, 'register:global');
+    const { server, base } = await listen(appWith(registerLimiter));
+    try {
+      for (let i = 0; i < LIMITS.register.max; i += 1) await hit(base, null);
+      expect((await hit(base, null)).status).toBe(429);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('the key is constant, so distinct identities cannot each get their own budget', async () => {
+    // The forced design: this route has no req.user.id and its IP cannot be
+    // trusted behind two proxies, so every visitor shares one bucket. If the
+    // key were ever "fixed" to identityKey, these distinct users would each get
+    // their own allowance and the limiter would bound nothing.
+    spend(registerLimiter, 'register:global');
+    const { server, base } = await listen(appWith(registerLimiter));
+    try {
+      for (let i = 0; i < LIMITS.register.max; i += 1) {
+        expect((await hit(base, `visitor-${i}`)).status).toBe(200);
+      }
+      expect((await hit(base, 'a-completely-new-visitor')).status).toBe(429);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('the body is JSON with a `message`, which is the shape RegisterPage renders', async () => {
+    // frontend/src/pages/RegisterPage.jsx:26 reads err?.response?.data?.message,
+    // the same expression AIPanel uses. The library's default body is a plain
+    // string, which that expression reads as undefined.
+    spend(registerLimiter, 'register:global');
+    const { server, base } = await listen(appWith(registerLimiter));
+    try {
+      for (let i = 0; i < LIMITS.register.max; i += 1) await hit(base, null);
+      const refused = await hit(base, null);
+      expect(refused.body).not.toBeNull();
+      expect(typeof refused.body.message).toBe('string');
+      expect(refused.body.message.length).toBeGreaterThan(20);
+      expect(refused.body.retryAfterSeconds).toBe(Number(refused.retryAfter));
+      // It must tell an EXISTING user that signing in still works, because it
+      // does — /login is deliberately unlimited — and a refusal that reads as
+      // "the app is down" would be false.
+      expect(refused.body.message).toMatch(/sign(ing)? in/i);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('its window is an HOUR, not a day — the blast-radius half of the choice', () => {
+    // A 24-hour shared window on the front door lets one attacker close signup
+    // until tomorrow. An hour bounds that. The max is PICKED and could not be
+    // derived (middleware/rateLimit.js's header says why); the WINDOW is the
+    // part that carries the argument, so it is pinned here.
+    expect(LIMITS.register.windowMs).toBe(60 * 60 * 1000);
+    expect(LIMITS.register.max).toBe(20);
+    expect(LIMITS.register.windowMs).toBeLessThan(LIMITS.quotaDaily.windowMs);
+  });
+
+  test('it shares no budget with the AI quota limiter, though both are globally keyed', async () => {
+    // Two constant-keyed limiters is the shape most likely to be "simplified"
+    // into one. They protect different resources on disjoint routes, and this
+    // proves the key spaces really are disjoint rather than trusting the
+    // string literals to differ.
+    spend(registerLimiter, 'register:global');
+    spend(quotaDailyLimiter, 'quota:global');
+    const a = await listen(appWith(registerLimiter));
+    try {
+      for (let i = 0; i < LIMITS.register.max; i += 1) await hit(a.base, null);
+      expect((await hit(a.base, null)).status).toBe(429);
+    } finally {
+      a.server.close();
+    }
+    const b = await listen(appWith(quotaDailyLimiter));
+    try {
+      // Registration is exhausted. The AI budget must be untouched.
+      expect((await hit(b.base, 'unrelated-user')).status).toBe(200);
+    } finally {
+      b.server.close();
+    }
+  });
+
+  test('it is NOT part of the studyPack < llm < quotaDaily invariant', () => {
+    // That chain exists because those three compete for ONE budget on two
+    // routes, so an unreachable rung is dead config. register shares nothing
+    // with them. Pinned so nobody "restores" the ordering by folding it in —
+    // its max is deliberately above quotaDaily.max, which inside the chain
+    // would be the exact defect the chain was written to catch.
+    expect(LIMITS.studyPack.max).toBeLessThan(LIMITS.llm.max);
+    expect(LIMITS.llm.max).toBeLessThan(LIMITS.quotaDaily.max);
+    expect(LIMITS.register.max).toBeGreaterThan(LIMITS.quotaDaily.max);
+  });
+
+  test('routes/auth.js mounts it on /register at ROUTE level, not router level', () => {
+    expect(auth).toMatch(/router\.post\(\s*'\/register',\s*registerLimiter\s*,/);
+    // router.use() here would catch /login as well, which is the trade the
+    // header rejects: register is once-per-lifetime and can take a shared
+    // budget, login is per-session and a shared budget there is an outage.
+    expect(auth).not.toContain('router.use(registerLimiter)');
+  });
+
+  test('/login carries NO limiter, and that is asserted rather than assumed', () => {
+    const loginAt = auth.indexOf("router.post('/login'");
+    expect(loginAt).toBeGreaterThan(-1);
+    // Everything from the /login route to the end of the file must be free of
+    // any limiter. A substring search over the whole file would pass while
+    // login was limited, because /register's mount is in the same file.
+    expect(auth.slice(loginAt)).not.toMatch(/Limiter/);
+  });
+
+  test('the limiter runs BEFORE the handler, so a flood pays no bcrypt', () => {
+    // The register handler does a User.findOne() and a bcrypt hash measured at
+    // 65.5 ms. Route-level middleware ordering is what keeps a refused request
+    // from paying either. If registerLimiter moved after the handler function
+    // this match fails.
+    const registerAt = auth.indexOf("router.post('/register'");
+    const limiterAt = auth.indexOf('registerLimiter', registerAt);
+    const handlerAt = auth.indexOf('async (req, res)', registerAt);
+    expect(limiterAt).toBeGreaterThan(registerAt);
+    expect(limiterAt).toBeLessThan(handlerAt);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+
 describe('the routers are wired, and prose about the wiring cannot stand in for it', () => {
   const read = (rel) => fs.readFileSync(path.join(BACKEND, rel), 'utf8');
 
@@ -461,8 +625,14 @@ describe('the routers are wired, and prose about the wiring cannot stand in for 
   test('server.js does not enable trust proxy', () => {
     // Deliberate, and worth an assertion because it is the kind of line someone
     // adds while "fixing" rate limiting behind a proxy. The key here is a user
-    // id out of a verified JWT, so req.ip is not load-bearing; guessing
-    // Railway's hop count wrong would let a client spoof X-Forwarded-For.
+    // id out of a verified JWT, so req.ip is not load-bearing; guessing the
+    // edge's hop count wrong would let a client spoof X-Forwarded-For.
+    //
+    // HOST CHANGED 26 Aug 2026: this line named Railway, and the app now runs
+    // on Render. The assertion is unchanged and the reason is stronger, not
+    // weaker: the deployed host answers with both an x-render-origin-server
+    // header and a cloudflare server header, so there are at least TWO proxies
+    // in front of Express and any hop count written here would be a guess.
     expect(codeOnly(read('server.js'))).not.toContain('trust proxy');
   });
 });

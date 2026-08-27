@@ -493,10 +493,40 @@ it stays in this section.**
 > that has not happened. §1.2's third category — observed, real, uncounted — is exactly where it
 > belongs, and 6.3 making it *countable* is not the same as counting it.
 
+> **↳ THE BLOCKER MOVED ON 26 Aug 2026, AND IT DID NOT GO AWAY.** It used to be *"there is no
+> deployment"*, and it is now **no collector and no traffic** — two separate obstacles that a
+> deployment does not remove. **The entry stays here and every number in this document is
+> unchanged, because none was ever attached to it.**
+>
+> *No collector.* `backend/observability/sdk.js` exports OTLP to
+> `http://localhost:4318/v1/traces` unless `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` names something
+> else, and the deployed host has nothing on that port. The four SDK packages are also
+> `devDependencies`, so a production install that omits them turns the flag into one printed
+> warning rather than a trace — by design, and it means switching tracing on in production is a
+> configuration task with a reachable endpoint behind it, not a flag flip.
+>
+> *No traffic.* A frequency needs a denominator, and §1.1 is the rule this document is built on.
+> Note saves by a handful of accounts would give a count over a population too small to divide by,
+> which is the same mistake as §1.3's hand-read twenty. **Counting this mode is a phase with a
+> price, not an afternoon:** a reachable OTLP endpoint, a sampling decision, a redaction pass
+> — the default resource capture carries host and process identifiers, which is why
+> `results/tracing-background-failure.png` needed `OTEL_NODE_RESOURCE_DETECTORS=env` before it
+> could be committed — and then enough saves to divide by. **Priced here, not done here.**
+
 **A different match set for users with more than 500 notes.** `routes/search.js:79` loads the user
 corpus without excluding the query note, so semantic search over a corpus at the 500-note cap
 returns a different set than the linker does. The trigger is countable — more than 500 notes — but
 the frequency is **zero by construction**, because nothing is deployed and there are no users.
+
+> **↳ THE APP WAS DEPLOYED ON 26 Aug 2026 AND THE SECOND HALF OF THAT REASON IS GONE.** There
+> are users now. **The frequency is still zero and this entry does not move** — no account has
+> reached the 500-note cap — but the zero has changed *class*, and that is the part worth
+> recording. *By construction* meant the trigger could not fire because the population was empty.
+> What holds today is only that the population is small. Nothing in the repository changed, and
+> **nothing in the repository would notice the day it stops holding** — there is no check, no
+> test and no alert on a per-account note count. A zero resting on a fact about today's data is a
+> **circumstantial** zero, not a structural one, and §1.2's third category is where it now
+> belongs: real, uncounted, and no longer guaranteed by anything.
 
 **A third tokenizer, unmeasured.** `services/graphBuilder.service.js:10` carries its own `tokenise`
 keeping words longer than 3 characters over a shorter stopword list, where the shared utility keeps
