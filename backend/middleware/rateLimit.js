@@ -97,7 +97,7 @@
  *      be: `protect` 401s before any handler runs, so it reaches no model and
  *      spends no quota.
  *   2. `req.ip` is not load-bearing. THAT IS WHY server.js DOES NOT SET
- *      `trust proxy`. Behind Railway's edge, `req.ip` is the proxy's address
+ *      `trust proxy`. Behind a platform edge, `req.ip` is the proxy's address
  *      unless Express is told how many hops to trust, and getting that number
  *      wrong lets a client spoof X-Forwarded-For and forge its own key. Since
  *      the key here is a user id that came out of a verified JWT, the correct
@@ -105,17 +105,42 @@
  *      hop count. The IP branch below is the fallback for a mount that has no
  *      `protect` in front of it; on these two routes it is unreachable.
  *
+ *      HOST CHANGED 26 Aug 2026: RAILWAY -> RENDER, AND THE ARGUMENT GOT
+ *      STRONGER RATHER THAN STALE. This paragraph used to name Railway's edge.
+ *      The reasoning is unchanged — it was never about which vendor — but the
+ *      hop count is now measurably worse to guess at. Response headers from
+ *      https://digital-second-brain.onrender.com carry BOTH
+ *      `x-render-origin-server: Render` and `server: cloudflare`, so there are
+ *      at least two proxies in front of Express, not one. A `trust proxy` of 1
+ *      would be wrong and a guess of 2 is still a guess. Unchanged conclusion:
+ *      do not set it. See the registration limiter at the bottom of this file,
+ *      which needed an IP key, could not have one for exactly this reason, and
+ *      is keyed globally instead.
+ *
  * ───────────────────────────────────────────────────────────────────────────
  * WHAT THIS DOES NOT DO, STATED SO A 429 IS NOT READ AS MORE THAN IT IS.
  *
- *   - THE STORE IS IN-PROCESS MEMORY AND RESETS ON RESTART. Railway restarts on
- *     every deploy and on its own restart policy (railway.json:
- *     restartPolicyMaxRetries 3), so the 24-hour global window is a 24-hour
- *     window OF ONE PROCESS LIFETIME, not of a day. A redeploy hands back the
- *     full budget. Fixing that means a shared store, which means Redis, and
- *     PRIMER §11's argument against adding Redis for an unmeasured problem
- *     applies unchanged — the app has five users and has never been deployed
- *     with any limiter at all. Named, not fixed.
+ *   - THE STORE IS IN-PROCESS MEMORY AND RESETS ON RESTART. Render restarts the
+ *     process on every deploy, exactly as Railway did, so the 24-hour global
+ *     window is a 24-hour window OF ONE PROCESS LIFETIME, not of a day. A
+ *     redeploy hands back the full budget.
+ *
+ *     AND ON RENDER THAT IS SHARPER THAN IT WAS, BECAUSE AUTO-DEPLOY IS ON.
+ *     The service redeploys on every commit to `main`, so **any push to main
+ *     resets every counter in this file** — including the 24-hour global
+ *     budget. The reset is no longer an operator action somebody would
+ *     remember doing; it is a side effect of merging a README typo. Whoever
+ *     reads a 429 in production should check the last deploy time before
+ *     concluding the budget was genuinely spent.
+ *
+ *     Fixing that means a shared store, which means Redis, and PRIMER §11's
+ *     argument against adding Redis for an unmeasured problem applies
+ *     unchanged. The clause that used to sit here — "the app has five users
+ *     and has never been deployed with any limiter at all" — is FALSE as of
+ *     26 Aug 2026: it is deployed, with these limiters, and this is the first
+ *     production traffic they have ever seen. Named, not fixed, and the reason
+ *     is now that no measurement of the restart's effect exists rather than
+ *     that no deployment did.
  *   - IT COUNTS REQUESTS, NOT TOKENS. A study pack and a one-line summarize
  *     cost the same against their own limiter, which is why the two per-route
  *     limits differ rather than sharing one. The global limiter prices its
@@ -126,6 +151,80 @@
  *     refusing everybody — a denial of service is the failure mode this
  *     converts a quota exhaustion into. That is the better failure, not a
  *     fixed one.
+ *
+ * ───────────────────────────────────────────────────────────────────────────
+ * A FOURTH LIMITER, ADDED 27 Aug 2026, ON A SURFACE THAT DID NOT MATTER UNTIL
+ * THE APP WAS PUBLIC.
+ *
+ * POST /api/auth/register had no limit. On an undeployed app that was a
+ * non-issue; on a public one it is the mechanism this header already names as
+ * a residual it does not close — "open registration means an attacker willing
+ * to create accounts still gets the per-user limit N times".
+ *
+ * WHAT IT IS NOT: a quota fix. quotaDailyLimiter already bounds the Groq
+ * organisation cap absolutely, and it does so with a key that does not care how
+ * many accounts exist. Registration was never a hole in that bound and closing
+ * it does not tighten one. Anyone reading this as the quota defence has the
+ * wrong limiter.
+ *
+ * WHAT AN ACCOUNT ACTUALLY COSTS, so the limit is not sized against a fear:
+ *
+ *     user document, BSON       193 bytes minimum, 270 typical
+ *     password hash             60 of those bytes, fixed, whatever the password
+ *     CPU per registration      65.5 ms  (bcryptjs 2.4.3 genSalt(10) + hash,
+ *                               mean of 10, laptop: Darwin 25.6.0 arm64,
+ *                               Node v25.8.1 — a smaller instance is slower)
+ *
+ * The 193 comes from serializing the smallest document models/User.js will
+ * accept; both figures are reproducible with one `BSON.serialize()` call and
+ * neither includes index entries. At that size, filling a free-tier Atlas
+ * cluster takes accounts by the million, so STORAGE IS NOT THE BINDING
+ * CONSTRAINT and a limit sized to protect it would be theatre. bcryptjs 2.4.3
+ * is pure JS but its async path yields through setImmediate — measured
+ * event-loop lag during one hash was 0.0 ms — so a flood is CPU pressure on a
+ * shared instance, NOT the event-loop stall it would be with the sync API.
+ *
+ * SO THE LIMIT IS PICKED, AND UNLIKE llm AND studyPack IT COULD NOT HAVE BEEN
+ * DERIVED. quotaDaily is derived because there is a hard external cap to divide
+ * by. Here there is none: storage does not bind, quota is already bound
+ * elsewhere, and CPU has no published ceiling on this plan. 20 per hour is a
+ * blast-radius number chosen so the consequences above stay negligible — 480
+ * accounts a day is ~93 KB of documents and ~1.3 s of CPU per hour — and a
+ * WINDOW OF ONE HOUR rather than a day is the deliberate half of it. A 24-hour
+ * shared window on the front door would let one attacker close signup until
+ * tomorrow.
+ *
+ * THE KEY IS CONSTANT, AND THAT IS FORCED RATHER THAN CHOSEN.
+ * /api/auth/register runs BEFORE `protect` — it is the route that creates the
+ * user — so req.user.id does not exist and identityKey() would fall through to
+ * its IP branch. An IP key needs `trust proxy`, which is the question the
+ * mounting section above declines to answer. RE-OPENED HERE ON PURPOSE AND
+ * DECLINED AGAIN, with the reason now measured rather than assumed: the
+ * deployed host returns both `x-render-origin-server: Render` and
+ * `server: cloudflare`, so Express sits behind AT LEAST TWO proxies. A hop
+ * count of 1 is wrong and 2 is a guess, and a WRONG guess is worse than no
+ * limiter at all — it is bypassed by setting one header, while a real visitor
+ * sharing a NAT with the attacker is locked out. TRIGGER TO REVISIT: an
+ * endpoint on the deployed host that echoes the resolved req.ip, so the hop
+ * count is read rather than guessed. Until that exists, constant key.
+ *
+ * /api/auth/login IS DELIBERATELY NOT LIMITED, AND IT IS NOT AN OVERSIGHT.
+ * A constant key is tolerable on register because registration is a
+ * once-per-lifetime action: a shared budget costs a new visitor a wait. Login
+ * is per-session, so the SAME limiter would convert one credential-stuffing
+ * attempt into a full outage for every existing user — a strictly worse failure
+ * than the one it prevents. What login actually wants is a per-identity bound,
+ * and its only honest keys are the IP (declined above) or the submitted email
+ * (attacker-controlled and free to rotate, so it bounds nothing). Declined with
+ * the same trigger: settle `trust proxy` by measurement and login gets an
+ * IP-keyed limiter.
+ *
+ * IT IS OUTSIDE THE studyPack < llm < quotaDaily INVARIANT, ON PURPOSE. That
+ * chain exists because those three limiters compete for one shared budget on
+ * two routes, so an unreachable rung is dead configuration. register shares
+ * nothing with them — different route, different key space, different resource
+ * — so comparing its number to theirs is meaningless. Do not "restore" the
+ * ordering by folding it in; tests/rate-limit.test.js pins that it is excluded.
  *
  * ───────────────────────────────────────────────────────────────────────────
  * THE DEPENDENCY, MEASURED RATHER THAN ESTIMATED.
@@ -179,7 +278,17 @@ const LIMITS = {
    * organisation cap, so half the day survives for an eval run in the worst
    * case.
    */
-  quotaDaily: { windowMs: 24 * 60 * 60 * 1000, max: 18 }
+  quotaDaily: { windowMs: 24 * 60 * 60 * 1000, max: 18 },
+  /**
+   * Shared by every visitor, on POST /api/auth/register only. PICKED, and see
+   * the header for why it could not be derived: nothing it protects has a cap
+   * tight enough to divide by. The ONE-HOUR window is the load-bearing half —
+   * a shared budget on the front door has to give itself back quickly.
+   *
+   * NOT part of the studyPack < llm < quotaDaily invariant. Different route,
+   * different key space, different resource.
+   */
+  register: { windowMs: 60 * 60 * 1000, max: 20 }
 };
 
 /**
@@ -261,10 +370,33 @@ const quotaDailyLimiter = build(LIMITS.quotaDaily, {
     'requests are capped at ' + LIMITS.quotaDaily.max + ' per day across all users. Try again tomorrow.'
 });
 
+/**
+ * ONE budget for account creation, across every visitor.
+ *
+ * Mounted in routes/auth.js on the /register route SPECIFICALLY, not with
+ * router.use() — that router has no `protect` on it and a router-level mount
+ * would catch /login too, which the header explains is the wrong trade.
+ *
+ * The constant key is forced, not chosen: this route runs before any
+ * authentication exists, and the alternative key is an IP that cannot be
+ * trusted behind two proxies. Do not "fix" it to identityKey — on this route
+ * identityKey falls through to its IP branch, which is exactly the thing the
+ * header declines to rely on.
+ */
+const registerLimiter = build(LIMITS.register, {
+  key: () => 'register:global',
+  message:
+    'This demo limits how many new accounts can be created each hour across ' +
+    'all visitors, because it runs on a free tier and cannot safely rate-limit ' +
+    'by address behind its proxy. Please try again shortly — if you already ' +
+    'have an account, signing in is not affected.'
+});
+
 module.exports = {
   LIMITS,
   identityKey,
   llmLimiter,
   studyPackLimiter,
-  quotaDailyLimiter
+  quotaDailyLimiter,
+  registerLimiter
 };
