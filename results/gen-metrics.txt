@@ -7,6 +7,34 @@ PHASE 5.4 — PROGRAMMATIC GENERATION METRICS
 
   Produced by:  cd backend && npm run eval:gen -- --write
 
+------------------------------------------------------------------------------
+  READ THIS BEFORE THE TABLE. TWO THINGS THIS REPORT IS NOT.
+------------------------------------------------------------------------------
+
+  1. IT IS NOT EVERY ARM. Phase 5.7 ran the SAME 30 seeds under a second
+     retriever (v5-embeddings, results/gen-v7.calls.jsonl) and that arm has
+     its own reporter:
+
+         cd backend && npm run eval:v7
+
+     Nothing here is wrong or missing — but a reader who runs only this
+     command sees a complete-LOOKING four-metric table with one arm absent
+     from it and nothing saying so. That was true for three phases.
+
+  2. EVERY FIGURE BELOW IS AT A CEILING THE APP NO LONGER USES.
+
+         this report      max_tokens 1024 (gen-v1), 2048 (gen-v2, gen-v5)
+         the app ships    max_tokens 4096 for a study pack, since Phase 5.9
+
+     So gen-v5's conformance and truncation rows describe a CONFIGURATION
+     THAT IS NO LONGER SHIPPED. The post-change rate is UNMEASURED — it needs
+     a fresh 30-call run at the new ceiling, ~100,000 actual tokens, which
+     nobody has bought. Do not read these as the feature's current rates.
+
+     §29.4's guard makes this structural rather than remembered: a run at a
+     different ceiling REFUSES to append to these ledgers, so they stay
+     honest baselines rather than becoming a mixture.
+
 ==============================================================================
 A. WHAT IS BEING COMPARED, AND WHY TWO COLUMNS ARE STRUCTURALLY EMPTY
 ==============================================================================

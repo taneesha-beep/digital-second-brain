@@ -37,7 +37,7 @@ WHAT v5-embeddings COSTS IN THE APP — Phase 4.1
 
   THE RESIDENT FIGURE IS THE BILL, not the latency. It is paid for the
   lifetime of the process whether or not anyone saves a note, and it is
-  what a Railway backend has least of.
+  what a small hosted backend has least of.
 
 4. WHAT THIS DOES NOT ESTABLISH
 ------------------------------------------------------------------------------

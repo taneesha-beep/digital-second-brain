@@ -119,6 +119,21 @@ const RUNS = [
  */
 const GOLDEN_SEEDS = 30;
 
+/**
+ * THE SHIPPED STUDY-PACK CEILING, IMPORTED RATHER THAN WRITTEN DOWN.
+ *
+ * The header above tells a reader that every figure here is at a ceiling the
+ * app no longer uses. That sentence is only true while the two numbers differ,
+ * and a HARDCODED copy would go quietly false the day somebody changed the
+ * service — which is §32.8's shape, a fixed sentence beside a moving fact, and
+ * exactly the defect this script already shipped once (§32.8 records two
+ * hardcoded sentences here that went false when the ledger grew).
+ *
+ * services/studyPack.service.js is pure to require: no database, no key, no
+ * network at module load.
+ */
+const STUDY_PACK_CEILING = require('../services/studyPack.service').STUDY_PACK_MAX_TOKENS;
+
 const has = (name) => process.argv.includes(`--${name}`);
 
 function readJsonl(rel) {
@@ -344,6 +359,34 @@ function main() {
   w('  data/, so it runs anywhere and costs nothing to re-run.');
   w('');
   w('  Produced by:  cd backend && npm run eval:gen -- --write');
+  w('');
+  w('-'.repeat(78));
+  w('  READ THIS BEFORE THE TABLE. TWO THINGS THIS REPORT IS NOT.');
+  w('-'.repeat(78));
+  w('');
+  w('  1. IT IS NOT EVERY ARM. Phase 5.7 ran the SAME 30 seeds under a second');
+  w('     retriever (v5-embeddings, results/gen-v7.calls.jsonl) and that arm has');
+  w('     its own reporter:');
+  w('');
+  w('         cd backend && npm run eval:v7');
+  w('');
+  w('     Nothing here is wrong or missing — but a reader who runs only this');
+  w('     command sees a complete-LOOKING four-metric table with one arm absent');
+  w('     from it and nothing saying so. That was true for three phases.');
+  w('');
+  w(`  2. EVERY FIGURE BELOW IS AT A CEILING THE APP NO LONGER USES.`);
+  w('');
+  w('         this report      max_tokens 1024 (gen-v1), 2048 (gen-v2, gen-v5)');
+  w(`         the app ships    max_tokens ${STUDY_PACK_CEILING} for a study pack, since Phase 5.9`);
+  w('');
+  w('     So gen-v5\'s conformance and truncation rows describe a CONFIGURATION');
+  w('     THAT IS NO LONGER SHIPPED. The post-change rate is UNMEASURED — it needs');
+  w('     a fresh 30-call run at the new ceiling, ~100,000 actual tokens, which');
+  w('     nobody has bought. Do not read these as the feature\'s current rates.');
+  w('');
+  w('     §29.4\'s guard makes this structural rather than remembered: a run at a');
+  w('     different ceiling REFUSES to append to these ledgers, so they stay');
+  w('     honest baselines rather than becoming a mixture.');
   w('');
   w('='.repeat(78));
   w('A. WHAT IS BEING COMPARED, AND WHY TWO COLUMNS ARE STRUCTURALLY EMPTY');

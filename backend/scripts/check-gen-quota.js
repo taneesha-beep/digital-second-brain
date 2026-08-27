@@ -117,8 +117,28 @@ async function main() {
   }
 
   console.log('');
-  console.log('  Resume a partial run with:  npm run gen:v2 -- --run --take N');
-  console.log('  Nothing completed is ever lost; the ledger resumes.');
+
+  // ⚠️ THIS LINE USED TO SAY `gen:v2` WHATEVER YOU WERE PRICING.
+  //
+  // §32.8's shape exactly: a HARDCODED SENTENCE beside a COMPUTED number,
+  // rotting in place. It printed "resume with gen:v2" while you were about to
+  // spend on gen:v5, gen:v7 or the judge. Harmless in that the runners each say
+  // the right thing themselves, and not harmless in that this is the tool you
+  // read immediately before deciding to spend.
+  //
+  // This script does not know which run you mean and should not guess: naming
+  // one arm would just move the wrong answer to a different day. So it names
+  // them all, which is the honest output for a tool with no argument.
+  console.log('  Resume a partial run — the ledger resumes, nothing completed is ever lost:');
+  console.log('');
+  console.log('    npm run gen:v2  -- --run --take N     single-note conformance   (results/gen-v2.calls.jsonl)');
+  console.log('    npm run gen:v5  -- --run --take N     study pack, v4-bm25       (results/gen-v5.calls.jsonl)');
+  console.log('    npm run gen:v7  -- --run --take N     study pack, v5-embeddings (results/gen-v7.calls.jsonl)');
+  console.log('    npm run judge:run -- --run --take N   groundedness judge        (results/gen-judge.calls.jsonl)');
+  console.log('');
+  console.log('  Each runner prices ITSELF when run without --run, and that estimate is the');
+  console.log('  one to trust: this figure is a FLOOR over the shared organisation budget,');
+  console.log('  not a per-run cost.');
 }
 
 if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

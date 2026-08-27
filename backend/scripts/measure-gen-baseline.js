@@ -317,6 +317,46 @@ const keyOf = (c) => `${c.seedId}|${c.feature}|${c.repeat}`;
 // RUN
 // ---------------------------------------------------------------------------
 
+/**
+ * HOW MANY CALLS THIS INVOCATION WOULD ACTUALLY MAKE.
+ *
+ * EXTRACTED BECAUSE A MUTATION SURVIVED WITHOUT IT. Replacing the plan
+ * branch's arithmetic with a bare `remaining` kept every takeLimit() test green
+ * — the flag was still parsed perfectly, it was simply no longer USED — and the
+ * defect was visible only by running the CLI and reading a number. That is the
+ * original bug wearing a different shape: one quantity, two readers, and the
+ * test covering the reader that was never broken.
+ *
+ * Pure, exported, and pinned. `take === null` means no limit; a --take larger
+ * than what is left is not an error, it is just the whole run.
+ */
+function plannedCalls(remaining, take) {
+  return take === null ? remaining : Math.min(take, remaining);
+}
+
+/**
+ * --take N, VALIDATED ONCE AND SHARED BY THE PLAN BRANCH AND THE RUN.
+ *
+ * It used to be parsed inside run() only, so the plan branch — which returns
+ * first — priced the FULL run whatever was asked for. One quantity, two
+ * readers, and only one of them knew about the flag.
+ *
+ * Returns null when absent, a positive integer otherwise, and exits on a bad
+ * value rather than coercing: `--take two` silently becoming "the whole run"
+ * is the shape of defect §22.6 keeps finding, and this is the one output built
+ * to price a purchase.
+ */
+function takeLimit() {
+  const raw = arg('take', null);
+  if (raw === null) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    console.error(`--take must be a positive integer; got "${raw}"`);
+    process.exit(1);
+  }
+  return n;
+}
+
 async function run(clusters) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
@@ -402,17 +442,10 @@ async function run(clusters) {
   // --take 150 is exactly the BALANCED FIRST PASS, 30 seeds x 5 features at one
   // draw each, which is the population §28's sections B-G report over and
   // therefore the only population a 5.3-vs-5.5 comparison may use.
-  const take = arg('take', null);
-  if (take !== null) {
-    const n = Number(take);
-    if (!Number.isInteger(n) || n < 1) {
-      console.error(`--take must be a positive integer; got "${take}"`);
-      process.exit(1);
-    }
-    if (n < todo.length) {
-      console.log(`  --take ${n}: running a PREFIX of ${todo.length} remaining cells.`);
-      todo = todo.slice(0, n);
-    }
+  const take = takeLimit();
+  if (take !== null && take < todo.length) {
+    console.log(`  --take ${take}: running a PREFIX of ${todo.length} remaining cells.`);
+    todo = todo.slice(0, take);
   }
 
   console.log(`${VARIANTS[variant].label}\n`);
@@ -1299,15 +1332,37 @@ async function main() {
   if (!has('run')) {
     const cells = planCells(clusters);
     const done = new Set(readJsonl(LEDGER()).filter((r) => r.ok).map(keyOf));
+    const remaining = cells.length - done.size;
+
+    // ⚠️ --take IS HONOURED HERE AS OF 27 Aug 2026, AND IT WAS NOT BEFORE.
+    //
+    // This branch returned before run(), where --take is applied, so
+    // `gen:v2 -- --take 72` PRICED THE FULL RUN. Cosmetic in the sense that the
+    // run itself always honoured the flag — and not cosmetic at all in the
+    // sense that matters: this is the ONE output built to price things, and
+    // §29.6's whole argument for gen:quota is that a number you read
+    // immediately before typing --run has to be about the run you are about to
+    // make. It priced the wrong thing at exactly the moment it mattered.
+    //
+    // takeLimit() is shared with run() rather than reimplemented, so the two
+    // cannot disagree about what --take means — which is the failure this
+    // repository keeps meeting when one quantity is computed in two places.
+    const take = takeLimit();
+    const wouldCall = plannedCalls(remaining, take);
+
     console.log(`${VARIANTS[variantName()].label} — PLAN ONLY. Pass --run to spend quota.\n`);
     console.log(`  seeds             ${clusters.length}`);
     console.log(`  repeats           ${JSON.stringify(REPEATS)}`);
     console.log(`  cells planned     ${cells.length}`);
     console.log(`  already complete  ${done.size}`);
-    console.log(`  would call        ${cells.length - done.size}`);
+    console.log(`  remaining         ${remaining}`);
+    if (take !== null) {
+      console.log(`  --take            ${take}${take < remaining ? '  (a PREFIX — cells are issued repeat-major)' : '  (>= remaining, so the whole run)'}`);
+    }
+    console.log(`  would call        ${wouldCall}`);
     console.log(`  pacing            serial, ${DEFAULT_DELAY_MS} ms apart, no retries`);
     console.log(`  ceiling           ${DEFAULT_MAX_CALLS}`);
-    printQuotaEstimate(cells.length - done.size, variantName());
+    printQuotaEstimate(wouldCall, variantName());
     return;
   }
 
@@ -1317,4 +1372,4 @@ async function main() {
 
 if (require.main === module) main().catch((err) => { console.error(err); process.exit(1); });
 
-module.exports = { planCells, pct, REPEATS };
+module.exports = { planCells, pct, REPEATS, takeLimit, plannedCalls };

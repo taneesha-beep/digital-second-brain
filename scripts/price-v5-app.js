@@ -197,9 +197,21 @@ async function main() {
   w(`  scripts/node_modules                ${(runtime.bytes / MIB).toFixed(1).padStart(7)} MiB   ${runtime.files} files`);
   w(`    of which onnxruntime-node         ${(ort.bytes / MIB).toFixed(1).padStart(7)} MiB   platform binaries for every target`);
   w();
+  // HOST-NEUTRAL SINCE 27 Aug 2026, AND THE NEUTRALITY IS THE POINT RATHER THAN
+  // A TIDY-UP. This line named Railway, whose trial expired on 26 Aug 2026; the
+  // backend is on Render now, and naming THAT host would reproduce the same
+  // defect on a later date. The CLAIM was never about a vendor — it is that
+  // resident memory is the scarce resource on a small hosted backend, which is
+  // as true of Render's Hobby plan as it was of Railway's.
+  //
+  // NOTE WHAT MAKES THIS DIFFERENT FROM THE OTHER RAILWAY STRINGS LEFT ALONE.
+  // docker-compose.yml and probe-groq-model.js carry DATED references — "Railway
+  // until 26 Aug 2026, when the trial expired" — which are correct records.
+  // This one is written in the PRESENT TENSE into a committed artifact, so it
+  // was a live false claim rather than a historical one.
   w('  THE RESIDENT FIGURE IS THE BILL, not the latency. It is paid for the');
   w('  lifetime of the process whether or not anyone saves a note, and it is');
-  w('  what a Railway backend has least of.');
+  w('  what a small hosted backend has least of.');
   w();
 
   w('4. WHAT THIS DOES NOT ESTABLISH');
