@@ -325,7 +325,59 @@ function refuse(message) {
   };
 }
 
-function build({ windowMs, max }, { key, message }) {
+/**
+ * THE LIMITER FACTORY, AND IT REFUSES AN OPTION IT WOULD NOT HONOUR.
+ *
+ * ⚠️ IT USED TO DROP THEM SILENTLY, AND A MUTATION FOUND THAT BY PASSING.
+ * It destructures `{windowMs, max}` and `{key, message}` and constructs
+ * rateLimit() explicitly, so a caller adding `skip`, `skipSuccessfulRequests`,
+ * `store` or a misspelled `windowMS` got NO error and NO effect. At 8.0 a
+ * deliberate mutation MATCHED ITS PATTERN AND CHANGED NO BEHAVIOUR for exactly
+ * this reason — the mutation added an option, the option was discarded, and the
+ * test correctly stayed green about a limiter that had not moved. The mutation
+ * pass reported a catch it had not made.
+ *
+ * A NARROW FACTORY IS THE RIGHT DESIGN AND SILENCE IS NOT PART OF IT. The four
+ * limiters here should differ in exactly two axes — the numbers and the key —
+ * and forwarding arbitrary options would let a fifth quietly acquire a `store`
+ * or a `skip` that nothing in the test suite knows to look for. So unknown
+ * options are REFUSED rather than forwarded: the narrowness is kept and the
+ * silence is removed.
+ *
+ * IT THROWS AT MODULE LOAD, WHICH IS THE POINT AND ALSO THE RISK. server.js
+ * requires this file at boot, so a caller mistake is a dead process rather than
+ * a quiet misconfiguration in production. That is the correct trade for a
+ * limiter — a rate limiter that silently is not limiting is the failure this
+ * whole file exists to prevent — and it is why this change went to a branch
+ * rather than to `main`, which auto-deploys on commit.
+ */
+const LIMIT_KEYS = ['windowMs', 'max'];
+const BEHAVIOUR_KEYS = ['key', 'message'];
+
+function build(limits, behaviour) {
+  // Checked BEFORE destructuring, so a typo cannot present as `undefined` and
+  // sail into rateLimit() as a missing option.
+  for (const [label, given, allowed] of [
+    ['limits', limits, LIMIT_KEYS],
+    ['behaviour', behaviour, BEHAVIOUR_KEYS]
+  ]) {
+    const unknown = Object.keys(given || {}).filter((k) => !allowed.includes(k));
+    if (unknown.length > 0) {
+      throw new TypeError(
+        `rateLimit build(): unknown ${label} option(s) ${unknown.join(', ')}. ` +
+        `This factory honours exactly ${allowed.join(', ')} and would have DISCARDED ` +
+        'the rest silently. Add it here deliberately, or drop it.'
+      );
+    }
+    for (const k of allowed) {
+      if (given === null || given === undefined || given[k] === undefined) {
+        throw new TypeError(`rateLimit build(): missing ${label} option ${k}.`);
+      }
+    }
+  }
+
+  const { windowMs, max } = limits;
+  const { key, message } = behaviour;
   return rateLimit({
     windowMs,
     limit: max,
@@ -395,6 +447,9 @@ const registerLimiter = build(LIMITS.register, {
 module.exports = {
   LIMITS,
   identityKey,
+  // Exported ONLY so tests/rate-limit.test.js can drive the refusal directly.
+  // The four limiters below are the real interface; nothing else calls this.
+  build,
   llmLimiter,
   studyPackLimiter,
   quotaDailyLimiter,
