@@ -124,10 +124,41 @@ router.get('/graph', async (req, res) => {
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
+    // ⚠️ contentText IS DERIVED HERE AS OF 27 Aug 2026, AND IT WAS NOT BEFORE.
+    //
+    // THE DEFECT: this route stored `req.body.contentText || ''` verbatim, so a
+    // note created with `content` and no `contentText` was stored with an EMPTY
+    // one — and `computeAndSaveLinks` fires on create (below). The linker reads
+    // contentText and nothing else (noteCorpus.service.js:141), so that note's
+    // first link computation ran against a body that was never there, and the
+    // note contributed an empty document to every other note's DF corpus.
+    // Noticed at 6.1 by watching which spans fired, carried by 6.2, 6.3 and the
+    // post-deployment pass.
+    //
+    // WHAT THIS DOES *NOT* DO, AND THE DISTINCTION IS 4.6's. It does not
+    // extract keywords — `keywords: []` is unchanged and a note still gets its
+    // list on first PUT. Extraction at create is a different change with a
+    // different price, and 4.6 is CLOSED at 2237.0 ms per read-time extraction.
+    // Deriving the TEXT is not that; it is the input those stages were always
+    // meant to read.
+    //
+    // THE FROZEN PATH IS CALLED, NOT TOUCHED. blockNoteToPlainText() and
+    // normalizeContent() are load-bearing over three historical content shapes
+    // (FROZEN.md) and neither is edited or moved here.
+    //
+    // NOT REACHABLE FROM THE UI, AND SAYING SO IS THE HONEST SCOPE.
+    // NoteContext.jsx:52 always creates blank — `content: []`, `contentText:
+    // ''` — and the import path then PUTs both fields, so no browser session
+    // has ever lost text to this. It is reachable by any direct API caller.
+    const content = req.body.content;
+    const contentText = req.body.contentText !== undefined
+      ? req.body.contentText
+      : blockNoteToPlainText(content);
+
     const note = await Note.create({
-      title:       req.body.title       || 'Untitled Note',
-      content:     req.body.content     || {},
-      contentText: req.body.contentText || '',
+      title:       req.body.title || 'Untitled Note',
+      content:     content !== undefined ? normalizeContent(content) : {},
+      contentText: contentText || '',
       user:        req.user._id,
       tags:        [],
       keywords:    []

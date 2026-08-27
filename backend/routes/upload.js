@@ -56,10 +56,36 @@ router.post('/', upload.single('file'), async (req, res) => {
     const corpus = await loadUserCorpus(req.user._id);
     const keywords = extractKeywords(title, content, corpus);
 
+    // ⚠️ contentText IS SET HERE AS OF 27 Aug 2026 AND IT NEVER WAS BEFORE.
+    //
+    // FOUND BY THE PRE-PHASE-8 SWEEP; no noticed list has ever carried it. This
+    // route stored the extracted file text as `content` and left `contentText`
+    // to the schema default of '' (models/Note.js:24). The linker reads
+    // contentText and nothing else (noteCorpus.service.js:141), so EVERY
+    // UPLOADED FILE WAS INDEXED WITH AN EMPTY BODY: its links came from the
+    // title alone, and it contributed an empty document to every other note's
+    // document-frequency corpus. computeAndSaveLinks is AWAITED below, so this
+    // was never a race — it was simply wrong every time.
+    //
+    // The note's own `keywords` were always fine: extractKeywords() above reads
+    // `content` directly. Only the retrieval half saw nothing.
+    //
+    // ⚠️ SCOPE, STATED RATHER THAN OVERSOLD: `POST /api/upload` IS UNREACHABLE
+    // FROM THE UI. FROZEN.md records it, and a grep of frontend/src/ finds no
+    // caller at all — Dashboard.jsx extracts PDF/DOCX in the browser and then
+    // PUTs, which sets both fields correctly. So no user has ever hit this. It
+    // is a real defect on a live registered route, not a live incident.
+    //
+    // FIXED RATHER THAN LEFT, UNDER FROZEN.md's OWN RULE: "bugs that make a
+    // frozen area BREAK still get fixed. What is frozen is discretionary
+    // improvement." A one-line correctness fix is the first, not the second.
+    // `content` here is already plain text from the extractor, so this needs
+    // no call into the frozen normalization path.
     const note = await Note.create({
       user:    req.user._id,
       title,
       content,
+      contentText: content,
       keywords,
       category: req.body.category || ''
     });

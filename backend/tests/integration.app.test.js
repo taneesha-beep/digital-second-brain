@@ -756,12 +756,139 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
       expect(a).toBe(b);
     });
 
-    test('a note saved with no contentText reaches the adapter as an empty body', async () => {
+    test('a note saved with NO CONTENT AT ALL still reaches the adapter as an empty body', async () => {
+      // Unchanged by the create-path fix below, and worth keeping separate from
+      // it: a note with no content has no text to derive, and '' is right.
       const { body } = await api('POST', '/api/notes', { token: user.token, body: { title: 'Empty' } });
       const docs = await noteCorpus.loadNoteCorpus(user.id);
       const found = docs.find((d) => d.id === String(body._id));
       expect(found.body).toBe('');
       await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // THE CREATE PATHS — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe('create derives contentText, so the linker sees the note', () => {
+    /**
+     * TWO ROUTES, ONE DEFECT, AND ONLY ONE OF THEM WAS EVER ON A NOTICED LIST.
+     *
+     * `POST /api/notes` stored `req.body.contentText || ''` verbatim and never
+     * derived it — noticed at 6.1 by watching which spans fired, then carried
+     * unchanged by 6.2, 6.3 and the post-deployment pass.
+     *
+     * `POST /api/upload` never set contentText AT ALL, so the schema default of
+     * '' stood. Found by this sweep; no noticed list has it.
+     *
+     * BOTH MATTER FOR THE SAME REASON: noteCorpus.service.js:141 reads
+     * `body: note.contentText` and nothing else, so a note with an empty
+     * contentText is indexed as an empty document — it gets links from its
+     * title alone AND it dilutes every other note's document-frequency corpus.
+     *
+     * ⚠️ NEITHER IS REACHABLE FROM THE UI, WHICH IS THE HONEST SCOPE AND IS NOT
+     * A REASON TO LEAVE THEM. NoteContext.jsx:52 always creates blank and the
+     * import path then PUTs both fields; nothing in frontend/src/ calls
+     * /api/upload at all, which FROZEN.md also records. So no browser session
+     * has lost text to either. Both are reachable by any direct API caller, and
+     * both are registered live routes.
+     */
+    let user;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Creator', username: `creator${stamp}`,
+        email: `creator${stamp}@example.com`, password: 'password123'
+      });
+    });
+
+    test('POST with `content` and NO contentText DERIVES it', async () => {
+      // THE ASSERTION THAT FAILS WITHOUT THE FIX. Before it, contentText was ''
+      // and this note was invisible to the retriever.
+      const { status, body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Derived', content: [{ text: 'sourdough starter hydration' }] }
+      });
+      expect(status).toBe(201);
+      expect(body.contentText).toBe('sourdough starter hydration');
+
+      const docs = await noteCorpus.loadNoteCorpus(user.id);
+      expect(docs.find((d) => d.id === String(body._id)).body).toBe('sourdough starter hydration');
+    });
+
+    test('it walks the three historical content shapes, not just one', async () => {
+      // blockNoteToPlainText() is FROZEN and load-bearing over three shapes.
+      // This calls it and does not touch it; the shapes are checked so a future
+      // "simplification" of the create path cannot quietly handle only arrays.
+      const shapes = [
+        [[{ text: 'array of blocks' }], 'array of blocks'],
+        [{ text: 'plain object' }, 'plain object'],
+        ['a legacy string', 'a legacy string'],
+        [{ content: [{ text: 'nested' }, { children: [{ text: 'deep' }] }] }, 'nested deep']
+      ];
+      for (const [content, expected] of shapes) {
+        const { body } = await api('POST', '/api/notes', {
+          token: user.token, body: { title: 'Shape', content }
+        });
+        expect(body.contentText).toBe(expected);
+        await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+      }
+    });
+
+    test('an EXPLICIT contentText is still stored verbatim and never re-derived', async () => {
+      // The client is allowed to be authoritative — the UI's import path sends
+      // both fields and its text is not a function of its content blocks.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Explicit', content: [{ text: 'ignored' }], contentText: 'authoritative' }
+      });
+      expect(body.contentText).toBe('authoritative');
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('an explicit EMPTY contentText is honoured rather than derived over', async () => {
+      // `!== undefined` rather than `||`, so a deliberate '' is not silently
+      // replaced by the block text. The distinction is the whole reason the
+      // check is not `req.body.contentText || derive(...)`.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Blank', content: [{ text: 'has text' }], contentText: '' }
+      });
+      expect(body.contentText).toBe('');
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('KEYWORDS ARE STILL EMPTY ON CREATE — this is not 4.6 through the back door', async () => {
+      // The scope line. Deriving the TEXT is not extracting KEYWORDS: 4.6 is
+      // CLOSED at 2237.0 ms for read-time extraction, and a note still gets its
+      // keyword list on first PUT exactly as before. If this ever goes red,
+      // somebody has widened the create path into 4.6's territory.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'NoKeywords', content: [{ text: 'sourdough starter hydration' }] }
+      });
+      expect(body.keywords).toEqual([]);
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('POST /api/upload sets contentText, so an uploaded file is not indexed empty', async () => {
+      // THE DEFECT NO NOTICED LIST CARRIED. Before the fix this note reached
+      // the adapter with body '' and was linked on its title alone.
+      const form = new FormData();
+      form.append('file', new Blob(['pickling brine salinity ratios'], { type: 'text/plain' }), 'brine.txt');
+      const response = await fetch(`${base}/api/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${user.token}` },
+        body: form
+      });
+      expect(response.status).toBe(201);
+      const created = await response.json();
+      expect(created.contentText).toBe('pickling brine salinity ratios');
+
+      const docs = await noteCorpus.loadNoteCorpus(user.id);
+      expect(docs.find((d) => d.id === String(created._id)).body).toBe('pickling brine salinity ratios');
+      await api('DELETE', `/api/notes/${created._id}`, { token: user.token });
     });
   });
 });
