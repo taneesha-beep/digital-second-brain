@@ -2,7 +2,7 @@ ESTIMATOR BOUND — the study-pack token estimator against every committed call
 ==============================================================================
 
   PURE: reads three committed ledgers under results/ and nothing else.
-  shipped divisor   CHARS_PER_TOKEN = 4.5   (services/studyPack.service.js)
+  shipped divisor   CHARS_PER_TOKEN = 4.2   (services/studyPack.service.js)
   per-request       TOKENIZER_OVERHEAD = 90
 
 A. RECONSTRUCTION — does this file reproduce what the SHIPPED code computed?
@@ -13,25 +13,29 @@ A. RECONSTRUCTION — does this file reproduce what the SHIPPED code computed?
    exactly. It does not report a divisor it cannot stand behind: a mismatch
    exits non-zero and prints nothing else.
 
+   Checked at 4.5, the divisor these ledgers were RECORDED at — a fact about
+   the artifacts. The code now ships 4.2; sections B onward use that.
+
    results/gen-v5.calls.jsonl      30 of  30 reproduce exactly
    results/gen-v7.calls.jsonl      30 of  30 reproduce exactly
 
    60 of 60, zero disagreement. The reconstruction is the shipped computation.
 
-B. THE SHIPPED BOUND ON THE POPULATION IT SERVES
+B. THE SHIPPED BOUND (CHARS_PER_TOKEN 4.2) ON THE POPULATION IT SERVES
 
    arm       retriever         n     under    rate      worst slack
    --------------------------------------------------------------
-   gen-v5    v4-bm25           30    14     46.7%      -63
-   gen-v7    v5-embeddings     30    13     43.3%      -97
+   gen-v5    v4-bm25           30     0      0.0%       33
+   gen-v7    v5-embeddings     30     0      0.0%       13
    --------------------------------------------------------------
-   pooled                       60    27     45.0%      -97
+   pooled                       60     0      0.0%       13
 
-   single-note   results/gen-v2.calls.jsonl   151 rows, 0 under, worst slack 0
+   single-note   results/gen-v2.calls.jsonl   151 rows, 0 under, worst slack 18
 
-   THE SHIPPED BOUND HOLDS EXACTLY WHERE IT WAS FITTED AND NOWHERE ELSE. That is
-   not a surprise and it is not the finding — §30.3 shipped it as a bound on
-   SINGLE-NOTE prompts and said so. The finding is section C.
+   THE BOUND HOLDS ON EVERY COMMITTED CALL, CLUSTER AND SINGLE-NOTE, at 4.2.
+   It did NOT at 4.5: 27 of 60 cluster calls underestimated, worst -97 tokens,
+   which is what moved the constant at the pre-Phase-8 sweep on 27 Aug 2026.
+   Section C is the derivation and section E is what the change costs.
 
 C. THE TIGHTEST BOUNDING DIVISOR — and why the recorded value is stale
 
@@ -61,7 +65,7 @@ D. THE COST OF MOVING THE CONSTANT
 
    divisor     cluster under/60   worst    mean over-estimate   single under/151
    --------------------------------------------------------------------------
-   4.500000       27 / 60      -97               0.6%           0 / 151
+   4.200000        0 / 60       13               7.4%           0 / 151
    4.400000       10 / 60      -60               2.8%           0 / 151
    4.350000        4 / 60      -43               4.0%           0 / 151
    4.333333        2 / 60      -35               4.3%           0 / 151
@@ -80,4 +84,36 @@ D. THE COST OF MOVING THE CONSTANT
    WHAT THIS FILE DOES NOT ESTABLISH: the right value for a FUTURE population.
    Every row here was drawn at max_tokens 2048 and the feature ships at 4096.
    A divisor fitted on 60 calls bounds those 60 calls. §32.2's rule stands.
+
+E. THE PRODUCT COST, BY REPLAYING THE ADMISSION LOOP
+
+   Section D prices the ESTIMATE. This prices the CONSEQUENCE, which is the
+   number the decision actually turns on: a smaller divisor estimates more
+   tokens per note, so fewer notes fit the budget and a study pack gets a
+   shorter cluster. Replayed over the same 60 committed clusters.
+
+   budget 1800 tokens, seed always admitted, neighbours in rank order
+
+   divisor      notes admitted   packs losing a note   worst loss   mean notes/pack
+   ------------------------------------------------------------------------------
+   4.200000          503            0 of 60             0         8.38
+   4.350000          507            0 of 60             0         8.45
+   4.333333          506            0 of 60             0         8.43
+   4.238095          503            0 of 60             0         8.38
+   4.200000          503            0 of 60             0         8.38
+   4.100000          500            3 of 60             1         8.33
+   4.000000          494            9 of 60             1         8.23
+   ------------------------------------------------------------------------------
+   baseline at the shipped 4.2: 503 notes across 60 packs
+
+   THE ROW THAT DECIDES IT: 4.200000 AND 4.238095 COST EXACTLY THE SAME.
+   Same packs affected, same total notes, and no pack ever loses more than
+   ONE note at either value. So the margin between them is FREE — 4.238095
+   is the tightest bound and has ZERO slack on its worst call, and 4.2 buys
+   real headroom for no product cost at all.
+
+   ZERO SLACK IS THE FRAGILITY THAT PRODUCED THIS WHOLE ENTRY. The shipped
+   4.5 had min slack +1 on the 79 rows it was fitted on, 0 on all 151, and
+   -97 on clusters. A bound with no margin is a bound the next population
+   breaks, and "the next population" is exactly what a note-taking app is.
 

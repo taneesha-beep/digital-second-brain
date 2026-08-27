@@ -137,9 +137,59 @@ const STUDY_PACK_MAX_TOKENS = 4096;
  * `estimatedPromptTokens` is reported beside the API's `actualPromptTokens` on
  * every response, so the estimator's error is measured on every call and nobody
  * has to trust this paragraph.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ THE DIVISOR IS 4.2 SINCE 27 Aug 2026, AND IT WAS 4.5, AND THE PARAGRAPH
+ *    ABOVE IS THE RECORD OF WHY THAT WAS NEVER GOING TO HOLD.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * It says the constant is calibrated on single-note prompts and EXTRAPOLATES to
+ * clusters, and that the extrapolation is measured on every call. It was, and
+ * the measurement said it failed: over the 60 committed cluster calls,
+ * **27 underestimated, worst -97 tokens**. §32.3 named this at 5.4; 5.6 named
+ * it again while adding a SECOND estimator rather than fixing this one; 5.7
+ * made it worse and declined to quote a corrected value. It shipped for four
+ * more phases because `tests/studypack.context.test.js` checked only the 79
+ * single-note rows the constant was fitted on — §22.6's shape, in the file
+ * written to stop a guess shipping. That test now reads the cluster ledgers.
+ *
+ * THE RECORDED CORRECTION WAS 4.333 AND IT IS A gen-v5-ONLY FIGURE. It bounds
+ * that arm's 30 calls exactly and misses 2 of gen-v7's 30, worst -35. It was
+ * derived before 5.7's arm existed, was never recomputed, and sat in three
+ * documents and one code comment as though it were the pooled value.
+ * `check:claims` could not see it: 4.333 is a THREE-place decimal and the
+ * checker scopes to four or more by construction (§3.6).
+ *
+ * 4.2 IS A PICK, INFORMED BY A DERIVATION — AND EVERY DOCUMENT MUST SAY WHICH.
+ * The DERIVED quantity is 4.238095, the tightest divisor bounding all 60 calls,
+ * from `npm run estimator:bound` -> `results/estimator-bound.txt`, whose
+ * section A refuses to report a divisor unless its reconstruction reproduces
+ * the shipped estimate on 60 of 60 rows exactly. 4.2 is BELOW that, and the
+ * margin is what is picked.
+ *
+ * THE MARGIN IS FREE, WHICH IS THE WHOLE ARGUMENT AND IT IS MEASURED RATHER
+ * THAN ASSERTED. Section E replays the admission loop over the same 60
+ * clusters: 4.2 and 4.238095 drop **the same 13 packs by the same one note**,
+ * 503 notes admitted either way, and no pack loses two at either value. So the
+ * headroom costs nothing a user could see.
+ *
+ * WHY NOT TAKE THE TIGHTEST BOUND: it has slack ZERO on its worst call, and
+ * zero slack is exactly the fragility that produced this entry. 4.5 had slack
+ * +1 on the 79 rows it was fitted on, 0 on all 151, and -97 on clusters. A
+ * bound with no margin is a bound the next population breaks, and "the next
+ * population" is what a real notebook is.
+ *
+ * WHAT MOVING IT COSTS A USER, STATED RATHER THAN BURIED: a study pack admits
+ * a mean of 8.38 notes instead of 8.60 over the golden clusters. 13 of 60 lose
+ * exactly one lowest-ranked neighbour. Nothing is ever cut mid-note.
+ *
+ * WHAT THIS DOES NOT ESTABLISH: the right value for a FUTURE population. All 60
+ * calls were drawn at `max_tokens` 2048 and the feature ships at 4096. A
+ * divisor fitted on 60 calls bounds those 60 calls — §32.2's rule stands, and
+ * the same run that would re-price the feature would re-fit this.
  */
 const TOKENIZER_OVERHEAD = 90;
-const CHARS_PER_TOKEN = 4.5;
+const CHARS_PER_TOKEN = 4.2;
 
 /** Characters -> tokens, for one span of text. No per-request overhead. */
 function textTokens(text) {

@@ -64,6 +64,24 @@ const CLUSTER_LEDGERS = [
 ];
 const SINGLE_LEDGER = 'results/gen-v2.calls.jsonl';
 
+/**
+ * THE DIVISOR THESE LEDGERS WERE RECORDED AT — a fact about the ARTIFACTS,
+ * not about the code, which is why it is written here rather than imported.
+ *
+ * Every `estimatedPromptTokens` in these files was computed at call time in
+ * August with CHARS_PER_TOKEN 4.5. Section A validates the reconstruction
+ * against THAT, because the question it answers is "does this file reproduce
+ * what the shipped code did", and the shipped code did it at 4.5.
+ *
+ * Importing sp.CHARS_PER_TOKEN here instead was the first draft and it was
+ * wrong the moment the constant moved: the reconstruction check went 0 of 60
+ * and the script correctly refused to report anything. It refused for the wrong
+ * reason — the reconstruction was fine, the comparison was not — and that is
+ * worth keeping as an instance of the class this whole file is about: a
+ * constant used for two different jobs, one of which is a historical record.
+ */
+const LEDGER_DIVISOR = 4.5;
+
 // The per-request scaffolding constant. Imported rather than copied so this
 // cannot drift from the service the way the divisor did.
 const OVERHEAD = sp.TOKENIZER_OVERHEAD;
@@ -134,6 +152,38 @@ function tightestBound(rows, estimate) {
   return lo;
 }
 
+/** services/studyPack.service.js's CONTEXT_TOKEN_BUDGET, imported not copied. */
+const CONTEXT_BUDGET = sp.CONTEXT_TOKEN_BUDGET;
+
+/**
+ * REPLAY assembleContext's ADMISSION LOOP at an arbitrary divisor and report how
+ * many notes survive. This is the only thing that turns a token estimate into a
+ * product consequence — section D's percentages do not say whether a user loses
+ * a note, and that is the question.
+ *
+ * Faithful to the shipped loop in the two ways that matter: the SEED is always
+ * admitted whatever it costs, and once the budget is full EVERYTHING below is
+ * dropped rather than skipping to a shorter note further down the ranking.
+ */
+function admitCount(row, divisor) {
+  const t = (s) => Math.ceil(String(s || '').length / divisor);
+  const notes = row.context.notes;
+  const offered = notes.length + (row.context.droppedCount || 0);
+  const seed = notes.find((n) => n.role === 'seed') || notes[0];
+  let used = OVERHEAD + t(sp.STUDY_PACK_SYSTEM_MESSAGE + buildPrompt(offered) + '\n\nNotes:\n') +
+    t(renderNote(1, seed.title, seed.text));
+  let admitted = 1;
+  let full = used > CONTEXT_BUDGET;
+  for (const n of notes) {
+    if (n === seed) continue;
+    const cost = t(renderNote(admitted + 1, n.title, n.text));
+    if (full || used + cost > CONTEXT_BUDGET) { full = true; continue; }
+    used += cost;
+    admitted += 1;
+  }
+  return admitted;
+}
+
 function main() {
   const write = process.argv.includes('--write');
   const out = [];
@@ -165,12 +215,15 @@ function main() {
   w('   exactly. It does not report a divisor it cannot stand behind: a mismatch');
   w('   exits non-zero and prints nothing else.');
   w('');
+  w(`   Checked at ${LEDGER_DIVISOR}, the divisor these ledgers were RECORDED at — a fact about`);
+  w(`   the artifacts. The code now ships ${sp.CHARS_PER_TOKEN}; sections B onward use that.`);
+  w('');
   let mismatches = 0;
   let reconciled = 0;
   for (const arm of cluster) {
     let exact = 0;
     for (const r of arm.rows) {
-      if (clusterEstimate(r, sp.CHARS_PER_TOKEN) === r.context.estimatedPromptTokens) exact += 1;
+      if (clusterEstimate(r, LEDGER_DIVISOR) === r.context.estimatedPromptTokens) exact += 1;
       else mismatches += 1;
     }
     reconciled += arm.rows.length;
@@ -186,7 +239,7 @@ function main() {
   w('');
 
   // ── B. WHERE THE SHIPPED DIVISOR BREAKS ──
-  w('B. THE SHIPPED BOUND ON THE POPULATION IT SERVES');
+  w(`B. THE SHIPPED BOUND (CHARS_PER_TOKEN ${sp.CHARS_PER_TOKEN}) ON THE POPULATION IT SERVES`);
   w('');
   w('   arm       retriever         n     under    rate      worst slack');
   w('   ' + '-'.repeat(62));
@@ -209,9 +262,16 @@ function main() {
   w(`   single-note   ${SINGLE_LEDGER}   ${single.length} rows, ` +
     `${singleSlacks.filter((s) => s < 0).length} under, worst slack ${Math.min(...singleSlacks)}`);
   w('');
-  w('   THE SHIPPED BOUND HOLDS EXACTLY WHERE IT WAS FITTED AND NOWHERE ELSE. That is');
-  w('   not a surprise and it is not the finding — §30.3 shipped it as a bound on');
-  w('   SINGLE-NOTE prompts and said so. The finding is section C.');
+  if (pooledUnder === 0) {
+    w(`   THE BOUND HOLDS ON EVERY COMMITTED CALL, CLUSTER AND SINGLE-NOTE, at ${sp.CHARS_PER_TOKEN}.`);
+    w(`   It did NOT at ${LEDGER_DIVISOR}: 27 of 60 cluster calls underestimated, worst -97 tokens,`);
+    w('   which is what moved the constant at the pre-Phase-8 sweep on 27 Aug 2026.');
+    w('   Section C is the derivation and section E is what the change costs.');
+  } else {
+    w('   THE SHIPPED BOUND HOLDS EXACTLY WHERE IT WAS FITTED AND NOWHERE ELSE. That is');
+    w('   not a surprise and it is not the finding — §30.3 shipped it as a bound on');
+    w('   SINGLE-NOTE prompts and said so. The finding is section C.');
+  }
   w('');
 
   // ── C. THE TIGHTEST BOUNDING DIVISOR, PER ARM AND POOLED ──
@@ -282,6 +342,43 @@ function main() {
   w('   A divisor fitted on 60 calls bounds those 60 calls. §32.2\'s rule stands.');
   w('');
 
+  // ── E. WHAT A SMALLER DIVISOR COSTS A REAL CLUSTER ──
+  w('E. THE PRODUCT COST, BY REPLAYING THE ADMISSION LOOP');
+  w('');
+  w('   Section D prices the ESTIMATE. This prices the CONSEQUENCE, which is the');
+  w('   number the decision actually turns on: a smaller divisor estimates more');
+  w('   tokens per note, so fewer notes fit the budget and a study pack gets a');
+  w('   shorter cluster. Replayed over the same 60 committed clusters.');
+  w('');
+  w(`   budget ${CONTEXT_BUDGET} tokens, seed always admitted, neighbours in rank order`);
+  w('');
+  w('   divisor      notes admitted   packs losing a note   worst loss   mean notes/pack');
+  w('   ' + '-'.repeat(78));
+  const baseAdmit = allCluster.map((r) => admitCount(r, sp.CHARS_PER_TOKEN));
+  const baseTotal = baseAdmit.reduce((a, b) => a + b, 0);
+  for (const d of [sp.CHARS_PER_TOKEN, 4.35, recorded, pooledD, 4.2, 4.1, 4.0]) {
+    const now = allCluster.map((r) => admitCount(r, d));
+    const total = now.reduce((a, b) => a + b, 0);
+    const lost = now.map((n, i) => baseAdmit[i] - n);
+    const losing = lost.filter((x) => x > 0).length;
+    w(`   ${d.toFixed(6)}   ${String(total).padStart(10)}       ${String(losing).padStart(6)} of ${allCluster.length}` +
+      `          ${String(Math.max(...lost)).padStart(4)}         ${(total / allCluster.length).toFixed(2)}`);
+  }
+  w('   ' + '-'.repeat(78));
+  w(`   baseline at the shipped ${sp.CHARS_PER_TOKEN}: ${baseTotal} notes across ${allCluster.length} packs`);
+  w('');
+  w('   THE ROW THAT DECIDES IT: 4.200000 AND 4.238095 COST EXACTLY THE SAME.');
+  w('   Same packs affected, same total notes, and no pack ever loses more than');
+  w('   ONE note at either value. So the margin between them is FREE — 4.238095');
+  w('   is the tightest bound and has ZERO slack on its worst call, and 4.2 buys');
+  w('   real headroom for no product cost at all.');
+  w('');
+  w('   ZERO SLACK IS THE FRAGILITY THAT PRODUCED THIS WHOLE ENTRY. The shipped');
+  w('   4.5 had min slack +1 on the 79 rows it was fitted on, 0 on all 151, and');
+  w('   -97 on clusters. A bound with no margin is a bound the next population');
+  w('   breaks, and "the next population" is exactly what a note-taking app is.');
+  w('');
+
   if (write) {
     fs.writeFileSync(OUT, out.join('\n') + '\n');
     console.log(`\n  wrote ${path.relative(REPO, OUT)}`);
@@ -291,4 +388,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { clusterEstimate, singleEstimate, tightestBound, buildPrompt, renderNote };
+module.exports = { clusterEstimate, singleEstimate, tightestBound, buildPrompt, renderNote, admitCount };

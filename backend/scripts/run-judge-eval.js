@@ -298,11 +298,31 @@ function load() {
 }
 
 function estimateReservation(resolved) {
-  // The same shape the study-pack estimator uses, per span, at the tighter
-  // divisor §32.3 derived (4.333) rather than the shipped 4.5 — this is a
-  // PACING estimate for the per-minute gate, not the shipped context budget,
-  // so using the corrected number here changes no shipped behaviour and
-  // invalidates no committed artifact. The open question stays open.
+  // The same SHAPE the study-pack estimator uses — per span, so the ceil is
+  // applied to each piece rather than to one concatenated length. This is a
+  // PACING estimate for the per-minute gate, NOT the shipped context budget, so
+  // it changes no shipped behaviour and invalidates no committed artifact.
+  //
+  // ⚠️ 4.333 IS NOT "THE CORRECTED DIVISOR", WHICH IS WHAT THIS COMMENT USED TO
+  // CALL IT. Corrected 27 Aug 2026 at the pre-Phase-8 sweep. It was derived on
+  // the gen-v5 arm alone and bounds that arm's 30 calls exactly; 5.7 added a
+  // second arm on which it MISSES 2 of 30, worst -35 tokens, and it was never
+  // recomputed. The tightest divisor bounding all 60 committed cluster calls is
+  // 4.238095, and services/studyPack.service.js now ships 4.2 —
+  // `npm run estimator:bound`, results/estimator-bound.txt.
+  //
+  // THE VALUE HERE IS DELIBERATELY LEFT AT 4.333 ANYWAY, AND THAT IS NOT
+  // LAZINESS. A judge prompt is a DIFFERENT POPULATION: rubric plus one passage
+  // plus one claim, not a seed plus eight ranked neighbours. §32.2's rule is
+  // that a constant carried across populations is exactly how ACTUAL_TOKENS_PER
+  // _CALL was wrong twice — importing the cluster-fitted 4.2 here would be that
+  // mistake with better provenance. Nothing has ever measured the bound on
+  // judge prompts, so moving this number would be a guess replacing a guess.
+  //
+  // What it costs to be wrong here is bounded and known: a low estimate paces
+  // the per-minute gate slightly too fast, the throttle takes the NEXT call's
+  // reservation as an argument (§32.8's fix), and a TPM 429 is retried and
+  // writes no ledger row. It cannot corrupt a measurement.
   const perSpan = (s) => Math.ceil(String(s || '').length / 4.333);
   const prompt = 60 + perSpan(RUBRIC) + perSpan(resolved.passageTitle) +
     perSpan(resolved.passageText) + perSpan(resolved.claim);

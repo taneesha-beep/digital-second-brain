@@ -67,15 +67,157 @@ describe('the token estimator is a BOUND, and the bound is measured', () => {
     expect(under).toEqual([]);
   });
 
-  test('the bound holds, and on the completed ledger its margin is ZERO', () => {
-    // WORTH ITS OWN TEST BECAUSE THE GUARANTEE GOT WEAKER WITHOUT MOVING.
-    // On the 79 rows the artifact was originally fitted on, the minimum slack
-    // was 1 token. On all 151 it is 0 — the bound is still never violated, but
-    // at least one real call now lands exactly on the estimate. "Never
-    // underestimates" and "never underestimates with room to spare" are two
-    // different claims, and only the first survives on the completed set.
+  test('the bound holds WITH ROOM TO SPARE — the margin that used to be zero', () => {
+    // THIS TEST CHANGED WITH THE DIVISOR AND THE HISTORY IS THE POINT.
+    //
+    // It used to assert `min slack === 0`, and that equality was itself a
+    // finding: on the 79 rows the constant was fitted on the minimum was +1
+    // token, and on all 151 it was 0 — the bound never violated, but at least
+    // one real call landing EXACTLY on the estimate. The comment here read
+    // "'never underestimates' and 'never underestimates with room to spare'
+    // are two different claims, and only the first survives".
+    //
+    // THAT SENTENCE WAS THE WARNING AND NOBODY READ IT AS ONE. A bound sitting
+    // exactly on its worst observation is a bound the next population breaks,
+    // and the next population — cluster prompts — broke it by 97 tokens. The
+    // divisor moved 4.5 -> 4.2 at the pre-Phase-8 sweep, so the margin is real
+    // again on single-note prompts too, and this asserts the STRONGER of the
+    // two claims rather than recording the weaker one as inevitable.
     const slacks = rows.map((r) => sp.estimateTokens('x'.repeat(charsFor(r))) - r.promptTokens);
-    expect(Math.min(...slacks)).toBe(0);
+    expect(Math.min(...slacks)).toBeGreaterThan(0);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // THE POPULATION THE ESTIMATOR ACTUALLY SERVES — the pre-Phase-8 sweep.
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠️ EVERY TEST ABOVE READS gen-v2.calls.jsonl, WHICH IS 151 SINGLE-NOTE
+  // PROMPTS. That is where the constant was fitted, and the bound holds there.
+  // The constant SHIPS on CLUSTER prompts ~10x longer, and it did not hold
+  // there: 27 of 60 committed cluster calls underestimated, worst -97 tokens.
+  //
+  // SO THIS FILE PINNED THE BOUND EXACTLY WHERE IT COULD NOT FAIL AND WAS
+  // SILENT EXACTLY WHERE IT BROKE — §22.6's shape, in the file written to stop
+  // a guess shipping. §32.3 named it at 5.4, 5.6 named it again while adding a
+  // SECOND estimator without fixing the first, and it survived three more
+  // phases because nothing here could go red.
+  //
+  // WHY IT WAS NOT SIMPLY FIXED AT THE TIME, AND WHY THAT REASON IS SPENT:
+  // §30.3 refused to read `data/gen-eval/clusters.jsonl`, correctly — it is
+  // TRACKED, so a test needing it PASSES IN CI and FAILS in the local
+  // reproduction of CI, where §29.11 moves data/ aside entirely. But the
+  // cluster LEDGERS are under results/ and carry `context.notes[]` with the
+  // full text of every admitted note, so the same check needs nothing under
+  // data/ after all. The obstacle was real and it moved when 5.4 and 5.7
+  // committed their ledgers.
+  describe('the bound on CLUSTER prompts, which is what actually ships', () => {
+    // THE ESTIMATE IS RECOMPUTED AT THE CURRENT CONSTANT, NOT READ OFF THE
+    // LEDGER, AND THAT IS FORCED RATHER THAN CHOSEN. `estimatorSlackTokens` was
+    // written by the shipped code AT CALL TIME, in August, at whatever
+    // CHARS_PER_TOKEN was then — so it is a record of a past configuration and
+    // cannot answer a question about the current one. Testing a constant
+    // against historical calls means re-deriving what it WOULD have estimated.
+    //
+    // THE RECONSTRUCTION IS SHARED WITH THE REPORTER, NOT COPIED. A third
+    // implementation of the per-span ceil is exactly how 5.7 got 3.437, and
+    // "one quantity, two readers" is the defect this sweep keeps finding. The
+    // first test below is what licenses the rest: it re-runs the shared
+    // reconstruction at the HISTORICAL 4.5 and requires it to reproduce the
+    // ledger's own `estimatedPromptTokens` on every row, so a wrong
+    // reconstruction fails loudly instead of quietly answering the wrong
+    // question.
+    const { clusterEstimate } = require('../scripts/measure-estimator-bound');
+    const HISTORICAL_DIVISOR = 4.5;
+
+    const clusterRows = ['gen-v5', 'gen-v7'].flatMap((arm) => {
+      const file = path.join(__dirname, '..', '..', 'results', `${arm}.calls.jsonl`);
+      return fs.readFileSync(file, 'utf8').trim().split('\n')
+        .map((line) => JSON.parse(line))
+        .filter((r) => r.ok && r.context && Number.isFinite(r.promptTokens))
+        .map((r) => ({ ...r, arm }));
+    });
+
+    test('both committed cluster ledgers are here, at the size they were run to', () => {
+      // A floor is what let the single-note artifact drift for three phases
+      // while every test kept passing (see the equality above). Pinned exactly,
+      // for the same reason: if either ledger grows, this goes red and
+      // results/estimator-bound.txt gets regenerated with it.
+      expect(clusterRows.filter((r) => r.arm === 'gen-v5')).toHaveLength(30);
+      expect(clusterRows.filter((r) => r.arm === 'gen-v7')).toHaveLength(30);
+    });
+
+    test('THE LICENCE: the reconstruction reproduces what the shipped code computed', () => {
+      // Everything below is void without this. At the divisor these calls were
+      // actually made with, the reconstruction must equal the ledger's own
+      // recorded estimate — every row, exactly, no tolerance.
+      const off = clusterRows
+        .filter((r) => clusterEstimate(r, HISTORICAL_DIVISOR) !== r.context.estimatedPromptTokens)
+        .map((r) => ({ arm: r.arm, seed: r.seedId }));
+      expect(off).toEqual([]);
+    });
+
+    test('the ledgers were taken at that divisor, which the licence above assumes', () => {
+      // Otherwise the licence passes for the wrong reason and stops being one.
+      for (const r of clusterRows) {
+        expect(r.estimatorSlackTokens).toBe(r.context.estimatedPromptTokens - r.promptTokens);
+      }
+      // And the shipped constant is NOT the historical one — if it ever is
+      // again, the fix was reverted and these tests are asserting nothing new.
+      expect(sp.CHARS_PER_TOKEN).not.toBe(HISTORICAL_DIVISOR);
+    });
+
+    test('IT NEVER UNDERESTIMATES ON A CLUSTER PROMPT EITHER', () => {
+      // THE ASSERTION THIS FILE COULD NOT MAKE. At CHARS_PER_TOKEN 4.5 it fails
+      // on 27 of 60 rows, worst -97 tokens, which is the whole point of it.
+      //
+      // The direction matters for a NARROWER reason than the single-note test
+      // above claims, and overstating it would be its own defect.
+      // CONTEXT_TOKEN_BUDGET is 1,800 — set by the RATE LIMIT, far below this
+      // model's context window — so an underestimate does not overflow
+      // anything. It means ONE MORE NOTE WAS ADMITTED than the budget intended
+      // and the reservation was that much low. The guarantee that breaks is
+      // "the assembled prompt is at most 1,800 estimated tokens", not "the
+      // request fits".
+      const under = clusterRows
+        .map((r) => ({ arm: r.arm, seed: r.seedId, slack: clusterEstimate(r, sp.CHARS_PER_TOKEN) - r.promptTokens }))
+        .filter((r) => r.slack < 0);
+      expect(under).toEqual([]);
+    });
+
+    test('and it keeps a real margin rather than landing exactly on the bound', () => {
+      // 4.238095 is the TIGHTEST divisor bounding all 60 and has slack ZERO on
+      // its worst call. That is precisely the fragility that produced this
+      // entry: the shipped 4.5 had slack +1 on the 79 rows it was fitted on, 0
+      // on all 151, and -97 on clusters. A bound with no margin is a bound the
+      // next population breaks.
+      //
+      // The margin is FREE, measured rather than assumed —
+      // results/estimator-bound.txt section E replays the admission loop and
+      // finds 4.2 and 4.238095 dropping THE SAME 13 packs by THE SAME one note.
+      const slacks = clusterRows.map((r) => clusterEstimate(r, sp.CHARS_PER_TOKEN) - r.promptTokens);
+      expect(Math.min(...slacks)).toBeGreaterThan(0);
+    });
+
+    test('the two arms are checked SEPARATELY, because pooling hid this for a phase', () => {
+      // 4.333 bounds gen-v5's 30 calls exactly and misses 2 of gen-v7's. A
+      // pooled-only assertion would go green on an arm-shaped defect for
+      // exactly as long as the recorded divisor did — which was one phase.
+      for (const arm of ['gen-v5', 'gen-v7']) {
+        const worst = Math.min(...clusterRows
+          .filter((r) => r.arm === arm)
+          .map((r) => clusterEstimate(r, sp.CHARS_PER_TOKEN) - r.promptTokens));
+        expect(worst).toBeGreaterThan(0);
+      }
+    });
+
+    test('it is not so loose as to be useless on clusters either', () => {
+      // The other direction. A divisor of 1 would never underestimate and would
+      // make the budget meaningless — every pack would be the seed alone.
+      const overs = clusterRows.map((r) => (clusterEstimate(r, sp.CHARS_PER_TOKEN) - r.promptTokens) / r.promptTokens);
+      const mean = overs.reduce((a, b) => a + b, 0) / overs.length;
+      expect(mean).toBeGreaterThan(0);
+      expect(mean).toBeLessThan(0.20);
+    });
   });
 
   test('it is not so loose as to be useless — under 20% over on average', () => {
@@ -93,11 +235,24 @@ describe('the token estimator is a BOUND, and the bound is measured', () => {
 
   test('the two constants are the ones the header argues for', () => {
     expect(sp.TOKENIZER_OVERHEAD).toBe(90);
-    expect(sp.CHARS_PER_TOKEN).toBe(4.5);
+
+    // 4.5 -> 4.2 at the pre-Phase-8 sweep, 27 Aug 2026. Pinned EXACTLY, because
+    // this constant decides what reaches the model and a range would let it
+    // drift back. The derivation is results/estimator-bound.txt; 4.2 is a PICK
+    // below the derived bound of 4.238095, and the service header says which is
+    // which.
+    expect(sp.CHARS_PER_TOKEN).toBe(4.2);
+
+    // NOT 4.333, WHICH IS WHAT THREE DOCUMENTS AND ONE CODE COMMENT RECORDED AS
+    // "the tightest divisor that bounds every observed call". It bounds gen-v5's
+    // 30 calls and misses 2 of gen-v7's. Pinned negatively so a future session
+    // reading those documents cannot quietly adopt the stale value.
+    expect(sp.CHARS_PER_TOKEN).not.toBe(4.333);
+
     // The per-span helper carries NO overhead — a context assembled from nine
     // notes must pay the chat scaffolding once, not nine times.
-    expect(sp.textTokens('x'.repeat(45))).toBe(10);
-    expect(sp.estimateTokens('x'.repeat(45))).toBe(100);
+    expect(sp.textTokens('x'.repeat(42))).toBe(10);
+    expect(sp.estimateTokens('x'.repeat(42))).toBe(100);
   });
 });
 
