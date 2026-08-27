@@ -456,15 +456,58 @@ describe('the call sites are wired, and a rename cannot quietly unwire them', ()
    * Block comments and whole-line comments only. Deliberately NOT a general
    * tokenizer — a `//` inside a string literal is left alone, which is safe
    * here and honest about what this is.
+   *
+   * ⚠️ THE ORDER IS LOAD-BEARING: LINE COMMENTS FIRST, THEN BLOCK COMMENTS.
+   * This file used to strip block comments first, and that is a real bug —
+   * a `//` comment CONTAINING `/*` opens a block comment as far as a regex is
+   * concerned, so the stripper deletes everything from there to the next `*​/`.
+   * This repository writes `/api/llm/*` constantly, and that string inside a
+   * `//` comment is exactly the shape. It cost the pre-deployment session a red
+   * suite against entirely correct source, was fixed in tests/rate-limit.test.js
+   * and pinned there with the input that broke it, and this copy was left on the
+   * noticed list — where it stayed for two sessions.
+   *
+   * WHICH WAY IT FAILS IS WHY IT WAS SURVIVABLE AND NOT WHY IT WAS FINE: the
+   * block-first ordering DELETES code, so assertions go red rather than
+   * vacuously green. A latent false alarm, not a latent false negative. The
+   * fix is one line and the ordering is now pinned by the test below rather
+   * than by this paragraph.
    */
   const codeOnly = (text) => text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('\n')
     .filter((line) => !/^\s*(\/\/|\*)/.test(line))
-    .join('\n');
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
 
   const notes = codeOnly(read('routes/notes.js'));
   const version = codeOnly(read('services/version.service.js'));
+
+  test('the comment stripper actually strips — otherwise everything below is vacuous', () => {
+    // POSITIVE CONTROL. These files' comments NAME the identifiers the
+    // assertions look for: `fireDetached(` appears three times in
+    // routes/notes.js and only one is a call. If codeOnly stopped working every
+    // assertion below would pass on prose. §22.6's shape, guarded.
+    const raw = read('routes/notes.js');
+    expect(raw).toMatch(/^\s*\/\//m);
+    expect(codeOnly(raw)).not.toMatch(/^\s*\/\//m);
+  });
+
+  test('a line comment containing a glob does not swallow the code after it', () => {
+    // THE REGRESSION THIS FILE SHIPPED FOR TWO SESSIONS. Stripping block
+    // comments FIRST makes `/*` inside a `//` comment open a block comment, and
+    // everything to the next `*​/` disappears — including the calls being
+    // asserted. Pinned with the exact shape so the ordering in codeOnly cannot
+    // be "simplified" back.
+    const source = [
+      '// this job is on /api/llm/* only',
+      'fireDetached(JOBS.LINK);',
+      '/** a real block comment */',
+      'fireDetached(JOBS.VERSION);'
+    ].join('\n');
+    expect(codeOnly(source)).toContain('fireDetached(JOBS.LINK)');
+    expect(codeOnly(source)).toContain('fireDetached(JOBS.VERSION)');
+    expect(codeOnly(source)).not.toContain('a real block comment');
+  });
 
   test('routes/notes.js fires BOTH jobs through fireDetached', () => {
     expect(notes).toContain('JOBS.LINK');

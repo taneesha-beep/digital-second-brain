@@ -72,6 +72,103 @@ describe('the precondition declaration itself', () => {
 });
 
 /**
+ * A DECLARATION THAT TURNS OUT TO BE FALSE — the pre-Phase-8 sweep, 27 Aug 2026.
+ *
+ * The suite above checks that a promise is KEPT. This checks what happens when
+ * it is BROKEN: MONGO_TEST_URI exported at a host that does not answer, which
+ * is what Docker stopping overnight looks like. The 5.6 session met it as
+ * `64 failed` and read it as a code regression, because the first thing on the
+ * screen was a driver stack trace.
+ *
+ * ⚠️ WHAT THIS DOES AND DOES NOT FIX, MEASURED RATHER THAN ASSUMED. The 5.6
+ * noticed list asked to "fail with 'you promised mongo and it is not there'
+ * rather than 63 stack traces". Only the first half is delivered. Measured on
+ * this laptop against a dead port, before and after: **63 failed either way** —
+ * jest runs every test in a suite whose beforeAll threw, and a suite cannot
+ * stop itself. What changed is that all 63 now LEAD with the sentence and the
+ * command that fixes it, where before they led with
+ * `MongooseServerSelectionError: connect ECONNREFUSED`.
+ *
+ * That is a smaller win than the noticed list imagined and it is the whole win.
+ * Saying so is cheaper than someone re-reading the entry in a year and
+ * wondering why the count did not move.
+ */
+describe('connectOrExplain — a broken environment must not read as broken code', () => {
+  const { connectOrExplain } = require('./helpers/preconditions');
+
+  const withUri = async (uri, fn) => {
+    const before = process.env.MONGO_TEST_URI;
+    process.env.MONGO_TEST_URI = uri;
+    try { return await fn(); } finally {
+      if (before === undefined) delete process.env.MONGO_TEST_URI;
+      else process.env.MONGO_TEST_URI = before;
+    }
+  };
+
+  // A connect that rejects, without needing a real (absent) database. The real
+  // path is proved end to end by pointing the suites at a dead port; this pins
+  // the CONTRACT so a rewording cannot quietly drop the diagnosis.
+  const deadMongoose = { connect: async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:27099'); } };
+
+  test('it names the unkept promise, the target, and the command that fixes it', async () => {
+    await withUri('mongodb://127.0.0.1:27099/dsb_dead', async () => {
+      await expect(connectOrExplain(deadMongoose)).rejects.toThrow(/YOU PROMISED MONGO AND IT IS NOT THERE/);
+      const err = await connectOrExplain(deadMongoose).catch((e) => e);
+      expect(err.message).toContain('127.0.0.1:27099');
+      expect(err.message).toContain('ECONNREFUSED');
+      expect(err.message).toContain('docker run');
+      expect(err.message).toContain('NOT A CODE REGRESSION');
+    });
+  });
+
+  test('it STILL THROWS rather than skipping, which is the deliberate half', async () => {
+    // Swallowing this and skipping would turn a broken environment into a
+    // silent absence — the exact trade preconditions.js exists to refuse, and
+    // worse than the stack traces, because a green run would then be reporting
+    // on a suite that never executed.
+    await withUri('mongodb://127.0.0.1:27099/dsb_dead', async () => {
+      await expect(connectOrExplain(deadMongoose)).rejects.toThrow();
+    });
+  });
+
+  test('credentials in the URI are redacted from the message', async () => {
+    // The message is printed 63 times into a terminal and, in CI, into a public
+    // log. MONGO_TEST_URI is localhost-only by rule, but the redaction is not
+    // conditional on anybody having obeyed the rule.
+    await withUri('mongodb://user:hunter2@127.0.0.1:27099/dsb_dead', async () => {
+      const err = await connectOrExplain(deadMongoose).catch((e) => e);
+      expect(err.message).not.toContain('hunter2');
+      expect(err.message).toContain('<credentials>');
+    });
+  });
+
+  test('a successful connect passes the options through and says nothing', async () => {
+    // The positive control. Without it, a connectOrExplain that ALWAYS threw
+    // would satisfy every assertion above.
+    const seen = [];
+    const okMongoose = { connect: async (uri, opts) => { seen.push({ uri, opts }); } };
+    await withUri('mongodb://127.0.0.1:27017/dsb_ok', async () => {
+      await connectOrExplain(okMongoose, { dbName: 'dsb_studypack_suite' });
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].opts.dbName).toBe('dsb_studypack_suite');
+    expect(seen[0].opts.serverSelectionTimeoutMS).toBe(15000);
+  });
+
+  test('it refuses a non-localhost host BEFORE trying to connect', async () => {
+    // mongoUri()'s localhost rule has no override — this suite drops databases.
+    // Reached through connectOrExplain, it must still bite, and it must bite
+    // before any network call rather than after a 15-second timeout.
+    const seen = [];
+    const spy = { connect: async () => { seen.push(1); } };
+    await withUri('mongodb+srv://cluster0.example.mongodb.net/test', async () => {
+      await expect(connectOrExplain(spy)).rejects.toThrow(/refusing MONGO_TEST_URI/);
+    });
+    expect(seen).toEqual([]);
+  });
+});
+
+/**
  * THE WORKFLOW ITSELF, CHECKED FROM THE SUITE IT RUNS.
  *
  * These fail on a laptop, not only in CI, and that is the point: a workflow step

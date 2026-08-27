@@ -141,6 +141,50 @@ function mongoUri() {
 }
 
 /**
+ * CONNECT, OR EXPLAIN WHY NOT — the pre-Phase-8 sweep, 27 Aug 2026.
+ *
+ * THE DEFECT THIS CLOSES IS THE INVERSE OF THE ONE THIS FILE WAS BUILT FOR.
+ * §22.6 is about a skipped test looking like a passing one. This is a BROKEN
+ * ENVIRONMENT looking like BROKEN CODE: Docker Desktop stopped overnight, the
+ * CI-conditions reproduction came back `64 failed`, and that reads exactly like
+ * a regression somebody just introduced. It cost the 5.6 session real time and
+ * has sat on the noticed list since.
+ *
+ * WHY THE FIX IS NOT IN available(). The header above argues at length that
+ * availability is DECLARED, not probed, and that argument is untouched and
+ * right: `describe` runs synchronously and cannot await a TCP connect, and a
+ * probe answers "was a database there" — satisfied by accident — where a
+ * declaration answers "was one meant to be there". So the operator still
+ * declares by exporting MONGO_TEST_URI. What changes is what happens when the
+ * declaration turns out to be FALSE: previously 63 stack traces from whichever
+ * assertion ran first, now one sentence naming the promise that was not kept.
+ *
+ * IT STILL THROWS. Swallowing the failure and skipping would convert a broken
+ * environment into a silent absence, which is the exact trade this module
+ * exists to refuse — and worse than the stack traces, because a green run
+ * would then be reporting on a suite that never executed.
+ */
+async function connectOrExplain(mongoose, options = {}) {
+  const uri = mongoUri();
+  try {
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000, ...options });
+  } catch (err) {
+    const target = uri.replace(/\/\/[^@]*@/, '//<credentials>@');
+    throw new Error(
+      'YOU PROMISED MONGO AND IT IS NOT THERE.\n\n' +
+      `  MONGO_TEST_URI is set to ${target} and nothing answered.\n` +
+      `  The driver said: ${String(err.message).split('\n')[0]}\n\n` +
+      '  THIS IS AN ENVIRONMENT FAILURE, NOT A CODE REGRESSION. Every test in\n' +
+      '  this suite is about to fail and none of them is telling you anything\n' +
+      '  about the code. The usual cause is Docker not running:\n\n' +
+      '    docker run -d --rm --name dsb-mongo -p 27017:27017 \\\n' +
+      '      mongo:7@sha256:9bdaeb6dac6e7e762e84e2f84103d1f9bb078fa1ba6bde8bb9d2274f655ad173\n\n' +
+      '  Or unset MONGO_TEST_URI to skip these suites loudly instead.'
+    );
+  }
+}
+
+/**
  * Every skip that happens is recorded here and printed once, by the reporter
  * below, rather than N times inline. One line per skipped block keeps a short
  * run readable while still making the absence impossible to miss.
@@ -199,4 +243,4 @@ function status() {
   }));
 }
 
-module.exports = { PRECONDITIONS, describeWith, mongoUri, status, skipped };
+module.exports = { PRECONDITIONS, describeWith, mongoUri, connectOrExplain, status, skipped };

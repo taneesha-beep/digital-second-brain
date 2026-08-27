@@ -247,4 +247,61 @@ describe('no I/O', () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * THE SAME PROPERTY FOR backend/eval/, WHICH HAS BEEN UNENFORCED SINCE 2.3.
+   *
+   * The 2.3 noticed list put it plainly: `metrics.js` "happens to require
+   * nothing at all, so it is I/O-free in fact but not by enforcement, and a
+   * later edit could quietly give it a file read." It was carried again by 2.4
+   * and then by nothing at all for nine sessions. It is a few lines and it is
+   * here.
+   *
+   * THE CLAIM IS NARROWER THAN backend/retrieval's, AND THE NARROWING IS THE
+   * INTERESTING PART. `source-digest.js` requires fs, path and crypto and MUST:
+   * its entire job is hashing source files off disk. So "backend/eval does no
+   * I/O" is false and a test asserting it would be wrong rather than strict.
+   * What is true is that the two SCORERS are pure, and purity is what makes
+   * them safe to call from the runner, from a reporter and from a test without
+   * anyone asking what they touch.
+   *
+   * DECLARED EXEMPTIONS, NOT A GLOB. A new file under backend/eval/ turns this
+   * red until somebody decides which side of the line it is on, which is the
+   * decision this test exists to force.
+   */
+  test('backend/eval scorers require nothing — pure by enforcement, not by luck', () => {
+    const dir = path.join(__dirname, '..', 'eval');
+
+    // Files that legitimately touch the filesystem, each with the reason.
+    const ALLOWED_IO = new Map([
+      ['source-digest.js', 'hashes source files off disk; fs IS its job']
+    ]);
+
+    const files = fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.js'))
+      .map((e) => e.name)
+      .sort();
+
+    // Without this the loop below passes vacuously on an empty directory —
+    // the defect §26.7 records, in the test written to prevent one.
+    expect(files).toEqual(['bootstrap.js', 'metrics.js', 'source-digest.js']);
+
+    const offenders = [];
+    for (const name of files) {
+      if (ALLOWED_IO.has(name)) continue;
+      const source = fs.readFileSync(path.join(dir, name), 'utf8');
+      for (const match of source.matchAll(/^[^\n\/]*\brequire\(\s*['"]([^'"]+)['"]\s*\)/gm)) {
+        offenders.push(`${name} -> ${match[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('the exemption list is checked too — source-digest really does need fs', () => {
+    // An exemption nobody re-reads is how a list becomes a place to hide things.
+    // If this file ever stops needing fs, the entry should go rather than sit
+    // there licensing a require that is no longer there.
+    const source = fs.readFileSync(path.join(__dirname, '..', 'eval', 'source-digest.js'), 'utf8');
+    expect(source).toMatch(/require\(\s*['"]fs['"]\s*\)/);
+  });
 });

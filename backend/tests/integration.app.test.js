@@ -68,7 +68,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 
-const { describeWith, mongoUri } = require('./helpers/preconditions');
+const { describeWith, connectOrExplain } = require('./helpers/preconditions');
 
 const BACKEND = path.resolve(__dirname, '..');
 
@@ -186,7 +186,7 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
     process.env.JWT_SECRET = 'integration-test-only-not-a-secret';
     process.env.JWT_EXPIRE = '1h';
 
-    await mongoose.connect(mongoUri(), { serverSelectionTimeoutMS: 15000 });
+    await connectOrExplain(mongoose);
     await mongoose.connection.dropDatabase();
 
     Note = require('../models/Note');

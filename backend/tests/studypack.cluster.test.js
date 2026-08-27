@@ -23,7 +23,7 @@
 
 const mongoose = require('mongoose');
 
-const { describeWith, mongoUri } = require('./helpers/preconditions');
+const { describeWith, mongoUri, connectOrExplain } = require('./helpers/preconditions');
 
 describeWith('mongo', 'buildCluster joins retrieval to the prompt', () => {
   let Note;
@@ -98,7 +98,7 @@ describeWith('mongo', 'buildCluster joins retrieval to the prompt', () => {
      * the operator exports, and the localhost check in mongoUri() still applies
      * because the host half of the URI is untouched.
      */
-    await mongoose.connect(mongoUri(), { serverSelectionTimeoutMS: 15000, dbName: 'dsb_studypack_suite' });
+    await connectOrExplain(mongoose, { dbName: 'dsb_studypack_suite' });
     await mongoose.connection.dropDatabase();
 
     Note = require('../models/Note');

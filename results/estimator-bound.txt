@@ -1,0 +1,83 @@
+ESTIMATOR BOUND — the study-pack token estimator against every committed call
+==============================================================================
+
+  PURE: reads three committed ledgers under results/ and nothing else.
+  shipped divisor   CHARS_PER_TOKEN = 4.5   (services/studyPack.service.js)
+  per-request       TOKENIZER_OVERHEAD = 90
+
+A. RECONSTRUCTION — does this file reproduce what the SHIPPED code computed?
+
+   5.7 recovered a divisor from a single concatenated `chars` column and it was
+   wrong BY CONSTRUCTION, because the estimator ceils per span. So the first
+   thing checked is that this reconstruction reproduces the shipped estimate
+   exactly. It does not report a divisor it cannot stand behind: a mismatch
+   exits non-zero and prints nothing else.
+
+   results/gen-v5.calls.jsonl      30 of  30 reproduce exactly
+   results/gen-v7.calls.jsonl      30 of  30 reproduce exactly
+
+   60 of 60, zero disagreement. The reconstruction is the shipped computation.
+
+B. THE SHIPPED BOUND ON THE POPULATION IT SERVES
+
+   arm       retriever         n     under    rate      worst slack
+   --------------------------------------------------------------
+   gen-v5    v4-bm25           30    14     46.7%      -63
+   gen-v7    v5-embeddings     30    13     43.3%      -97
+   --------------------------------------------------------------
+   pooled                       60    27     45.0%      -97
+
+   single-note   results/gen-v2.calls.jsonl   151 rows, 0 under, worst slack 0
+
+   THE SHIPPED BOUND HOLDS EXACTLY WHERE IT WAS FITTED AND NOWHERE ELSE. That is
+   not a surprise and it is not the finding — §30.3 shipped it as a bound on
+   SINGLE-NOTE prompts and said so. The finding is section C.
+
+C. THE TIGHTEST BOUNDING DIVISOR — and why the recorded value is stale
+
+   arm       retriever          n     tightest divisor that bounds EVERY call
+   ------------------------------------------------------------------
+   gen-v5    v4-bm25            30      4.333333
+   gen-v7    v5-embeddings      30      4.238095
+   ------------------------------------------------------------------
+   pooled cluster                 60      4.238095
+   single-note                   151      4.508242
+
+   THE RECORDED VALUE IS THE gen-v5 ROW. It was derived on that arm and is right
+   for it. 5.7 added gen-v7, on which it does NOT bound, and the pooled figure was
+   never recomputed — so a gen-v5-only number sat in three documents and one code
+   comment as though it were the pooled one.
+
+   AT THE RECORDED VALUE, ACROSS BOTH ARMS:
+     2 of 60 calls still underestimate, worst -35
+     the value that DOES bound all 60 is the pooled figure above
+     (per-arm minimum 4.238095 is what pooling reduces to)
+
+D. THE COST OF MOVING THE CONSTANT
+
+   A SMALLER DIVISOR ESTIMATES MORE TOKENS PER NOTE, SO FEWER NOTES FIT THE
+   1,800-TOKEN BUDGET. That is a user-visible product change and this table is
+   what it costs, measured on the committed clusters rather than argued.
+
+   divisor     cluster under/60   worst    mean over-estimate   single under/151
+   --------------------------------------------------------------------------
+   4.500000       27 / 60      -97               0.6%           0 / 151
+   4.400000       10 / 60      -60               2.8%           0 / 151
+   4.350000        4 / 60      -43               4.0%           0 / 151
+   4.333333        2 / 60      -35               4.3%           0 / 151
+   4.238095        0 / 60        0               6.4%           0 / 151
+   4.200000        0 / 60       13               7.4%           0 / 151
+   --------------------------------------------------------------------------
+
+   THE FAILURE MODE OF AN UNDERESTIMATE IS NARROWER THAN THE TEST COMMENT SAYS,
+   AND STATING IT NARROWLY IS THE HONEST THING. CONTEXT_TOKEN_BUDGET is 1,800 —
+   a self-imposed budget set by the RATE LIMIT, far below this model's context
+   window. So an underestimate does not overflow anything: it means one more note
+   was admitted than the budget intended, and the reservation was that much low.
+   The guarantee that breaks is "the assembled prompt is at most 1,800 estimated
+   tokens", not "the request fits".
+
+   WHAT THIS FILE DOES NOT ESTABLISH: the right value for a FUTURE population.
+   Every row here was drawn at max_tokens 2048 and the feature ships at 4096.
+   A divisor fitted on 60 calls bounds those 60 calls. §32.2's rule stands.
+
