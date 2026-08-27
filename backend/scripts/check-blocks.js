@@ -342,7 +342,21 @@ const COVERED_ROOTS = [
   { dir: 'backend/services', ext: /\.js$/ },
   { dir: 'backend/migrations', ext: /\.js$/ },
   { dir: 'backend/scripts/lib', ext: /\.js$/ },
-  { dir: 'results', ext: /\.txt$/ }
+  { dir: 'results', ext: /\.txt$/ },
+  // ADDED AT THE PRE-PHASE-8 SWEEP, 27 Aug 2026, after being named and declined
+  // at BOTH 4.5 and 4.6 on the same ground: "adding a fifth root is one line,
+  // but it forces a decision about whether every test file must be named by a
+  // writeup, and that is a documentation-policy question."
+  //
+  // THE DECISION IS TAKEN AND IT IS YES, on the evidence rather than on
+  // principle. Measured before adding the root: 37 of 40 test files were
+  // ALREADY named by some writeup, which makes this a policy the project has
+  // been following all along without enforcing. The three that were not are
+  // exactly what rule 3 exists to surface — files that exist and that no
+  // document mentions — and two of them are LADDER RUNGS, which is the part
+  // that decided it: retrieval.v3-tfidf and retrieval.v5-embeddings test the
+  // rungs whose numbers the whole project is built on.
+  { dir: 'backend/tests', ext: /\.test\.js$/ }
 ];
 
 // Files under a covered root that no writeup names ON PURPOSE. Every entry

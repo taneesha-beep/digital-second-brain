@@ -411,6 +411,23 @@ describe('rule 3 — reverse coverage (4.3)', () => {
       }
     });
 
+    test('backend/tests IS a covered root — declined at 4.5 and 4.6, taken at the sweep', () => {
+      // THE ROOT THIS SUITE ITSELF LIVES IN, which is the pleasing part: this
+      // file is now subject to the rule it tests. Both earlier declines gave
+      // the same reason — adding it "forces a decision about whether every test
+      // file must be named by a writeup" — and the decision was taken on
+      // measurement: 37 of 40 were already named, so the policy was being
+      // followed and simply not enforced. The three strays it surfaced are
+      // named in ROADMAP; two were LADDER RUNGS.
+      const dirs = COVERED_ROOTS.map((r) => r.dir);
+      expect(dirs).toContain('backend/tests');
+      const entry = COVERED_ROOTS.find((r) => r.dir === 'backend/tests');
+      // `.test.js` rather than `.js`, so helpers/ and fixtures are out of scope
+      // by construction rather than by exemption.
+      expect(entry.ext.test('foo.test.js')).toBe(true);
+      expect(entry.ext.test('preconditions.js')).toBe(false);
+    });
+
     test('the exemption list is not a junk drawer — every entry carries a reason', () => {
       for (const [rel, why] of UNDOCUMENTED) {
         expect(typeof why).toBe('string');
