@@ -429,12 +429,49 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
       expect(labels).not.toContain('Alice sourdough');
     });
 
-    test('and so does the duplicate endpoint — /api/notes/graph', async () => {
-      // /api/graph/global and /api/notes/graph are the same builder behind two
-      // routes (4.4's noticed list). Only the first has a frontend caller, and
-      // the second is exactly the shape that gets forgotten. Covered so that
-      // removing either later is a decision rather than a risk.
-      const { status, body } = await api('GET', '/api/notes/graph', { token: bob.token });
+    test('the duplicate endpoint /api/notes/graph is GONE, and its removal is not silent', async () => {
+      // THIS TEST USED TO ASSERT THE DUPLICATE WORKED, and it said why: "covered
+      // so that removing either later is a decision rather than a risk." The
+      // decision was taken on 27 Aug 2026 and this is the same test on the other
+      // side of it — which is what that sentence was for.
+      //
+      // ⚠️ IT IS 500 AND NOT 404, AND THAT IS WORTH ASSERTING RATHER THAN
+      // TOLERATING QUIETLY. With the route gone the URL falls through to
+      // GET /:id, where `Note.findOne({_id: 'graph'})` throws a CastError that
+      // the handler maps to "Error fetching note". PRE-EXISTING for ANY
+      // non-ObjectId id — /api/notes/banana behaves identically and always has —
+      // so it is not a regression from this removal, and the control below
+      // PROVES that rather than asserting it.
+      const { status } = await api('GET', '/api/notes/graph', { token: bob.token });
+      expect(status).toBe(500);
+    });
+
+    test('and that 500 is the id-cast path, not something this removal created', async () => {
+      // THE CONTROL. Without it the test above reads as "deleting the route
+      // broke the URL", which would be the wrong lesson: any malformed note id
+      // has always landed here. If a later change makes bad ids 404, BOTH of
+      // these move together and neither can rot alone.
+      const { status } = await api('GET', '/api/notes/banana', { token: bob.token });
+      expect(status).toBe(500);
+    });
+
+    test('the surviving endpoint is still cross-user scoped', async () => {
+      // The isolation guarantee the deleted test also carried. Kept on the
+      // endpoint that remains, so removing the duplicate did not remove a
+      // check — which is the only thing that would have made this deletion a
+      // real loss.
+      //
+      // ⚠️ WHAT IT PROVES AND WHAT IT DOES NOT, measured by mutation rather
+      // than assumed. Replacing `req.user.id` with `null` in routes/graph.js
+      // FAILS this. Replacing it with `req.query.user || req.user.id` — an
+      // injected override channel — PASSES, because nothing here sends that
+      // parameter. So this proves the endpoint scopes to the authenticated
+      // user when nobody tries to override it, and does NOT prove there is no
+      // override channel. That limit is the whole isolation suite's, not this
+      // test's, and it predates the endpoint removal by four phases; recorded
+      // here because a reader of a cross-user test will otherwise assume the
+      // stronger claim.
+      const { status, body } = await api('GET', '/api/graph/global', { token: bob.token });
       expect(status).toBe(200);
       const labels = body.elements.filter((e) => e.data.type === 'note').map((e) => e.data.label);
       expect(labels).toEqual(['Bob risotto']);

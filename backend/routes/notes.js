@@ -6,7 +6,6 @@ const NoteVersion = require('../models/NoteVersion');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
 const { loadUserCorpus } = require('../utils/corpus');
-const { buildGlobalGraph } = require('../services/graphBuilder.service');
 const { computeAndSaveLinks, getLinkedNotes } = require('../services/linker.service');
 const { saveVersion, getVersions } = require('../services/version.service');
 // Phase 6.1, extended at 6.3. No-ops entirely unless DSB_TRACING=1 —
@@ -111,15 +110,28 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ── GET /api/notes/graph ──────────────────────────────────────────────────────
-router.get('/graph', async (req, res) => {
-  try {
-    const graph = await buildGlobalGraph(req.user._id);
-    res.json(graph);
-  } catch (err) {
-    res.status(500).json({ message: 'Error building graph data' });
-  }
-});
+// ── GET /api/notes/graph WAS HERE AND IS GONE (27 Aug 2026) ───────────────────
+//
+// It was a DUPLICATE of GET /api/graph/global — same builder, same arguments,
+// same response — noticed at 4.4 and carried unchanged through 4.5, 4.6 and 8.1.
+// Only /api/graph/global has a frontend caller (GlobalGraph.jsx:164); nothing in
+// frontend/src/ has ever called this one.
+//
+// THE REASON FOR REMOVING IT WAS NOT THE EIGHT LINES. README's API table listed
+// the two in SEPARATE SECTIONS under DIFFERENT DESCRIPTIONS with nothing
+// connecting them, so the one published document presented a single function as
+// two features — and its note that "/api/graph/global returns a sibling meta"
+// implied a contrast that does not exist, since both call buildGlobalGraph and
+// both return it. A true sentence implying a false thing, in the document 8.1
+// audited for exactly that class.
+//
+// ⚠️ THIS URL NOW FALLS THROUGH TO GET /:id AND RETURNS 500, NOT 404.
+// `Note.findOne({_id: 'graph'})` throws a CastError which :360 maps to
+// "Error fetching note". That is PRE-EXISTING behaviour for any non-ObjectId id
+// — /api/notes/banana does the same today — and is NOT introduced here. It is
+// recorded in the sweep register as its own item rather than fixed in this
+// commit, because guarding the id would change a route the frontend DOES use
+// and that is a second variable with a wider blast radius than this one.
 
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
