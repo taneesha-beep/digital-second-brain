@@ -175,7 +175,39 @@ const WRITEUPS = [
   // rungs' nDCG@8 and P@8 on the held-out split, twelve figures. This entry
   // proves each is not invented; tests/readme-results-table.test.js proves each
   // is in the right ROW, which is the half this tool cannot do. See above.
-  'README.md',
+  // ⚠️ SCOPED, AND THE ONLY SCOPED ENTRY. The pre-Phase-8 sweep, 27 Aug 2026.
+  //
+  // 8.1 MEASURED that the global artifact index is too permissive to protect a
+  // published table: across the plausibility band [0.0500, 0.4500], **1513 of
+  // 4001 four-place slots are already justified by SOMETHING** — 37.8% — because
+  // results/sweeps/*.csv holds thousands of BM25 grid points that cluster
+  // exactly where real nDCG figures live. So `0.3197 -> 0.3198` passed, justified
+  // by an unrelated sweep row. THE CHECKER CATCHES INVENTED DIGITS AND NOT
+  // MISPLACED ONES.
+  //
+  // Scoping is the narrow fix 8.1's noticed list named and declined. MEASURED
+  // rather than assumed, the same way the problem was:
+  //
+  //     global   results/, 144 tracked files    1513 of 4001 = 37.8%
+  //     scoped   results/runs/ + test-ladder    361 of 4001 =  9.0%
+  //
+  // A 4.2x reduction in the surface on which a WRONG value passes, and all 12 of
+  // README's four-place decimals still trace — so it costs nothing in false
+  // positives, which is the failure mode 4.1 established is the worst this tool
+  // can produce.
+  //
+  // WHY THESE TWO PATHS: README's table is nDCG@8 and P@8 on the HELD-OUT SPLIT.
+  // results/runs/*.run.json are the per-run sidecars that carry those figures,
+  // and results/test-ladder.txt is the ladder writeup that tabulates them. A
+  // sweep CSV is a different measurement on a different split and has no
+  // business justifying a headline.
+  //
+  // IT IS NOT THE WHOLE GUARD AND MUST NOT BE READ AS ONE. 9.0% is not 0%, and
+  // tests/readme-results-table.test.js remains the thing that catches a
+  // MISPLACED figure — it pins each cell to its own sidecar, which no index over
+  // values can do. The two are complements: this narrows what an invented digit
+  // can hide behind, that one pins what belongs in each slot.
+  { file: 'README.md', artifacts: ['results/runs/', 'results/test-ladder.txt'] },
   // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
   // That makes it the first document to be both a writeup and, by path, a
   // candidate artifact — so it would justify its own figures: every decimal in
@@ -351,11 +383,71 @@ function decimalsIn(text) {
   return found;
 }
 
+/**
+ * WRITEUPS holds strings and, for a scoped document, objects. One shape from
+ * here down.
+ *
+ * `artifacts` is a list of repo-relative PREFIXES. A writeup carrying one is
+ * checked against ONLY the artifacts under those prefixes; a writeup without
+ * one is checked against every artifact, which is the behaviour every entry had
+ * before scoping existed and still has.
+ */
+/**
+ * Is this repo-relative artifact path inside a writeup's scope?
+ *
+ * EXPORTED SO THE TEST USES THIS AND NOT A COPY. The first version of the
+ * scoping test reimplemented the prefix match to compute the 37.8%-to-9.0%
+ * narrowing, and a mutation making this predicate return `true` for everything
+ * therefore SURVIVED — the test measured its own logic and agreed with itself.
+ * That is §32.7's fixture problem in a new place: a check written beside an
+ * implementation inherits the implementation's assumptions unless it shares the
+ * implementation.
+ *
+ * A prefix ending in `/` is a directory; anything else must match exactly, so
+ * `results/test-ladder.txt` cannot accidentally scope in
+ * `results/test-ladder.txt.bak`.
+ */
+function matchesScope(rel, artifacts) {
+  return artifacts.some((prefix) => (prefix.endsWith('/') ? rel.startsWith(prefix) : rel === prefix));
+}
+
+/**
+ * WHICH INDEX A WRITEUP IS CHECKED AGAINST — extracted because a mutation
+ * survived without it.
+ *
+ * Replacing the binding with "always global" left every scoping test GREEN and
+ * the checker green too: the tests asserted the CONFIGURATION — the scope's
+ * paths, the shape, the measured narrowing — and none of them proved a scoped
+ * writeup actually USES the narrow index. Configuration and wiring are two
+ * things, and this is the one that was broken.
+ *
+ * Third instance of the shape in this sweep, after check-blocks' rule 4 and
+ * measure-gen-baseline's plan branch. The lesson is consistent enough to state
+ * plainly: WHEN A FEATURE'S CORRECT OUTPUT IS "NOTHING CHANGED", THE JOIN
+ * BETWEEN ITS PARTS NEEDS ITS OWN TEST.
+ */
+function indexForWriteup(scope, scopedIndexes, globalIndex) {
+  if (!scope) return globalIndex;
+  const sc = scopedIndexes.get(scope.join('|'));
+  // A scope naming nothing is a configuration error, not a licence to fall back
+  // to the global index — falling back would silently restore the permissiveness
+  // the scope was added to remove.
+  if (!sc) throw new Error(`check-claims: no index built for scope ${scope.join('|')}`);
+  return { rounded: sc.rounded, exp: sc.exp };
+}
+
+function normaliseWriteups(list) {
+  return list.map((entry) => (typeof entry === 'string'
+    ? { file: entry, artifacts: null }
+    : { file: entry.file, artifacts: entry.artifacts }));
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
   // --- build the index of what artifacts contain ---------------------------
-  const writeupSet = new Set(WRITEUPS.map((r) => path.join(REPO_ROOT, r)));
+  const writeups = normaliseWriteups(WRITEUPS);
+  const writeupSet = new Set(writeups.map((w) => path.join(REPO_ROOT, w.file)));
   const artifactFiles = [
     ...ARTIFACT_ROOTS.flatMap((r) => trackedUnder(r)),
     ...EXTRA_ARTIFACTS.map((r) => path.join(REPO_ROOT, r)).filter((f) => fs.existsSync(f))
@@ -369,14 +461,41 @@ function main() {
   for (let p = 0; p <= MAX_PLACES; p += 1) expIndex.set(p, new Set());
   let artifactValues = 0;
 
+  // SCOPED INDEXES. One per distinct `artifacts` list, built from the same files
+  // and the same parser as the global index — so a scoped check is strictly a
+  // SUBSET of the global one and can never accept something the global index
+  // would reject. That containment is the property that makes scoping safe to
+  // add to an existing checker: it can only tighten.
+  const scopedIndexes = new Map();
+  const scopeKey = (scope) => scope.join('|');
+  for (const w of writeups) {
+    if (!w.artifacts || scopedIndexes.has(scopeKey(w.artifacts))) continue;
+    const rounded = new Map();
+    const exp = new Map();
+    for (let d = MIN_PLACES; d <= MAX_PLACES; d += 1) rounded.set(d, new Set());
+    for (let p = 0; p <= MAX_PLACES; p += 1) exp.set(p, new Set());
+    scopedIndexes.set(scopeKey(w.artifacts), {
+      rounded,
+      exp,
+      files: artifactFiles.filter((f) => matchesScope(path.relative(REPO_ROOT, f), w.artifacts)),
+      values: 0
+    });
+  }
+
   for (const file of artifactFiles) {
     const text = fs.readFileSync(file, 'utf8');
+    const inScopes = [...scopedIndexes.values()].filter((sc) => sc.files.includes(file));
     for (const dec of decimalsIn(text)) {
       const value = Number(dec.token);
       if (!Number.isFinite(value)) continue;
       artifactValues += 1;
       for (let d = MIN_PLACES; d <= MAX_PLACES; d += 1) roundedIndex.get(d).add(value.toFixed(d));
       for (let p = 0; p <= MAX_PLACES; p += 1) expIndex.get(p).add(value.toExponential(p));
+      for (const sc of inScopes) {
+        sc.values += 1;
+        for (let d = MIN_PLACES; d <= MAX_PLACES; d += 1) sc.rounded.get(d).add(value.toFixed(d));
+        for (let p = 0; p <= MAX_PLACES; p += 1) sc.exp.get(p).add(value.toExponential(p));
+      }
     }
   }
 
@@ -397,7 +516,11 @@ function main() {
   // NOT a failure: the documents cannot be in CI and are not meant to be.
   const absentWriteups = [];
 
-  for (const rel of WRITEUPS) {
+  for (const { file: rel, artifacts: scope } of writeups) {
+    // A scoped writeup checks against ONLY its own artifacts. Unscoped ones use
+    // the global index, exactly as every writeup did before scoping existed.
+    const { rounded: idxRounded, exp: idxExp } =
+      indexForWriteup(scope, scopedIndexes, { rounded: roundedIndex, exp: expIndex });
     const file = path.join(REPO_ROOT, rel);
     if (!fs.existsSync(file)) {
       absentWriteups.push(rel);
@@ -452,9 +575,9 @@ function main() {
         // The mantissa's place count is the claim's precision, so the test is
         // the same test the decimal branch runs, in exponential space.
         const p = dec.frac.length;
-        if (p <= MAX_PLACES) ok = expIndex.get(p).has(Number(dec.token).toExponential(p));
+        if (p <= MAX_PLACES) ok = idxExp.get(p).has(Number(dec.token).toExponential(p));
       } else {
-        ok = roundedIndex.get(places).has(Number(dec.token).toFixed(places));
+        ok = idxRounded.get(places).has(Number(dec.token).toFixed(places));
       }
       if (!ok) {
         const line = lineOf(dec.index);
@@ -466,8 +589,16 @@ function main() {
   // --- report ---------------------------------------------------------------
   console.log('check:claims — every decimal of 4+ places in the writeups must be the');
   console.log('correct rounding of a decimal in a committed artifact.\n');
-  console.log(`  writeups        ${WRITEUPS.length - absentWriteups.length} of ${WRITEUPS.length}`);
+  console.log(`  writeups        ${writeups.length - absentWriteups.length} of ${writeups.length}`);
   console.log(`  artifacts       ${artifactFiles.length} files, ${artifactValues} decimals indexed`);
+  // SCOPED WRITEUPS ARE REPORTED, because a narrower index is a narrower claim
+  // and a reader should be able to see which documents got one. Silence here
+  // would be the same defect the PARTIAL RUN block was added to fix.
+  for (const w of writeups) {
+    if (!w.artifacts) continue;
+    const sc = scopedIndexes.get(w.artifacts.join('|'));
+    console.log(`  scoped          ${w.file} -> ${w.artifacts.join(', ')}  (${sc.files.length} files, ${sc.values} decimals)`);
+  }
   console.log(`  decimals checked ${checked}`);
   console.log(`    structural      ${allowed}   arithmetic on a protocol constant`);
   console.log(`    illustrative    ${illustrative}   invented figures in format examples`);
@@ -499,7 +630,7 @@ function main() {
   if (failures.length === 0) {
     console.log(
       absentWriteups.length > 0
-        ? `  PASS (PARTIAL) — every checked decimal traces to an artifact, over ${WRITEUPS.length - absentWriteups.length} of ${WRITEUPS.length} writeups.`
+        ? `  PASS (PARTIAL) — every checked decimal traces to an artifact, over ${writeups.length - absentWriteups.length} of ${writeups.length} writeups.`
         : '  PASS — every checked decimal traces to an artifact.'
     );
     return;
@@ -534,4 +665,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { decimalsIn };
+module.exports = { decimalsIn, WRITEUPS, normaliseWriteups, indexForWriteup, matchesScope };
