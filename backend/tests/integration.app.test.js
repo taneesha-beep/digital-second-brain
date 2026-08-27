@@ -833,6 +833,101 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
   // MALFORMED IDS — the pre-Phase-8 sweep, 27 Aug 2026.
   // ───────────────────────────────────────────────────────────────────────
 
+  // ───────────────────────────────────────────────────────────────────────
+  // SEARCH: tags mode — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe('tags search treats the query as TEXT, and never 500s', () => {
+    /**
+     * TWO LIVE DEFECTS, BOTH USER-REACHABLE, FOUND BY PROBING BAD INPUT RATHER
+     * THAN BY READING THE ROUTE.
+     *
+     * (1) `GET /api/search?mode=tags` with nothing to search by was a 500:
+     *     tagQuery fell back to `tagsArr[0]`, which is undefined on an empty
+     *     list, and `{$regex: undefined}` makes Mongo throw. API-only —
+     *     SearchBar.jsx returns early on an empty query.
+     *
+     * (2) RAW INPUT WENT INTO `$regex`. `(`, `[` and `*` are invalid patterns
+     *     and threw; `a+b` is a VALID one and returned 200 while silently
+     *     matching "ab". THAT IS THE WORSE HALF — a wrong answer with no error
+     *     beside it, and a user could not search for a tag containing `.`,
+     *     `+`, `?` or `*` at all. Fully reachable from the UI, where
+     *     SearchBar.jsx catches the 500 and calls onResults([]) — so a server
+     *     error surfaced to the user as "no results".
+     */
+    let user;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Tagger', username: `tagger${stamp}`,
+        email: `tagger${stamp}@example.com`, password: 'password123'
+      });
+      // Two notes whose tags differ only by a regex metacharacter. This pair is
+      // the whole point: under the old code a search for one returned both.
+      await api('POST', '/api/notes', { token: user.token, body: { title: 'Cplusplus', contentText: 'x' } });
+      const Note = require('../models/Note');
+      await Note.updateOne({ title: 'Cplusplus' }, { $set: { tags: ['a+b'] } });
+      await api('POST', '/api/notes', { token: user.token, body: { title: 'Abbrev', contentText: 'y' } });
+      await Note.updateOne({ title: 'Abbrev' }, { $set: { tags: ['ab'] } });
+    });
+
+    test.each([
+      ['mode=tags'],
+      ['mode=tags&q='],
+      ['mode=tags&tags='],
+      ['mode=tags&q=%20']
+    ])('%s — nothing to search by falls through to the recent-notes answer', async (qs) => {
+      // ⚠️ THIS ASSERTS THE ANSWER, NOT JUST "NOT A 500", AND THE FIRST DRAFT
+      // DID THE WEAKER THING. It checked `status === 200` and a mutation
+      // deleting the `&& tagQuery` guard PASSED it — because the two fixes in
+      // this route are NOT INDEPENDENT. With escaping in place,
+      // `escapeRegex(undefined)` is the string "undefined", which is a
+      // perfectly valid pattern: the missing guard stops being a crash and
+      // becomes a SILENT search for the literal word "undefined". A weaker
+      // failure to detect and a worse one to have.
+      //
+      // So the guard is load-bearing for CORRECTNESS, not merely for the 500,
+      // and the only assertion that can see that is one comparing the result
+      // set against what every other mode returns for an empty query.
+      const tags = await api('GET', `/api/search?${qs}`, { token: user.token });
+      const none = await api('GET', '/api/search?q=', { token: user.token });
+      expect(tags.status).toBe(200);
+      expect(tags.body.map((n) => n.title).sort()).toEqual(none.body.map((n) => n.title).sort());
+      // And the recent-notes answer is non-empty here, so the comparison above
+      // cannot pass by both sides being []. §26.7's defect, guarded.
+      expect(none.body.length).toBeGreaterThan(0);
+    });
+
+    test.each([['%28', '('], ['%5B', '['], ['%2A', '*'], ['%3F', '?'], ['%2B', '+']])(
+      'a regex metacharacter (%s = "%s") is text, not a pattern', async (encoded) => {
+        const { status } = await api('GET', `/api/search?mode=tags&q=${encoded}`, { token: user.token });
+        expect(status).toBe(200);
+      });
+
+    test('THE SEMANTICS: "a+b" matches the literal tag and NOT "ab"', async () => {
+      // The assertion that fails on the old code with a 200 rather than an
+      // error — which is exactly why nobody found it. `a+b` as a pattern means
+      // "one or more a, then b", so it matched the note tagged `ab` too.
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=a%2Bb', { token: user.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).toEqual(['Cplusplus']);
+    });
+
+    test('and a plain query still matches, so the escaping is not over-broad', async () => {
+      // POSITIVE CONTROL. An escape that broke ordinary search would satisfy
+      // every "is not a 500" assertion above.
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=ab', { token: user.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).toEqual(['Abbrev']);
+    });
+
+    test('tags mode stays cross-user scoped through all of this', async () => {
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=a%2Bb', { token: bob.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).not.toContain('Cplusplus');
+    });
+  });
+
   describe('a malformed id is the route\'s own not-found, never a 500', () => {
     /**
      * MEASURED BEFORE IT WAS FIXED: 12 of 12 id-taking endpoints across FIVE

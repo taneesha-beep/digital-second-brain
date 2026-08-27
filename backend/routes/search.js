@@ -35,27 +35,68 @@ function formatNote(note, query) {
 //   q       – search string
 //   mode    – keyword (default) | semantic | tags
 //   tags    – comma-separated tag list (used in tags mode or combined)
+/**
+ * Treat a user's search text as TEXT, not as a pattern.
+ *
+ * Mongo's `$regex` compiles whatever it is given. Without this, `(` is a 500
+ * and `a+b` is a wrong answer with a 200 beside it — and the second is worse,
+ * because nothing anywhere says the result set is not what was asked for.
+ *
+ * The character class is the standard one: every metacharacter that can change
+ * how a pattern is parsed. `-` is not included because it is only special
+ * inside a character class, which an escaped string can no longer open.
+ */
+function escapeRegex(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 router.get('/', async (req, res) => {
   try {
     const q        = String(req.query.q    || '').trim();
     const mode     = String(req.query.mode || 'keyword').toLowerCase();
     const tagsRaw  = String(req.query.tags || '').trim();
     const tagsArr  = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
+    // Hoisted out of the tags branch so the branch can TEST it before entering.
+    // `tagsArr[0]` is undefined on an empty list, which is defect (1) below.
+    const tagQuery = q ? q.toLowerCase().replace(/^#+/, '') : tagsArr[0];
 
     let results = [];
 
     // ── Tags mode — must come before empty-query check ────────────────────
-    if (mode === 'tags' || (!q && tagsArr.length > 0)) {
-      const tagQuery = q.trim()
-        ? q.trim().toLowerCase().replace(/^#+/, '')
-        : tagsArr[0];
+    //
+    // ⚠️ TWO 500s LIVED HERE UNTIL 27 Aug 2026 AND BOTH WERE USER-REACHABLE.
+    //
+    // (1) `mode=tags` WITH NOTHING TO SEARCH BY. `tagQuery` fell back to
+    //     `tagsArr[0]`, which is `undefined` when the tags list is empty, and
+    //     `{$regex: undefined}` makes Mongo throw. `GET /api/search?mode=tags`
+    //     was a 500. The `&& tagQuery` below sends that case down to the
+    //     empty-query branch, which returns the 10 most recent notes — the
+    //     answer this route already gives every OTHER mode for "no query".
+    //
+    // (2) RAW USER INPUT WENT STRAIGHT INTO `$regex`, WHICH IS THE WORSE ONE
+    //     because it is not only a crash. `(`, `[` and `*` are invalid regexes
+    //     and threw — and `a+b` is a VALID one, so it returned 200 while
+    //     silently matching "ab" and "aab" instead of the literal tag. A user
+    //     could not search for a tag containing `.`, `+`, `?` or `*` at all,
+    //     and never saw an error saying so. SearchBar.jsx catches the 500 and
+    //     calls onResults([]), so the crash surfaced as "no results" — a
+    //     server error wearing an empty result set.
+    //
+    //     It is also a regex-injection surface. Scoped to the caller's own
+    //     notes, so nothing leaks across users, but a catastrophic pattern is
+    //     CPU on a shared instance, and this route is unauthenticated by rate
+    //     limiter (only /api/llm, /api/study-pack and /register carry one).
+    //
+    // Escaped, so this is a LITERAL substring match, which is what "find notes
+    // whose tag contains this text" always meant.
+    if ((mode === 'tags' || (!q && tagsArr.length > 0)) && tagQuery) {
       // Search tags array AND title/contentText for the tag string
       results = await Note.find({
         user: req.user._id,
         $or: [
-          { tags:     { $regex: tagQuery, $options: 'i' } },
-          { keywords: { $regex: tagQuery, $options: 'i' } },
-          { title:    { $regex: tagQuery, $options: 'i' } }
+          { tags:     { $regex: escapeRegex(tagQuery), $options: 'i' } },
+          { keywords: { $regex: escapeRegex(tagQuery), $options: 'i' } },
+          { title:    { $regex: escapeRegex(tagQuery), $options: 'i' } }
         ]
       })
         .select('title tags keywords createdAt contentText')
