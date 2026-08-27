@@ -13,7 +13,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const { npmScriptsIn, pathsIn } = require('../scripts/check-blocks');
+const { execFileSync } = require('child_process');
+
+const {
+  npmScriptsIn, pathsIn, ROOT_FILES, gitignoredAmong, publishedLinkFailures
+} = require('../scripts/check-blocks');
+
+const REPO = path.resolve(__dirname, '..', '..');
 
 describe('npmScriptsIn', () => {
   test('finds a plain and a colonised script name', () => {
@@ -146,10 +152,63 @@ describe('pathsIn', () => {
     expect(tokens('`results/holm-family.txt`,')).toEqual(['results/holm-family.txt']);
   });
 
-  test('requires a slash, so a bare filename is never looked up', () => {
-    // Without this, `index.js` would resolve against several ROOTS at once and
-    // the check would assert almost nothing while appearing to work.
-    expect(tokens('`metrics.js` and `package.json`')).toEqual([]);
+  test('requires a slash UNLESS the name is a declared root file', () => {
+    // THIS TEST CHANGED AT THE PRE-PHASE-8 SWEEP AND THE CHANGE IS THE POINT.
+    // It used to assert `package.json` was never looked up. That was the whole
+    // defect: every file at the repository root was invisible to rule 2, which
+    // is how `railway.json` sat in three documents describing a deploy that had
+    // stopped existing and was reported zero times.
+    //
+    // The bar for a bare token is now ROOT_FILES membership, not absence of a
+    // slash. `metrics.js` still is not a path — it lives in backend/eval/ and
+    // this project writes it as prose shorthand constantly.
+    expect(tokens('`metrics.js` and `package.json`')).toEqual(['package.json']);
+    expect(tokens('`server.js`, `run-eval.js`, `llm.service.js`')).toEqual([]);
+  });
+
+  describe('root files — the pre-Phase-8 sweep, 27 Aug 2026', () => {
+    test('the declared set is exactly the files tracked at the repository root', () => {
+      // THE ONE ASSERTION THAT CAN CATCH A DRIFTED SET. ROOT_FILES is declared
+      // rather than derived, deliberately — deriving it means deleting a file
+      // also deletes the check that would have caught the deletion. But a
+      // declaration that nobody reconciles is how a list becomes fiction, so
+      // the reconciliation is here rather than in anybody's head.
+      //
+      // A NEW ROOT-LEVEL FILE TURNS THIS RED, and that is correct: it is a
+      // decision about whether documents naming it should be checked, and it
+      // should be taken by an editor rather than inherited by a glob.
+      const tracked = execFileSync('git', ['ls-files'], { cwd: REPO, encoding: 'utf8' })
+        .trim().split('\n')
+        .filter((f) => f && !f.includes('/'))
+        .sort();
+      expect([...ROOT_FILES].sort()).toEqual(tracked);
+    });
+
+    test('railway.json is NOT in the set, and that is deliberate', () => {
+      // It was deleted 27 Aug 2026 and its remaining references are DATED
+      // records of the Railway-to-Render move. Adding it would turn a correct
+      // historical reference into a red build — the tool serving itself.
+      expect(ROOT_FILES.has('railway.json')).toBe(false);
+      expect(tokens('`railway.json` was deleted')).toEqual([]);
+    });
+
+    test('every declared root file actually resolves at the root', () => {
+      // Otherwise the set is a list of names the checker will report forever.
+      for (const name of ROOT_FILES) {
+        expect(fs.existsSync(path.join(REPO, name))).toBe(true);
+      }
+    });
+
+    test('a root file is collected from a fence and from a link target too', () => {
+      expect(tokens('```\ndocker-compose.yml\n```')).toEqual(['docker-compose.yml']);
+      expect(tokens('see [the compose file](docker-compose.yml)')).toEqual(['docker-compose.yml']);
+    });
+
+    test('an absolute path with a root-file basename is still rejected', () => {
+      // ROOT_FILES loosens the slash rule and must not loosen the others.
+      expect(tokens('`/package.json`')).toEqual([]);
+      expect(tokens('`node_modules/package.json`')).toEqual(['node_modules/package.json']);
+    });
   });
 
   test('requires a known extension, so prose in backticks is not a path', () => {
@@ -180,6 +239,117 @@ describe('pathsIn', () => {
     const hits = pathsIn(text);
     expect(hits.map((h) => h.token).sort()).toEqual(['a/b.js', 'c/d.js']);
     for (const h of hits) expect(text.slice(h.index)).toContain(h.token.split('/').pop());
+  });
+});
+
+describe('rule 4 — a published document may not link to a gitignored file', () => {
+  /**
+   * THE CHECKER CANNOT CHECK ITSELF, WHICH IS WHY THIS SUITE EXISTS.
+   *
+   * Rule 4 flags NOTHING in this repository today — measured before it was
+   * built. So a mutation that breaks it leaves `npm run check:blocks` green and
+   * silent, and the mutation pass confirmed exactly that: replacing the filter
+   * with `[]` survived the checker completely. A rule whose correct output is
+   * an empty list can only be tested against a case it SHOULD flag.
+   *
+   * These drive the real function against real paths in this real repository,
+   * so they cannot pass on a fixture that agrees with a broken implementation —
+   * §32.7's warning, which is why no fake gitignore is constructed here.
+   */
+  test('it identifies a gitignored path — the docs/EVALUATION.md case that bit twice', () => {
+    // The exact reference the README pass had to remove by hand, and the one
+    // 8.1's anchor bullet would have shipped.
+    const got = gitignoredAmong(['docs/EVALUATION.md']);
+    expect(got.ok).toBe(true);
+    expect(got.ignored.has('docs/EVALUATION.md')).toBe(true);
+  });
+
+  test('it does NOT flag a tracked path — otherwise every link fails', () => {
+    const got = gitignoredAmong(['README.md', 'docs/FAILURE-MODES.md', 'backend/scripts/check-blocks.js']);
+    expect(got.ok).toBe(true);
+    expect([...got.ignored]).toEqual([]);
+  });
+
+  test('it separates the two in ONE call, which is how the checker uses it', () => {
+    const got = gitignoredAmong(['README.md', 'docs/EVALUATION.md', 'docs/OBSERVABILITY.md']);
+    expect(got.ok).toBe(true);
+    expect([...got.ignored].sort()).toEqual(['docs/EVALUATION.md']);
+  });
+
+  test('an empty input is ok and empty, not an error', () => {
+    const got = gitignoredAmong([]);
+    expect(got.ok).toBe(true);
+    expect(got.ignored.size).toBe(0);
+  });
+
+  test('the return shape makes "git did not answer" impossible to read as "nothing ignored"', () => {
+    // A bare Set would collapse the two states, and §22.6 is the whole reason
+    // this repository refuses that collapse. `ok` is the discriminator and it
+    // is present on both branches.
+    const got = gitignoredAmong(['README.md']);
+    expect(Object.prototype.hasOwnProperty.call(got, 'ok')).toBe(true);
+    expect(got.ignored).toBeInstanceOf(Set);
+  });
+
+  // ── THE TWO CASES THE FIRST MUTATION PASS MISSED ────────────────────────
+  //
+  // Five mutations, three caught. The two survivors are both joins rather than
+  // logic: the wiring between predicate and rule, and the branch that only
+  // fires when git itself fails. Both were reachable only after a seam was
+  // added, and adding the seam is the fix §38.6 prescribes — strengthen the
+  // test, do not accept the finding.
+
+  test('WIRING: a gitignored resolved path becomes a failure row', () => {
+    // Mutation M9 replaced this filter with [] in main() and survived BOTH the
+    // suite and the checker, because rule 4's correct output today is empty.
+    const rows = [
+      { file: 'README.md', line: 12, token: 'docs/EVALUATION.md', resolved: 'docs/EVALUATION.md' },
+      { file: 'README.md', line: 20, token: 'results/test-ladder.txt', resolved: 'results/test-ladder.txt' }
+    ];
+    const verdict = { ok: true, ignored: new Set(['docs/EVALUATION.md']) };
+    expect(publishedLinkFailures(rows, verdict)).toEqual([rows[0]]);
+  });
+
+  test('WIRING: nothing ignored means no failures', () => {
+    const rows = [{ file: 'README.md', line: 1, token: 'a.md', resolved: 'a.md' }];
+    expect(publishedLinkFailures(rows, { ok: true, ignored: new Set() })).toEqual([]);
+  });
+
+  test('WIRING: a git failure yields NO failures — the skip is reported elsewhere', () => {
+    // It must not invent failures from an unanswered question either. The
+    // checker prints a declared RULE 4 SKIPPED block for this case.
+    const rows = [{ file: 'README.md', line: 1, token: 'a.md', resolved: 'a.md' }];
+    expect(publishedLinkFailures(rows, { ok: false, why: 'no git' })).toEqual([]);
+  });
+
+  test('A FAILING git is reported as ok:false, NOT as "nothing is ignored"', () => {
+    // Mutation M11 returned an empty Set from the catch and survived, because
+    // git works on every machine this suite has ever run on. The injected
+    // runner is what makes the branch reachable at all.
+    const boom = () => { throw new Error('git: command not found'); };
+    const got = gitignoredAmong(['docs/EVALUATION.md'], boom);
+    expect(got.ok).toBe(false);
+    expect(got.why).toContain('git');
+    expect(got.ignored).toBeUndefined();
+  });
+
+  test('the injected runner is really used, so the test above is not vacuous', () => {
+    // Positive control. Without this, a runner argument that main() ignored
+    // would make the failure test pass against a function that never ran it.
+    const got = gitignoredAmong(['anything.md'], () => 'anything.md\n');
+    expect(got.ok).toBe(true);
+    expect([...got.ignored]).toEqual(['anything.md']);
+  });
+
+  test('the three published writeups are themselves tracked, which rule 4 assumes', () => {
+    // If a published writeup were gitignored, rule 4 would be checking the
+    // links of a document no stranger can read — a check that runs and means
+    // nothing.
+    const got = gitignoredAmong(['README.md', 'docs/FAILURE-MODES.md', 'docs/OBSERVABILITY.md']);
+    expect([...got.ignored]).toEqual([]);
+    for (const f of ['README.md', 'docs/FAILURE-MODES.md', 'docs/OBSERVABILITY.md']) {
+      expect(fs.existsSync(path.join(REPO, f))).toBe(true);
+    }
   });
 });
 

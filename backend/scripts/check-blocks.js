@@ -33,6 +33,11 @@
  *      PLANNED list below, which is the honest way to write about a file that
  *      does not exist yet.
  *
+ *   4. PUBLISHED LINKS. Added by the pre-Phase-8 sweep, 27 Aug 2026. A path
+ *      named by a `published: true` writeup must not be GITIGNORED. Rule 2
+ *      resolves against the working tree and therefore AFFIRMS a reference that
+ *      is dead for everyone who does not have this laptop — see below.
+ *
  * Rule 2 is the one that catches 3.5's stale directory listing, and it catches
  * it whether the listing is in a fence or in prose, because the failure has
  * nothing to do with fences.
@@ -58,6 +63,7 @@
  * one domain, so "it passed the checks" means one thing.
  */
 
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -81,12 +87,15 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // script or a moved file silently breaking the instructions a stranger follows.
 // Worth one line; not worth mistaking for the fix.
 //
-// TWO LIMITS A READER SHOULD HAVE. Rule 2 resolves against the WORKING TREE, so
-// it cannot see that a path is gitignored — README's two references to
-// docs/EVALUATION.md resolved here and were dead for everyone else, and the
-// README pass removed them by hand rather than by this tool. And adding any
-// writeup slightly LOOSENS rule 3, whose reverse coverage counts a file as
-// documented if its basename appears anywhere.
+// TWO LIMITS A READER SHOULD HAVE — AND THE FIRST IS CLOSED AS OF 27 Aug 2026.
+// Rule 2 resolves against the WORKING TREE, so on its own it cannot see that a
+// path is gitignored — README's two references to docs/EVALUATION.md resolved
+// here and were dead for everyone else, and the README pass removed them BY
+// HAND rather than by this tool. **RULE 4 now checks exactly that**, for
+// published writeups only. Three sessions remembered the rule; the fourth gets
+// a tool. What is NOT closed: adding any writeup slightly LOOSENS rule 3, whose
+// reverse coverage counts a file as documented if its basename appears
+// anywhere.
 //
 // check:claims deliberately does NOT gain README: §25.4 removed a test count
 // from it precisely so that the published file holds no figure that rots, and
@@ -136,12 +145,14 @@ const WRITEUPS = [
   // above it IS present in a fresh clone and in every CI checkout, and its
   // absence would be a defect rather than an environment.
   //
-  // THE HAZARD THIS ENTRY DOES NOT COVER, AND IT IS THE ONE THAT ALREADY BIT.
-  // See the header: this tool resolves against the WORKING TREE and cannot see
-  // that a path is gitignored. README's two references to docs/EVALUATION.md
-  // passed here and were dead for everyone else. FAILURE-MODES.md is published
-  // and can reproduce that exactly, so it cites committed artifacts only and
-  // names no path under docs/. That rule is held by hand and stated in its §8.
+  // THE HAZARD THIS ENTRY DID NOT COVER — CLOSED BY RULE 4, 27 Aug 2026.
+  // This tool resolves against the WORKING TREE, so until the pre-Phase-8 sweep
+  // it could not see that a path is gitignored: README's two references to
+  // docs/EVALUATION.md passed here and were dead for everyone else.
+  // FAILURE-MODES.md cites committed artifacts only and names no path under
+  // docs/, and its §8 says so. **That rule was held by hand and is now held by
+  // rule 4** — which is the point, because a comment is an assertion nothing
+  // runs, and this comment was the assertion.
   { file: 'docs/FAILURE-MODES.md', mode: 'current', published: true },
   // 6.3, and it arrives under the SAME rules FAILURE-MODES.md established at
   // 7.1. `current` because it describes spans that exist and artifacts that
@@ -253,6 +264,53 @@ const PLACEHOLDER = /[<>{}*]/;
 // which dumps happen to be downloaded, which is a property of the machine and
 // not of the document. Reported, never failed.
 const UNTRACKED_BY_DESIGN = /^data\//;
+
+// ---------------------------------------------------------------------------
+// ROOT FILES — the pre-Phase-8 sweep, 27 Aug 2026. DECLARED, NOT DERIVED.
+// ---------------------------------------------------------------------------
+//
+// THE GAP: consider() below requires a token to CONTAIN A SLASH, so every file
+// at the repository root was invisible to rule 2 for this checker's whole life.
+// `railway.json` is the instance that cost something — named in three documents,
+// describing a deploy that had stopped existing, and reported zero times across
+// months of green checks. `docker-compose.yml` is named 33 times and has never
+// been resolved once.
+//
+// THE OBVIOUS FIX IS WRONG AND WAS MEASURED RATHER THAN REASONED ABOUT.
+// Dropping the slash requirement entirely produces ~380 new failures, and
+// essentially all of them are false: this project writes `Posts.xml`,
+// `EVALUATION.md`, `ROADMAP.md`, `run-eval.js`, `llm.service.js` and `server.js`
+// as prose shorthand for files that live in subdirectories. The slash
+// requirement is what bounds the contextual-ROOTS weakness described above it,
+// and removing it removes that bound too.
+//
+// SO THE SET IS DECLARED. A bare token is a path only if it is named here, and
+// this is tests/helpers/preconditions.js's argument reused a third time: a
+// PROBE answers "is there a file with this name", which is satisfied by
+// accident and — worse — is CIRCULAR here, because deriving the set from the
+// tree means deleting a file also deletes the check that would have caught it.
+// A DECLARATION answers "is this name a path in this repository", which is the
+// question, and it goes red when the file goes away. That is exactly the
+// railway.json case, running the right way round.
+//
+// `railway.json` IS DELIBERATELY ABSENT FROM THIS SET. It was deleted on
+// 27 Aug 2026 and its ~15 remaining references are DATED records of the
+// Railway-to-Render move, not live instructions — the post-deployment session
+// kept them on purpose. Adding it here would turn a correct historical
+// reference into a red build, which is the tool serving itself.
+//
+// Keep this list to files that ACTUALLY SIT AT THE REPOSITORY ROOT. A name here
+// that is really a basename of something deeper re-opens the false-positive
+// wave one entry at a time.
+const ROOT_FILES = new Set([
+  '.dockerignore',
+  '.env.example',
+  '.gitignore',
+  'Dockerfile',
+  'README.md',
+  'docker-compose.yml',
+  'package.json'
+]);
 
 // ---------------------------------------------------------------------------
 // RULE 3 — REVERSE COVERAGE. Phase 4.3.
@@ -402,8 +460,12 @@ function pathsIn(text) {
     if (!FILE_EXT.test(token)) return;
     if (token.includes(' ')) return;
     if (/^https?:/.test(token) || token.startsWith('@')) return;
-    // Must look repo-relative: contain a slash, and not start with one.
-    if (!token.includes('/') || token.startsWith('/')) return;
+    // Must look repo-relative: contain a slash, and not start with one — OR be
+    // a DECLARED root-level file. See ROOT_FILES for why the set is declared
+    // rather than derived, and for the ~380-failure measurement that rules out
+    // simply dropping the slash requirement.
+    if (token.startsWith('/')) return;
+    if (!token.includes('/') && !ROOT_FILES.has(token)) return;
     out.push({ token, index });
   };
 
@@ -438,6 +500,71 @@ function pathsIn(text) {
   return out;
 }
 
+
+/**
+ * The real `git check-ignore` call. Separated from gitignoredAmong so a test
+ * can drive the FAILURE branch — which is otherwise unreachable on any machine
+ * where git works, and is precisely the branch that must not degrade into a
+ * silent pass. A mutation swallowing the error survived the first pass because
+ * nothing could reach it.
+ */
+function defaultCheckIgnore(unique) {
+  try {
+    return execFileSync('git', ['check-ignore', '--stdin'], {
+      cwd: REPO_ROOT, input: unique.join('\n'), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe']
+    });
+  } catch (e) {
+    // Exit 1 is the ordinary "none of these are ignored". Anything else is a
+    // real failure — no repository, no git binary — and must propagate.
+    if (e.status === 1) return '';
+    throw e;
+  }
+}
+
+/**
+ * RULE 4's WIRING, ALSO EXTRACTED, AND FOR A REASON THE MUTATION PASS FOUND.
+ *
+ * Testing gitignoredAmong alone left a mutation alive: replacing this filter
+ * with `[]` in main() kept every test green AND kept the checker green, because
+ * rule 4's correct output here is an empty list. The predicate being right does
+ * not make the rule right — the join between them is its own thing and needs
+ * its own test.
+ */
+function publishedLinkFailures(rows, verdict) {
+  if (!verdict.ok) return [];
+  return rows.filter((r) => verdict.ignored.has(r.resolved));
+}
+
+/**
+ * RULE 4's PREDICATE, EXTRACTED SO IT CAN BE TESTED. Which of these
+ * repo-relative paths does git consider ignored?
+ *
+ * IT IS A SEPARATE FUNCTION BECAUSE THE CHECKER CANNOT CHECK ITSELF. A
+ * mutation that makes rule 4 return "nothing is ignored" leaves this tool
+ * PASSING and silent, which is §22.6's shape arriving inside the rule written
+ * to close a §22.6 gap. Only a test that drives this function against a path
+ * known to be gitignored can see that, and tests/check-blocks.test.js has one.
+ *
+ * Returns `{ok: true, ignored: Set}` or `{ok: false, why}` — never a bare Set,
+ * so a caller cannot mistake "git did not answer" for "nothing is ignored".
+ * That distinction is the whole reason this repository writes checks the way it
+ * does: a check that does not run must not look like one that passed.
+ */
+function gitignoredAmong(paths, run = defaultCheckIgnore) {
+  const unique = [...new Set(paths)].filter(Boolean);
+  if (unique.length === 0) return { ok: true, ignored: new Set() };
+  try {
+    // `git check-ignore` exits 0 when at least one path IS ignored and 1 when
+    // none are — so status 1 is the ordinary "all clear" and must be read off
+    // the thrown error rather than treated as a failure. Any other status is
+    // a real one (no repository, no git binary).
+    const out = run(unique);
+    return { ok: true, ignored: new Set(out.split('\n').map((l) => l.trim()).filter(Boolean)) };
+  } catch (e) {
+    return { ok: false, why: String(e.message).split('\n')[0] };
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -467,6 +594,7 @@ function main() {
   const absentUnpublished = [];
   const absentPublished = [];
 
+  const publishedPaths = [];
   for (const { file: rel, mode, published } of WRITEUPS) {
     const file = path.join(REPO_ROOT, rel);
     if (!fs.existsSync(file)) {
@@ -502,11 +630,60 @@ function main() {
         readerHit.set(token, (readerHit.get(token) || 0) + 1);
         continue;
       }
-      if (ROOTS.some((root) => fs.existsSync(path.join(REPO_ROOT, root, token)))) continue;
+      const root = ROOTS.find((r) => fs.existsSync(path.join(REPO_ROOT, r, token)));
+      if (root !== undefined) {
+        // RULE 4's INPUT. A path that resolves is not yet a path a stranger can
+        // follow — see the rule below. Only published documents are collected;
+        // for the four gitignored writeups the question is meaningless.
+        if (published) {
+          publishedPaths.push({ file: rel, line: lineOf(index), token, resolved: path.join(root, token) });
+        }
+        continue;
+      }
       const row = { file: rel, line: lineOf(index), token };
       if (mode === 'forward-looking' || UNTRACKED_BY_DESIGN.test(token)) softPaths.push(row);
       else badPaths.push(row);
     }
+  }
+
+  // --- rule 4: a published document may not link to a gitignored file --------
+  //
+  // THE PRE-PHASE-8 SWEEP, 27 Aug 2026. This tool's header has carried the gap
+  // as a stated limitation since the README pass: rule 2 resolves against the
+  // WORKING TREE and cannot see that a path is gitignored, so a reference to
+  // docs/EVALUATION.md PASSES here and is dead for every reader but the author.
+  //
+  // IT HAS NEARLY BITTEN THREE TIMES and been talked out of the way each time.
+  // The README pass removed two such links BY HAND. FAILURE-MODES.md was held
+  // to a stricter rule BY HAND — "cite committed artifacts only, never a docs/
+  // section number" — and its entry above says so, in a comment, which is an
+  // assertion nothing runs. 8.1's own anchor bullet asked for a link to
+  // EVALUATION.md and would have shipped one. A rule that three sessions have
+  // remembered is a rule waiting for the session that does not.
+  //
+  // ONLY `published: true` WRITEUPS ARE SUBJECT TO IT, and that is the whole
+  // scoping decision. The four gitignored planning documents are read by one
+  // person with the whole tree on disk; asking whether THEY link to gitignored
+  // files is asking the wrong question. README.md, docs/FAILURE-MODES.md and
+  // docs/OBSERVABILITY.md are tracked and are what a stranger clones.
+  //
+  // MEASURED BEFORE IT WAS BUILT: it flags nothing today. The only resolved
+  // path under a published document that is gitignored is `backend/.env`, which
+  // CREATED_BY_READER already exempts above — correctly, since README tells the
+  // reader to create it. So this is FORWARD-LOOKING, exactly as 6.3's
+  // markdown-link fix was, and saying so plainly is better than dressing up a
+  // zero. What it buys is that the fourth time is caught by a tool.
+  //
+  // ONE BATCHED `git check-ignore --stdin` RATHER THAN ONE CALL PER PATH: the
+  // published documents resolve ~25 distinct paths and a process per path is
+  // the kind of cost that gets a check switched off.
+  let ignoredPaths = [];
+  let rule4Ran = true;
+  let rule4Skip = '';
+  if (publishedPaths.length > 0) {
+    const verdict = gitignoredAmong(publishedPaths.map((r) => r.resolved));
+    if (verdict.ok) ignoredPaths = publishedLinkFailures(publishedPaths, verdict);
+    else { rule4Ran = false; rule4Skip = verdict.why; }
   }
 
   // --- rule 3: reverse coverage ---------------------------------------------
@@ -556,6 +733,7 @@ function main() {
   console.log(`  npm run checked  ${scriptsChecked}`);
   console.log(`  paths checked    ${pathsChecked}`);
   console.log(`  files covered    ${coverageRan ? `${coverageChecked}  in ${rootsScanned.join(', ')}` : 'RULE 3 SKIPPED — see below'}`);
+  console.log(`  published links  ${rule4Ran ? `${publishedPaths.length} resolved, ${ignoredPaths.length} gitignored` : 'RULE 4 SKIPPED — see below'}`);
   console.log('');
 
   if (absentUnpublished.length > 0) {
@@ -651,7 +829,34 @@ function main() {
     process.exitCode = 1;
   }
 
-  if (failures.length === 0 && undocumented.length === 0 && absentPublished.length === 0) {
+  if (!rule4Ran) {
+    console.log('  RULE 4 DID NOT RUN, AND THAT IS DECLARED RATHER THAN SILENT.');
+    console.log('  It shells out to `git check-ignore`, and git did not answer:');
+    console.log('');
+    console.log(`    ${rule4Skip}`);
+    console.log('');
+    console.log('  So a published document could be linking to a gitignored file and this');
+    console.log('  run cannot say. It is not a failure — a checkout without git is an');
+    console.log('  environment, not a defect — but it is not a pass either.');
+    console.log('');
+  }
+
+  if (ignoredPaths.length > 0) {
+    console.log(`  FAIL — ${ignoredPaths.length} reference(s) in a PUBLISHED document point at a GITIGNORED file:\n`);
+    for (const r of ignoredPaths.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)) {
+      console.log(`    ${r.file}:${r.line}  ${r.token}   — resolves to ${r.resolved}, which is gitignored`);
+    }
+    console.log('');
+    console.log('  THE PATH RESOLVES HERE AND IS DEAD FOR EVERY STRANGER. Rule 2 checks the');
+    console.log('  working tree, which is why it passed this. Either the target should be');
+    console.log('  tracked, or the reference should name a committed artifact instead — see');
+    console.log('  docs/FAILURE-MODES.md \u00a78, which is held to exactly this rule.');
+    console.log('');
+    process.exitCode = 1;
+  }
+
+  if (failures.length === 0 && undocumented.length === 0 && absentPublished.length === 0 &&
+      ignoredPaths.length === 0) {
     console.log('  IT DOES NOT CHECK CODE QUOTED VERBATIM. A fenced block holding a function');
     console.log('  signature is invisible here — see the header. That is 3.4\'s case and it');
     console.log('  is still open.');
@@ -697,4 +902,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { npmScriptsIn, pathsIn, expandBraces, COVERED_ROOTS, UNDOCUMENTED };
+module.exports = { npmScriptsIn, pathsIn, expandBraces, COVERED_ROOTS, UNDOCUMENTED, ROOT_FILES, gitignoredAmong, publishedLinkFailures };
