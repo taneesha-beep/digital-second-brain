@@ -75,6 +75,36 @@ router.get('/', async (req, res) => {
     }
 
     // ── Semantic mode — extract query keywords, score by overlap ─────────
+    //
+    // ⚠️ NO `excludeId`, AND THAT IS CORRECT — the note below is not.
+    //
+    // CLAUDE.md has carried this call as "one real bug left behind" since 4.6,
+    // on the grounds that the missing `excludeId` gives a >500-note user "a
+    // different semantic-search match set". 4.6's OWN measurement says the
+    // opposite and is the one to trust: the query here is a SEARCH STRING, not
+    // a stored note, so there is nothing to leave out. There is no defect in
+    // the missing argument. Re-verified 27 Aug 2026 at the pre-Phase-8 sweep.
+    //
+    // WHAT IS REAL IS ONE LINE DOWN, AND NOTHING HAS EVER SAID IT. The IDF
+    // corpus is capped at 500 notes by loadUserCorpus; the MATCH SET below has
+    // no `.limit()` at all. So above 500 notes the query's keywords are
+    // weighted by a 500-note sample while every note in the notebook is scored
+    // against them. That asymmetry is unique to this route — notes.js:191 and
+    // upload.js:56 both extract against the same capped corpus they then write
+    // into.
+    //
+    // DELIBERATELY NOT ALIGNED, AND THE REASON IS WHICH DIRECTION THE FIX
+    // RUNS. Capping the match set to match the corpus would make search find
+    // FEWER of a large user's notes, which is a worse product outcome than an
+    // approximate rarity signal. Raising the corpus cap is a different change
+    // with a cost nobody has measured. Both are product decisions and neither
+    // is a bug fix, so the asymmetry is recorded here rather than removed.
+    //
+    // One more thing a reader should not have to discover: `mode=semantic`
+    // scores against STORED note.keywords — the v1 selection — so this route is
+    // one of the four remaining readers of that field, and it is not the
+    // v4-bm25 path the linker uses. The name is a misnomer inherited from an
+    // earlier design; no embeddings are involved.
     if (mode === 'semantic' && q) {
       const corpus = await loadUserCorpus(req.user._id);
       const queryKeywords = extractKeywords('', q, corpus, 10);
