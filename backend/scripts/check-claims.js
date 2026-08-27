@@ -92,11 +92,69 @@ const WRITEUPS = [
   // reads. That inverts this list's usual situation without changing the rule:
   // a published document has MORE reason to be checked, not less.
   //
-  // README.md is still deliberately absent from this list. The rule keeping a
-  // rotting figure out of README is "no numbers at all", and this check only
-  // requires a decimal to TRACE to an artifact, which would license the test
-  // count 4.5 removed. FAILURE-MODES.md is the opposite case: it is nothing but
-  // numbers, so "no numbers" cannot apply to it and tracing is the right rule.
+  // README.md WAS DELIBERATELY ABSENT FROM THIS LIST UNTIL 8.1, AND THE
+  // ARGUMENT THAT KEPT IT OUT DOES NOT SURVIVE BEING CHECKED. It read: the rule
+  // keeping a rotting figure out of README is "no numbers at all", and this
+  // check only requires a decimal to TRACE to an artifact, "which would license
+  // the test count 4.5 removed."
+  //
+  // IT WOULD NOT. A test count is an INTEGER, and this checker has never looked
+  // at an integer — MIN_PLACES is 4, so 949 is out of scope here exactly as it
+  // is out of scope in every other document on this list. Adding README could
+  // not license it, because adding README does not check it. The real risk was
+  // never mechanical: it was a reader concluding "README is in check:claims,
+  // therefore numbers in README are safe" and putting back the class that rots.
+  // The answer to a misreading is to write the rule down precisely, not to
+  // forbid the entire class the rule was a proxy for.
+  //
+  // THE RULE, AS IT NOW STANDS, IN CLAUDE.md's OWN THREE CLASSES:
+  //
+  //   countable from code   FINE, and always was. The cap of 8, the top-10
+  //                         keywords, the four rate limits, the Node pin, the
+  //                         port numbers. A reader re-derives these by opening
+  //                         one file; they cannot rot without the code changing
+  //                         under them, and that is a diff somebody reads.
+  //   measured, >= 4 dp     FINE, and now CHECKED — this entry is what makes it
+  //                         so. 8.1's results table is nDCG@8 and P@8 at four
+  //                         places, so every figure in it must be the correct
+  //                         rounding of one in a committed artifact.
+  //   measured, anything    STAYS OUT. Counts, percentages, one-to-three-place
+  //   else                  decimals. Nothing can see them, so they rot in
+  //                         silence in the only published document. THIS IS THE
+  //                         CLASS 4.5's TEST COUNT BELONGED TO and it is still
+  //                         banned — by a rule that now says which numbers and
+  //                         why, rather than by a blanket that also banned the
+  //                         table Phase 8 exists to print.
+  //
+  // WHAT THIS DOES NOT BUY — AND IT IS MUCH LESS THAN THE PARAGRAPH ABOVE
+  // SOUNDS LIKE. MEASURED AT 8.1, NOT ASSUMED. The header already says this
+  // tool cannot tell whether the artifact is the RELEVANT one; adding the
+  // results table is what turned that caveat into a number. Two mutations of
+  // the new table BOTH SURVIVED this checker on the first attempt:
+  //
+  //     0.3197 -> 0.3198   PASS — results/sweeps/v4-bm25-params.csv holds
+  //                        0.319774, an unrelated BM25 grid point
+  //     0.2391 -> 0.2394   PASS — same class of coincidence
+  //
+  // Sweeping every 4-place slot in the plausibility band [0.0500, 0.4500]
+  // against the tracked artifact index: 1510 of 4001 are already justified by
+  // something. So 37.7% of wrong values pass, and the two sweep CSVs that
+  // dominate that index cluster in exactly the region real nDCG figures live —
+  // which makes the true rate NEAR a correct value worse than 37.7%, not
+  // better.
+  //
+  // So this entry catches INVENTED DIGITS in the published table and does not
+  // catch a MISPLACED or DRIFTED one. tests/readme-results-table.test.js is
+  // what catches those: it compares each cell against the specific sidecar it
+  // claims to come from, and it is mutation-checked with eight wrong
+  // implementations, eight caught — including the two that survived here.
+  // The two are complements. Neither alone is the guard.
+  //
+  // THE p95 LATENCY COLUMN 8.1 ORIGINALLY ASKED FOR IS NOT HERE, AND THE
+  // CHECKER IS THE SMALLEST OF THE THREE REASONS. results/baseline-v1.txt rules
+  // that p95 is quotable "at one figure" on an uncontrolled laptop — and one
+  // significant figure is an integer, i.e. the one precision this tool cannot
+  // see. The two larger reasons are in README's own decision note.
   //
   // WHAT THIS BUYS IS PARTIAL AND THE DOCUMENT SAYS SO IN ITS OWN §8. The scope
   // is four-or-more decimal places (§3.6), so the handful of full-precision
@@ -111,6 +169,13 @@ const WRITEUPS = [
   // millisecond pairs, out of the four-decimal scope by construction, exactly
   // as §3.6 intends.
   'docs/OBSERVABILITY.md',
+  // ADDED AT 8.1, THE THIRD PUBLISHED WRITEUP AND THE ONLY ONE A STRANGER
+  // ACTUALLY OPENS. See the long note above for why the argument that kept it
+  // out was wrong. Its in-scope population is small and deliberate: the six
+  // rungs' nDCG@8 and P@8 on the held-out split, twelve figures. This entry
+  // proves each is not invented; tests/readme-results-table.test.js proves each
+  // is in the right ROW, which is the half this tool cannot do. See above.
+  'README.md',
   // ADDED AT 3.7, AND IT SITS UNDER results/, WHICH IS AN ARTIFACT ROOT.
   // That makes it the first document to be both a writeup and, by path, a
   // candidate artifact — so it would justify its own figures: every decimal in
