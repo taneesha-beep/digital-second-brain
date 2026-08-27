@@ -1,12 +1,25 @@
 const express   = require('express');
+const { objectIdParam } = require('../middleware/objectId');
 const router    = express.Router();
+
+// A malformed id in the URL used to be a 500 on every one of these routes —
+// `Note.findOne({_id: 'banana'})` throws a CastError and the catch maps it to
+// "Error fetching". Measured at 12 of 12 id-taking endpoints across 5 routers.
+// This answers with the SAME response this router already gives for a note that
+// is simply absent, so a malformed id is indistinguishable from a missing one.
+// See middleware/objectId.js for why that rather than a 400.
+//
+// router.param runs AFTER router.use, so `protect` and any rate limiter still
+// see the request and still count it. A test pins that ordering.
+router.param('id', objectIdParam({ status: 404, message: 'Note not found' }));
+router.param('relatedId', objectIdParam({ status: 404, message: 'Note not found' }));
+
 const Note      = require('../models/Note');
 const NoteLink  = require('../models/NoteLink');
 const NoteVersion = require('../models/NoteVersion');
 const { protect } = require('../middleware/auth');
 const { extractKeywords } = require('../utils/keywords');
 const { loadUserCorpus } = require('../utils/corpus');
-const { buildGlobalGraph } = require('../services/graphBuilder.service');
 const { computeAndSaveLinks, getLinkedNotes } = require('../services/linker.service');
 const { saveVersion, getVersions } = require('../services/version.service');
 // Phase 6.1, extended at 6.3. No-ops entirely unless DSB_TRACING=1 —
@@ -111,23 +124,67 @@ router.get('/', async (req, res) => {
   }
 });
 
-// ── GET /api/notes/graph ──────────────────────────────────────────────────────
-router.get('/graph', async (req, res) => {
-  try {
-    const graph = await buildGlobalGraph(req.user._id);
-    res.json(graph);
-  } catch (err) {
-    res.status(500).json({ message: 'Error building graph data' });
-  }
-});
+// ── GET /api/notes/graph WAS HERE AND IS GONE (27 Aug 2026) ───────────────────
+//
+// It was a DUPLICATE of GET /api/graph/global — same builder, same arguments,
+// same response — noticed at 4.4 and carried unchanged through 4.5, 4.6 and 8.1.
+// Only /api/graph/global has a frontend caller (GlobalGraph.jsx:164); nothing in
+// frontend/src/ has ever called this one.
+//
+// THE REASON FOR REMOVING IT WAS NOT THE EIGHT LINES. README's API table listed
+// the two in SEPARATE SECTIONS under DIFFERENT DESCRIPTIONS with nothing
+// connecting them, so the one published document presented a single function as
+// two features — and its note that "/api/graph/global returns a sibling meta"
+// implied a contrast that does not exist, since both call buildGlobalGraph and
+// both return it. A true sentence implying a false thing, in the document 8.1
+// audited for exactly that class.
+//
+// ⚠️ THIS URL NOW FALLS THROUGH TO GET /:id AND RETURNS 500, NOT 404.
+// `Note.findOne({_id: 'graph'})` throws a CastError which :360 maps to
+// "Error fetching note". That is PRE-EXISTING behaviour for any non-ObjectId id
+// — /api/notes/banana does the same today — and is NOT introduced here. It is
+// recorded in the sweep register as its own item rather than fixed in this
+// commit, because guarding the id would change a route the frontend DOES use
+// and that is a second variable with a wider blast radius than this one.
 
 // ── POST /api/notes ───────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
   try {
+    // ⚠️ contentText IS DERIVED HERE AS OF 27 Aug 2026, AND IT WAS NOT BEFORE.
+    //
+    // THE DEFECT: this route stored `req.body.contentText || ''` verbatim, so a
+    // note created with `content` and no `contentText` was stored with an EMPTY
+    // one — and `computeAndSaveLinks` fires on create (below). The linker reads
+    // contentText and nothing else (noteCorpus.service.js:141), so that note's
+    // first link computation ran against a body that was never there, and the
+    // note contributed an empty document to every other note's DF corpus.
+    // Noticed at 6.1 by watching which spans fired, carried by 6.2, 6.3 and the
+    // post-deployment pass.
+    //
+    // WHAT THIS DOES *NOT* DO, AND THE DISTINCTION IS 4.6's. It does not
+    // extract keywords — `keywords: []` is unchanged and a note still gets its
+    // list on first PUT. Extraction at create is a different change with a
+    // different price, and 4.6 is CLOSED at 2237.0 ms per read-time extraction.
+    // Deriving the TEXT is not that; it is the input those stages were always
+    // meant to read.
+    //
+    // THE FROZEN PATH IS CALLED, NOT TOUCHED. blockNoteToPlainText() and
+    // normalizeContent() are load-bearing over three historical content shapes
+    // (FROZEN.md) and neither is edited or moved here.
+    //
+    // NOT REACHABLE FROM THE UI, AND SAYING SO IS THE HONEST SCOPE.
+    // NoteContext.jsx:52 always creates blank — `content: []`, `contentText:
+    // ''` — and the import path then PUTs both fields, so no browser session
+    // has ever lost text to this. It is reachable by any direct API caller.
+    const content = req.body.content;
+    const contentText = req.body.contentText !== undefined
+      ? req.body.contentText
+      : blockNoteToPlainText(content);
+
     const note = await Note.create({
-      title:       req.body.title       || 'Untitled Note',
-      content:     req.body.content     || {},
-      contentText: req.body.contentText || '',
+      title:       req.body.title || 'Untitled Note',
+      content:     content !== undefined ? normalizeContent(content) : {},
+      contentText: contentText || '',
       user:        req.user._id,
       tags:        [],
       keywords:    []
@@ -253,6 +310,24 @@ router.delete('/:id', async (req, res) => {
 router.delete('/:id/relations/:relatedId', async (req, res) => {
   try {
     const { id, relatedId } = req.params;
+
+    // A NOTE CANNOT BE UNLINKED FROM ITSELF, AND SAYING SO IS A 400 NOT A 500.
+    //
+    // The second instance of the same family as the id-cast fix above: bad
+    // caller input reaching a throw and being mapped to a server error.
+    // `NoteLink.canonicalPair(x, x)` refuses a self-pair — correctly, since the
+    // unique index is over an unordered pair and a self-edge has no meaning —
+    // and the catch below turned that refusal into "Error removing link", 500.
+    //
+    // 400 RATHER THAN 404 HERE, WHICH IS THE OPPOSITE CHOICE FROM THE ID GUARD
+    // ABOVE AND IS DELIBERATE. Both ids may name perfectly real notes; what is
+    // wrong is the RELATIONSHIP being asked for, not the existence of either
+    // endpoint. So there is nothing to hide and nothing a 404 would be true
+    // about — middleware/objectId.js's isolation argument does not apply.
+    if (String(id) === String(relatedId)) {
+      return res.status(400).json({ message: 'A note cannot be linked to itself' });
+    }
+
     // One row, both directions — which is what an undirected unlink always
     // meant and what the two $pulls below were emulating. The next save of
     // either note recreates the edge if the retriever still ranks it; that was

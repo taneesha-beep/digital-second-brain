@@ -47,6 +47,7 @@ const express = require('express');
 
 const {
   LIMITS,
+  build,
   identityKey,
   llmLimiter,
   studyPackLimiter,
@@ -684,5 +685,174 @@ describe('the eval harness is not affected, and that is structural', () => {
       .filter(([, code]) => /https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(code))
       .map(([name]) => name);
     expect(offenders).toEqual([]);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// THE FACTORY ITSELF — the pre-Phase-8 sweep, 27 Aug 2026.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('a param guard must not run BEFORE the limiter', () => {
+  /**
+   * THE ORDERING THAT `results/rate-limit-verification.txt` RESTS ON.
+   *
+   * That artifact was produced by hitting the LLM routes with a note id that
+   * does not exist — the handler answers before a model is reached, so the
+   * limiter can be exercised in production without spending a single Groq
+   * token. ROADMAP's redeploy checklist tells the owner to smoke-test it
+   * exactly that way, in bold, for the same reason.
+   *
+   * The pre-Phase-8 sweep added `router.param('noteId', …)` to these routers so
+   * a MALFORMED id gets the route's own not-found answer instead of a 500. If
+   * that guard short-circuited BEFORE the limiter, the artifact's method would
+   * silently stop working: the request would be refused without ever being
+   * counted, and the next person to reproduce it would measure nothing while
+   * getting plausible-looking output.
+   *
+   * Express runs `router.param` callbacks at route-match time, which is AFTER
+   * `router.use` middleware — so the ordering is correct by construction. This
+   * pins it anyway, because "correct by construction" is a claim about a
+   * framework's behaviour and this repository's rule is to measure those.
+   */
+  const { objectIdParam } = require('../middleware/objectId');
+
+  function appWithParamGuard(limiter) {
+    const app = express();
+    app.use((req, res, next) => {
+      const id = req.get('x-test-user');
+      if (id) req.user = { id };
+      next();
+    });
+    const router = express.Router();
+    router.use(limiter);
+    router.param('noteId', objectIdParam({ status: 400, message: 'Note not found or access denied' }));
+    router.post('/:noteId', (req, res) => res.status(200).json({ reached: true }));
+    app.use('/api/thing', router);
+    return app;
+  }
+
+  test('a refused id is still COUNTED — the header decrements', async () => {
+    const { server, base } = await listen(appWithParamGuard(llmLimiter));
+    try {
+      const seen = [];
+      for (let i = 0; i < 3; i += 1) {
+        const r = await fetch(`${base}/api/thing/banana`, {
+          method: 'POST', headers: { 'x-test-user': 'ordering-user' }
+        });
+        seen.push({ status: r.status, header: r.headers.get('ratelimit') });
+      }
+      // The guard answered every one of them...
+      expect(seen.map((x) => x.status)).toEqual([400, 400, 400]);
+      // ...and the limiter counted every one of them.
+      for (const x of seen) expect(x.header).toBeTruthy();
+      const remaining = seen.map((x) => Number(/r=(\d+)/.exec(x.header)[1]));
+      expect(remaining).toEqual([remaining[0], remaining[0] - 1, remaining[0] - 2]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test('and a WELL-FORMED id reaches the handler, so the guard is not refusing everything', async () => {
+    // POSITIVE CONTROL. Without it, a guard that rejected every id would satisfy
+    // the test above perfectly.
+    const { server, base } = await listen(appWithParamGuard(llmLimiter));
+    try {
+      const r = await fetch(`${base}/api/thing/507f1f77bcf86cd799439011`, {
+        method: 'POST', headers: { 'x-test-user': 'ordering-user-2' }
+      });
+      expect(r.status).toBe(200);
+      expect((await r.json()).reached).toBe(true);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+});
+
+describe('build() refuses an option it would not honour', () => {
+  /**
+   * THIS BLOCK EXISTS BECAUSE A MUTATION IN THIS VERY SUITE REPORTED A CATCH IT
+   * HAD NOT MADE. At 8.0, mutation 8's first form matched its pattern, applied
+   * cleanly, and changed NO BEHAVIOUR — build() destructured only
+   * {windowMs,max},{key,message} and silently discarded the option the mutation
+   * added. The suite stayed green about a limiter that had not moved, and the
+   * mutation pass counted it as caught.
+   *
+   * "Guarding that a mutation APPLIES is not the same as guarding that it has
+   * EFFECT" is the lesson this suite's own header records. The factory's
+   * silence is what made the two come apart, so the silence is what is fixed.
+   *
+   * NARROWNESS IS KEPT. The refusal is not a step toward forwarding arbitrary
+   * options — the four limiters should differ in exactly two axes, and a fifth
+   * quietly acquiring a `store` or a `skip` is the outcome being prevented.
+   */
+  const goodLimits = { windowMs: 1000, max: 5 };
+  const goodBehaviour = { key: () => 'k', message: 'no' };
+
+  test('the four shipped limiters still build — the control for everything below', () => {
+    // If the guard were too strict, THIS is what breaks, and it breaks at
+    // module load in production. server.js requires this file at boot.
+    for (const limiter of [llmLimiter, studyPackLimiter, quotaDailyLimiter, registerLimiter]) {
+      expect(typeof limiter).toBe('function');
+    }
+    expect(() => build(goodLimits, goodBehaviour)).not.toThrow();
+  });
+
+  test.each([
+    ['skip'], ['skipSuccessfulRequests'], ['store'], ['standardHeaders'], ['handler']
+  ])('an unhonoured limits option (%s) is REFUSED, not discarded', (opt) => {
+    expect(() => build({ ...goodLimits, [opt]: true }, goodBehaviour))
+      .toThrow(/unknown limits option\(s\)/);
+  });
+
+  test('a MISSPELLED option is refused rather than silently missing', () => {
+    // windowMS vs windowMs is the realistic version of this mistake and the one
+    // a reader would never spot: it would have produced a limiter with
+    // windowMs undefined and express-rate-limit's own default in its place.
+    expect(() => build({ windowMS: 1000, max: 5 }, goodBehaviour)).toThrow(/windowMS/);
+  });
+
+  test('an unhonoured BEHAVIOUR option is refused too', () => {
+    expect(() => build(goodLimits, { ...goodBehaviour, onLimitReached: () => {} }))
+      .toThrow(/unknown behaviour option\(s\) onLimitReached/);
+  });
+
+  test('the message names the option AND what would have happened to it', () => {
+    // A refusal that does not say why sends the reader to the source. This one
+    // has to carry the word DISCARDED, because that is the defect being fixed.
+    let err;
+    try { build({ ...goodLimits, skip: () => true }, goodBehaviour); } catch (e) { err = e; }
+    expect(err).toBeInstanceOf(TypeError);
+    expect(err.message).toContain('skip');
+    expect(err.message).toContain('DISCARDED');
+    expect(err.message).toContain('windowMs, max');
+  });
+
+  test.each([['windowMs'], ['max']])('a MISSING limits option (%s) is refused', (opt) => {
+    const partial = { ...goodLimits };
+    delete partial[opt];
+    expect(() => build(partial, goodBehaviour)).toThrow(new RegExp(`missing limits option ${opt}`));
+  });
+
+  test.each([['key'], ['message']])('a MISSING behaviour option (%s) is refused', (opt) => {
+    const partial = { ...goodBehaviour };
+    delete partial[opt];
+    expect(() => build(goodLimits, partial)).toThrow(new RegExp(`missing behaviour option ${opt}`));
+  });
+
+  test('a null or undefined argument is refused rather than throwing on destructure', () => {
+    // The guard runs BEFORE the destructure precisely so the error names the
+    // option instead of being a TypeError about reading a property of null.
+    expect(() => build(null, goodBehaviour)).toThrow(/missing limits option/);
+    expect(() => build(goodLimits, undefined)).toThrow(/missing behaviour option/);
+  });
+
+  test('THE REGRESSION: an added option now has EFFECT on whether build succeeds', () => {
+    // The exact shape of 8.0's mutation 8. Before this guard, these two calls
+    // were indistinguishable — same limiter, same behaviour, no error. That
+    // indistinguishability is what let a mutation pass report a false catch.
+    const withoutExtra = () => build({ windowMs: 1000, max: 5 }, goodBehaviour);
+    const withExtra = () => build({ windowMs: 1000, max: 5, skipFailedRequests: true }, goodBehaviour);
+    expect(withoutExtra).not.toThrow();
+    expect(withExtra).toThrow();
   });
 });

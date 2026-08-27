@@ -213,6 +213,22 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
     app.use('/api/search', require('../routes/search'));
     app.use('/api/llm', require('../routes/llm'));
     app.use('/api/export', require('../routes/export'));
+    // MOUNTED AT THE PRE-PHASE-8 SWEEP, AND ITS ABSENCE WAS ITS OWN SMALL GAP.
+    // server.js registers /api/study-pack (the only retrieval-augmented route),
+    // this suite did not, and a malformed-id test against it therefore got
+    // Express's "no such route" 404 instead of the route's own answer — which
+    // is exactly the shape of false pass this suite exists to prevent. Nothing
+    // here calls a model: every request in these tests names an id that fails
+    // before a generator is reached.
+    //
+    // ⚠️ BUT THE LIMITERS DO COUNT THOSE REQUESTS, which is the whole reason
+    // results/rate-limit-verification.txt can be produced without spending
+    // quota — and it means this suite consumes the SHARED in-process budget.
+    // quotaDaily is 18 per PROCESS across every user, and the suite currently
+    // makes about 7 llm + study-pack requests. That is comfortable and it is
+    // not unlimited: anyone adding a dozen more will start seeing 429s from
+    // tests that look unrelated. Count them rather than assuming headroom.
+    app.use('/api/study-pack', require('../routes/studyPack'));
     app.use('/api/upload', require('../routes/upload'));
 
     server = await new Promise((resolve) => {
@@ -429,12 +445,54 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
       expect(labels).not.toContain('Alice sourdough');
     });
 
-    test('and so does the duplicate endpoint — /api/notes/graph', async () => {
-      // /api/graph/global and /api/notes/graph are the same builder behind two
-      // routes (4.4's noticed list). Only the first has a frontend caller, and
-      // the second is exactly the shape that gets forgotten. Covered so that
-      // removing either later is a decision rather than a risk.
+    test('the duplicate endpoint /api/notes/graph is GONE, and its removal is not silent', async () => {
+      // THIS TEST USED TO ASSERT THE DUPLICATE WORKED, and it said why: "covered
+      // so that removing either later is a decision rather than a risk." The
+      // decision was taken on 27 Aug 2026 and this is the same test on the other
+      // side of it — which is what that sentence was for.
+      //
+      // IT IS A CLEAN 404. When the route was first removed this asserted 500 —
+      // the URL fell through to GET /:id and `Note.findOne({_id: 'graph'})`
+      // threw a CastError the handler mapped to "Error fetching note". That was
+      // PRE-EXISTING for any non-ObjectId id rather than a regression from the
+      // removal, and this test said so with a control beside it: "if a later
+      // change makes bad ids 404, BOTH of these move together and neither can
+      // rot alone."
+      //
+      // THAT CHANGE IS THE NEXT COMMIT AND BOTH MOVED TOGETHER, WHICH IS THE
+      // SENTENCE WORKING. middleware/objectId.js now refuses a malformed id
+      // with the route's own not-found response.
       const { status, body } = await api('GET', '/api/notes/graph', { token: bob.token });
+      expect(status).toBe(404);
+      expect(body.message).toBe('Note not found');
+    });
+
+    test('and it is the ordinary malformed-id path, not something this removal created', async () => {
+      // THE CONTROL, still doing its job on the other side of the fix: any
+      // malformed note id lands here, and `graph` is no longer special in
+      // either direction.
+      const { status, body } = await api('GET', '/api/notes/banana', { token: bob.token });
+      expect(status).toBe(404);
+      expect(body.message).toBe('Note not found');
+    });
+
+    test('the surviving endpoint is still cross-user scoped', async () => {
+      // The isolation guarantee the deleted test also carried. Kept on the
+      // endpoint that remains, so removing the duplicate did not remove a
+      // check — which is the only thing that would have made this deletion a
+      // real loss.
+      //
+      // ⚠️ WHAT IT PROVES AND WHAT IT DOES NOT, measured by mutation rather
+      // than assumed. Replacing `req.user.id` with `null` in routes/graph.js
+      // FAILS this. Replacing it with `req.query.user || req.user.id` — an
+      // injected override channel — PASSES, because nothing here sends that
+      // parameter. So this proves the endpoint scopes to the authenticated
+      // user when nobody tries to override it, and does NOT prove there is no
+      // override channel. That limit is the whole isolation suite's, not this
+      // test's, and it predates the endpoint removal by four phases; recorded
+      // here because a reader of a cross-user test will otherwise assume the
+      // stronger claim.
+      const { status, body } = await api('GET', '/api/graph/global', { token: bob.token });
       expect(status).toBe(200);
       const labels = body.elements.filter((e) => e.data.type === 'note').map((e) => e.data.label);
       expect(labels).toEqual(['Bob risotto']);
@@ -756,12 +814,330 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
       expect(a).toBe(b);
     });
 
-    test('a note saved with no contentText reaches the adapter as an empty body', async () => {
+    test('a note saved with NO CONTENT AT ALL still reaches the adapter as an empty body', async () => {
+      // Unchanged by the create-path fix below, and worth keeping separate from
+      // it: a note with no content has no text to derive, and '' is right.
       const { body } = await api('POST', '/api/notes', { token: user.token, body: { title: 'Empty' } });
       const docs = await noteCorpus.loadNoteCorpus(user.id);
       const found = docs.find((d) => d.id === String(body._id));
       expect(found.body).toBe('');
       await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // THE CREATE PATHS — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // ───────────────────────────────────────────────────────────────────────
+  // MALFORMED IDS — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // ───────────────────────────────────────────────────────────────────────
+  // SEARCH: tags mode — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe('tags search treats the query as TEXT, and never 500s', () => {
+    /**
+     * TWO LIVE DEFECTS, BOTH USER-REACHABLE, FOUND BY PROBING BAD INPUT RATHER
+     * THAN BY READING THE ROUTE.
+     *
+     * (1) `GET /api/search?mode=tags` with nothing to search by was a 500:
+     *     tagQuery fell back to `tagsArr[0]`, which is undefined on an empty
+     *     list, and `{$regex: undefined}` makes Mongo throw. API-only —
+     *     SearchBar.jsx returns early on an empty query.
+     *
+     * (2) RAW INPUT WENT INTO `$regex`. `(`, `[` and `*` are invalid patterns
+     *     and threw; `a+b` is a VALID one and returned 200 while silently
+     *     matching "ab". THAT IS THE WORSE HALF — a wrong answer with no error
+     *     beside it, and a user could not search for a tag containing `.`,
+     *     `+`, `?` or `*` at all. Fully reachable from the UI, where
+     *     SearchBar.jsx catches the 500 and calls onResults([]) — so a server
+     *     error surfaced to the user as "no results".
+     */
+    let user;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Tagger', username: `tagger${stamp}`,
+        email: `tagger${stamp}@example.com`, password: 'password123'
+      });
+      // Two notes whose tags differ only by a regex metacharacter. This pair is
+      // the whole point: under the old code a search for one returned both.
+      await api('POST', '/api/notes', { token: user.token, body: { title: 'Cplusplus', contentText: 'x' } });
+      const Note = require('../models/Note');
+      await Note.updateOne({ title: 'Cplusplus' }, { $set: { tags: ['a+b'] } });
+      await api('POST', '/api/notes', { token: user.token, body: { title: 'Abbrev', contentText: 'y' } });
+      await Note.updateOne({ title: 'Abbrev' }, { $set: { tags: ['ab'] } });
+    });
+
+    test.each([
+      ['mode=tags'],
+      ['mode=tags&q='],
+      ['mode=tags&tags='],
+      ['mode=tags&q=%20']
+    ])('%s — nothing to search by falls through to the recent-notes answer', async (qs) => {
+      // ⚠️ THIS ASSERTS THE ANSWER, NOT JUST "NOT A 500", AND THE FIRST DRAFT
+      // DID THE WEAKER THING. It checked `status === 200` and a mutation
+      // deleting the `&& tagQuery` guard PASSED it — because the two fixes in
+      // this route are NOT INDEPENDENT. With escaping in place,
+      // `escapeRegex(undefined)` is the string "undefined", which is a
+      // perfectly valid pattern: the missing guard stops being a crash and
+      // becomes a SILENT search for the literal word "undefined". A weaker
+      // failure to detect and a worse one to have.
+      //
+      // So the guard is load-bearing for CORRECTNESS, not merely for the 500,
+      // and the only assertion that can see that is one comparing the result
+      // set against what every other mode returns for an empty query.
+      const tags = await api('GET', `/api/search?${qs}`, { token: user.token });
+      const none = await api('GET', '/api/search?q=', { token: user.token });
+      expect(tags.status).toBe(200);
+      expect(tags.body.map((n) => n.title).sort()).toEqual(none.body.map((n) => n.title).sort());
+      // And the recent-notes answer is non-empty here, so the comparison above
+      // cannot pass by both sides being []. §26.7's defect, guarded.
+      expect(none.body.length).toBeGreaterThan(0);
+    });
+
+    test.each([['%28', '('], ['%5B', '['], ['%2A', '*'], ['%3F', '?'], ['%2B', '+']])(
+      'a regex metacharacter (%s = "%s") is text, not a pattern', async (encoded) => {
+        const { status } = await api('GET', `/api/search?mode=tags&q=${encoded}`, { token: user.token });
+        expect(status).toBe(200);
+      });
+
+    test('THE SEMANTICS: "a+b" matches the literal tag and NOT "ab"', async () => {
+      // The assertion that fails on the old code with a 200 rather than an
+      // error — which is exactly why nobody found it. `a+b` as a pattern means
+      // "one or more a, then b", so it matched the note tagged `ab` too.
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=a%2Bb', { token: user.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).toEqual(['Cplusplus']);
+    });
+
+    test('and a plain query still matches, so the escaping is not over-broad', async () => {
+      // POSITIVE CONTROL. An escape that broke ordinary search would satisfy
+      // every "is not a 500" assertion above.
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=ab', { token: user.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).toEqual(['Abbrev']);
+    });
+
+    test('tags mode stays cross-user scoped through all of this', async () => {
+      const { status, body } = await api('GET', '/api/search?mode=tags&q=a%2Bb', { token: bob.token });
+      expect(status).toBe(200);
+      expect(body.map((n) => n.title)).not.toContain('Cplusplus');
+    });
+  });
+
+  describe('a malformed id is the route\'s own not-found, never a 500', () => {
+    /**
+     * MEASURED BEFORE IT WAS FIXED: 12 of 12 id-taking endpoints across FIVE
+     * routers returned 500 for a malformed id. `Note.findOne({_id:'banana'})`
+     * throws a CastError and every handler's catch maps every failure to 500,
+     * so a client error arrived as a server error on the entire surface.
+     *
+     * Found while deleting the duplicate graph endpoint — that removal made
+     * /api/notes/graph fall through to /:id and land on exactly this path.
+     *
+     * THE TABLE IS THE TEST. Each row asserts that a malformed id gets the SAME
+     * status the same route gives for a note that is simply absent, which is
+     * the property middleware/objectId.js exists to provide: indistinguishable,
+     * so nothing about the id space is leaked on endpoints designed to say as
+     * little as possible.
+     */
+    let user;
+    let realNote;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Caster', username: `caster${stamp}`,
+        email: `caster${stamp}@example.com`, password: 'password123'
+      });
+      realNote = await createNote(user.token, 'Caster note', 'a body worth indexing');
+    });
+
+    // A syntactically valid ObjectId that names nothing.
+    const ABSENT = '507f1f77bcf86cd799439011';
+
+    const ROUTES = [
+      ['GET',    (id) => `/api/notes/${id}`,                       404],
+      ['PUT',    (id) => `/api/notes/${id}`,                       404],
+      ['DELETE', (id) => `/api/notes/${id}`,                       404],
+      ['GET',    (id) => `/api/notes/${id}/links`,                 404],
+      ['GET',    (id) => `/api/notes/${id}/versions`,              404],
+      ['GET',    (id) => `/api/notes/${id}/versions/1`,            404],
+      ['GET',    (id) => `/api/graph/note/${id}`,                  404],
+      ['GET',    (id) => `/api/graph/note/${id}/expand/salt`,      404],
+      ['GET',    (id) => `/api/export/${id}?format=text`,          404],
+      ['POST',   (id) => `/api/llm/${id}/summarize`,               400],
+      ['POST',   (id) => `/api/study-pack/${id}`,                  400]
+    ];
+
+    test.each(ROUTES)('%s %s — a malformed id is %i, not 500', async (method, url, expected) => {
+      const { status } = await api(method, url('banana'), { token: user.token, ...(method === 'PUT' ? { body: {} } : {}) });
+      expect(status).toBe(expected);
+    });
+
+    test.each(ROUTES)('%s %s — and that MATCHES what an absent id returns', async (method, url, expected) => {
+      // THE HALF THAT MAKES IT A GUARANTEE RATHER THAN A STATUS CODE. If these
+      // ever diverge, a caller can tell "malformed" from "not yours" and the
+      // isolation argument in middleware/objectId.js quietly stops holding.
+      const { status } = await api(method, url(ABSENT), { token: user.token, ...(method === 'PUT' ? { body: {} } : {}) });
+      expect(status).toBe(expected);
+    });
+
+    test('the relations route refuses a SELF-pair with 400, not 500', async () => {
+      // The second instance of the same family: `canonicalPair(x, x)` throws
+      // because a self-edge has no meaning under an unordered unique index, and
+      // the catch turned that into "Error removing link".
+      const { status, body } = await api('DELETE', `/api/notes/${ABSENT}/relations/${ABSENT}`, { token: user.token });
+      expect(status).toBe(400);
+      expect(body.message).toBe('A note cannot be linked to itself');
+    });
+
+    test('a malformed relatedId is refused too, not just the primary id', async () => {
+      // :relatedId gets its own router.param registration. Easy to forget, and
+      // the reason the guard is a param handler rather than twelve ifs.
+      const { status } = await api('DELETE', `/api/notes/${realNote}/relations/banana`, { token: user.token });
+      expect(status).toBe(404);
+    });
+
+    test('AN UPPERCASE ID STILL WORKS — the guard must not be stricter than mongoose', async () => {
+      // THE REGRESSION THE FIRST DRAFT SHIPPED. isCanonicalObjectId compared the
+      // round-trip EXACTLY, and mongoose stringifies to lowercase, so an id sent
+      // uppercase failed to round-trip and got a 404 — for a request that finds
+      // the document perfectly well today. Turning a fix into a regression is
+      // the worse direction for a guard whose whole job is softening 500s.
+      const { status } = await api('GET', `/api/notes/${String(realNote).toUpperCase()}`, { token: user.token });
+      expect(status).toBe(200);
+    });
+
+    test('a well-formed id belonging to SOMEONE ELSE is still 404, unchanged', async () => {
+      // The isolation guarantee the guard must not disturb: it sits in front of
+      // the ownership check, so it must not answer differently for a valid id
+      // that simply is not yours.
+      const { status } = await api('GET', `/api/notes/${realNote}`, { token: bob.token });
+      expect(status).toBe(404);
+    });
+  });
+
+  describe('create derives contentText, so the linker sees the note', () => {
+    /**
+     * TWO ROUTES, ONE DEFECT, AND ONLY ONE OF THEM WAS EVER ON A NOTICED LIST.
+     *
+     * `POST /api/notes` stored `req.body.contentText || ''` verbatim and never
+     * derived it — noticed at 6.1 by watching which spans fired, then carried
+     * unchanged by 6.2, 6.3 and the post-deployment pass.
+     *
+     * `POST /api/upload` never set contentText AT ALL, so the schema default of
+     * '' stood. Found by this sweep; no noticed list has it.
+     *
+     * BOTH MATTER FOR THE SAME REASON: noteCorpus.service.js:141 reads
+     * `body: note.contentText` and nothing else, so a note with an empty
+     * contentText is indexed as an empty document — it gets links from its
+     * title alone AND it dilutes every other note's document-frequency corpus.
+     *
+     * ⚠️ NEITHER IS REACHABLE FROM THE UI, WHICH IS THE HONEST SCOPE AND IS NOT
+     * A REASON TO LEAVE THEM. NoteContext.jsx:52 always creates blank and the
+     * import path then PUTs both fields; nothing in frontend/src/ calls
+     * /api/upload at all, which FROZEN.md also records. So no browser session
+     * has lost text to either. Both are reachable by any direct API caller, and
+     * both are registered live routes.
+     */
+    let user;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Creator', username: `creator${stamp}`,
+        email: `creator${stamp}@example.com`, password: 'password123'
+      });
+    });
+
+    test('POST with `content` and NO contentText DERIVES it', async () => {
+      // THE ASSERTION THAT FAILS WITHOUT THE FIX. Before it, contentText was ''
+      // and this note was invisible to the retriever.
+      const { status, body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Derived', content: [{ text: 'sourdough starter hydration' }] }
+      });
+      expect(status).toBe(201);
+      expect(body.contentText).toBe('sourdough starter hydration');
+
+      const docs = await noteCorpus.loadNoteCorpus(user.id);
+      expect(docs.find((d) => d.id === String(body._id)).body).toBe('sourdough starter hydration');
+    });
+
+    test('it walks the three historical content shapes, not just one', async () => {
+      // blockNoteToPlainText() is FROZEN and load-bearing over three shapes.
+      // This calls it and does not touch it; the shapes are checked so a future
+      // "simplification" of the create path cannot quietly handle only arrays.
+      const shapes = [
+        [[{ text: 'array of blocks' }], 'array of blocks'],
+        [{ text: 'plain object' }, 'plain object'],
+        ['a legacy string', 'a legacy string'],
+        [{ content: [{ text: 'nested' }, { children: [{ text: 'deep' }] }] }, 'nested deep']
+      ];
+      for (const [content, expected] of shapes) {
+        const { body } = await api('POST', '/api/notes', {
+          token: user.token, body: { title: 'Shape', content }
+        });
+        expect(body.contentText).toBe(expected);
+        await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+      }
+    });
+
+    test('an EXPLICIT contentText is still stored verbatim and never re-derived', async () => {
+      // The client is allowed to be authoritative — the UI's import path sends
+      // both fields and its text is not a function of its content blocks.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Explicit', content: [{ text: 'ignored' }], contentText: 'authoritative' }
+      });
+      expect(body.contentText).toBe('authoritative');
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('an explicit EMPTY contentText is honoured rather than derived over', async () => {
+      // `!== undefined` rather than `||`, so a deliberate '' is not silently
+      // replaced by the block text. The distinction is the whole reason the
+      // check is not `req.body.contentText || derive(...)`.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'Blank', content: [{ text: 'has text' }], contentText: '' }
+      });
+      expect(body.contentText).toBe('');
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('KEYWORDS ARE STILL EMPTY ON CREATE — this is not 4.6 through the back door', async () => {
+      // The scope line. Deriving the TEXT is not extracting KEYWORDS: 4.6 is
+      // CLOSED at 2237.0 ms for read-time extraction, and a note still gets its
+      // keyword list on first PUT exactly as before. If this ever goes red,
+      // somebody has widened the create path into 4.6's territory.
+      const { body } = await api('POST', '/api/notes', {
+        token: user.token,
+        body: { title: 'NoKeywords', content: [{ text: 'sourdough starter hydration' }] }
+      });
+      expect(body.keywords).toEqual([]);
+      await api('DELETE', `/api/notes/${body._id}`, { token: user.token });
+    });
+
+    test('POST /api/upload sets contentText, so an uploaded file is not indexed empty', async () => {
+      // THE DEFECT NO NOTICED LIST CARRIED. Before the fix this note reached
+      // the adapter with body '' and was linked on its title alone.
+      const form = new FormData();
+      form.append('file', new Blob(['pickling brine salinity ratios'], { type: 'text/plain' }), 'brine.txt');
+      const response = await fetch(`${base}/api/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${user.token}` },
+        body: form
+      });
+      expect(response.status).toBe(201);
+      const created = await response.json();
+      expect(created.contentText).toBe('pickling brine salinity ratios');
+
+      const docs = await noteCorpus.loadNoteCorpus(user.id);
+      expect(docs.find((d) => d.id === String(created._id)).body).toBe('pickling brine salinity ratios');
+      await api('DELETE', `/api/notes/${created._id}`, { token: user.token });
     });
   });
 });

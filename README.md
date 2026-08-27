@@ -420,7 +420,6 @@ All routes require `Authorization: Bearer <token>` except the two under `/api/au
 | GET | `/api/notes/:id` | One note. Related notes are **not** included — use `/links` below |
 | PUT | `/api/notes/:id` | Update; re-extracts keywords and re-links |
 | DELETE | `/api/notes/:id` | Delete and clean up inbound links |
-| GET | `/api/notes/graph` | Global graph for the current user |
 | GET | `/api/notes/:id/links` | Related notes: the ones this note ranked first, by its own score, then the ones that ranked it |
 | DELETE | `/api/notes/:id/relations/:relatedId` | Remove one link, both directions |
 | GET | `/api/notes/:id/versions` | Version list |
@@ -435,7 +434,7 @@ All routes require `Authorization: Bearer <token>` except the two under `/api/au
 | GET | `/api/export/:noteId?format=` | `pdf`, `markdown`, or `text` |
 
 The graph endpoints return `{ elements: [...] }` in Cytoscape's own format, not
-`{ nodes, links }`. `/api/graph/global` returns a sibling `meta` alongside it, naming the
+`{ nodes, links }`. The global one returns a sibling `meta` alongside it, naming the
 keywords a document-frequency cutoff suppressed — so a missing edge can be told apart from
 an absent relationship. Nothing renders `meta`; it exists to be read.
 
