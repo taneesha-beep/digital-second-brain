@@ -1,5 +1,19 @@
 const express   = require('express');
+const { objectIdParam } = require('../middleware/objectId');
 const router    = express.Router();
+
+// A malformed id in the URL used to be a 500 on every one of these routes —
+// `Note.findOne({_id: 'banana'})` throws a CastError and the catch maps it to
+// "Error fetching". Measured at 12 of 12 id-taking endpoints across 5 routers.
+// This answers with the SAME response this router already gives for a note that
+// is simply absent, so a malformed id is indistinguishable from a missing one.
+// See middleware/objectId.js for why that rather than a 400.
+//
+// router.param runs AFTER router.use, so `protect` and any rate limiter still
+// see the request and still count it. A test pins that ordering.
+router.param('id', objectIdParam({ status: 404, message: 'Note not found' }));
+router.param('relatedId', objectIdParam({ status: 404, message: 'Note not found' }));
+
 const Note      = require('../models/Note');
 const NoteLink  = require('../models/NoteLink');
 const NoteVersion = require('../models/NoteVersion');
@@ -296,6 +310,24 @@ router.delete('/:id', async (req, res) => {
 router.delete('/:id/relations/:relatedId', async (req, res) => {
   try {
     const { id, relatedId } = req.params;
+
+    // A NOTE CANNOT BE UNLINKED FROM ITSELF, AND SAYING SO IS A 400 NOT A 500.
+    //
+    // The second instance of the same family as the id-cast fix above: bad
+    // caller input reaching a throw and being mapped to a server error.
+    // `NoteLink.canonicalPair(x, x)` refuses a self-pair — correctly, since the
+    // unique index is over an unordered pair and a self-edge has no meaning —
+    // and the catch below turned that refusal into "Error removing link", 500.
+    //
+    // 400 RATHER THAN 404 HERE, WHICH IS THE OPPOSITE CHOICE FROM THE ID GUARD
+    // ABOVE AND IS DELIBERATE. Both ids may name perfectly real notes; what is
+    // wrong is the RELATIONSHIP being asked for, not the existence of either
+    // endpoint. So there is nothing to hide and nothing a 404 would be true
+    // about — middleware/objectId.js's isolation argument does not apply.
+    if (String(id) === String(relatedId)) {
+      return res.status(400).json({ message: 'A note cannot be linked to itself' });
+    }
+
     // One row, both directions — which is what an undirected unlink always
     // meant and what the two $pulls below were emulating. The next save of
     // either note recreates the edge if the retriever still ranks it; that was

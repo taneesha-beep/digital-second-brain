@@ -213,6 +213,22 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
     app.use('/api/search', require('../routes/search'));
     app.use('/api/llm', require('../routes/llm'));
     app.use('/api/export', require('../routes/export'));
+    // MOUNTED AT THE PRE-PHASE-8 SWEEP, AND ITS ABSENCE WAS ITS OWN SMALL GAP.
+    // server.js registers /api/study-pack (the only retrieval-augmented route),
+    // this suite did not, and a malformed-id test against it therefore got
+    // Express's "no such route" 404 instead of the route's own answer — which
+    // is exactly the shape of false pass this suite exists to prevent. Nothing
+    // here calls a model: every request in these tests names an id that fails
+    // before a generator is reached.
+    //
+    // ⚠️ BUT THE LIMITERS DO COUNT THOSE REQUESTS, which is the whole reason
+    // results/rate-limit-verification.txt can be produced without spending
+    // quota — and it means this suite consumes the SHARED in-process budget.
+    // quotaDaily is 18 per PROCESS across every user, and the suite currently
+    // makes about 7 llm + study-pack requests. That is comfortable and it is
+    // not unlimited: anyone adding a dozen more will start seeing 429s from
+    // tests that look unrelated. Count them rather than assuming headroom.
+    app.use('/api/study-pack', require('../routes/studyPack'));
     app.use('/api/upload', require('../routes/upload'));
 
     server = await new Promise((resolve) => {
@@ -435,24 +451,29 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
       // decision was taken on 27 Aug 2026 and this is the same test on the other
       // side of it — which is what that sentence was for.
       //
-      // ⚠️ IT IS 500 AND NOT 404, AND THAT IS WORTH ASSERTING RATHER THAN
-      // TOLERATING QUIETLY. With the route gone the URL falls through to
-      // GET /:id, where `Note.findOne({_id: 'graph'})` throws a CastError that
-      // the handler maps to "Error fetching note". PRE-EXISTING for ANY
-      // non-ObjectId id — /api/notes/banana behaves identically and always has —
-      // so it is not a regression from this removal, and the control below
-      // PROVES that rather than asserting it.
-      const { status } = await api('GET', '/api/notes/graph', { token: bob.token });
-      expect(status).toBe(500);
+      // IT IS A CLEAN 404. When the route was first removed this asserted 500 —
+      // the URL fell through to GET /:id and `Note.findOne({_id: 'graph'})`
+      // threw a CastError the handler mapped to "Error fetching note". That was
+      // PRE-EXISTING for any non-ObjectId id rather than a regression from the
+      // removal, and this test said so with a control beside it: "if a later
+      // change makes bad ids 404, BOTH of these move together and neither can
+      // rot alone."
+      //
+      // THAT CHANGE IS THE NEXT COMMIT AND BOTH MOVED TOGETHER, WHICH IS THE
+      // SENTENCE WORKING. middleware/objectId.js now refuses a malformed id
+      // with the route's own not-found response.
+      const { status, body } = await api('GET', '/api/notes/graph', { token: bob.token });
+      expect(status).toBe(404);
+      expect(body.message).toBe('Note not found');
     });
 
-    test('and that 500 is the id-cast path, not something this removal created', async () => {
-      // THE CONTROL. Without it the test above reads as "deleting the route
-      // broke the URL", which would be the wrong lesson: any malformed note id
-      // has always landed here. If a later change makes bad ids 404, BOTH of
-      // these move together and neither can rot alone.
-      const { status } = await api('GET', '/api/notes/banana', { token: bob.token });
-      expect(status).toBe(500);
+    test('and it is the ordinary malformed-id path, not something this removal created', async () => {
+      // THE CONTROL, still doing its job on the other side of the fix: any
+      // malformed note id lands here, and `graph` is no longer special in
+      // either direction.
+      const { status, body } = await api('GET', '/api/notes/banana', { token: bob.token });
+      expect(status).toBe(404);
+      expect(body.message).toBe('Note not found');
     });
 
     test('the surviving endpoint is still cross-user scoped', async () => {
@@ -807,6 +828,102 @@ describeWith('mongo', 'the app against a real MongoDB', () => {
   // ───────────────────────────────────────────────────────────────────────
   // THE CREATE PATHS — the pre-Phase-8 sweep, 27 Aug 2026.
   // ───────────────────────────────────────────────────────────────────────
+
+  // ───────────────────────────────────────────────────────────────────────
+  // MALFORMED IDS — the pre-Phase-8 sweep, 27 Aug 2026.
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe('a malformed id is the route\'s own not-found, never a 500', () => {
+    /**
+     * MEASURED BEFORE IT WAS FIXED: 12 of 12 id-taking endpoints across FIVE
+     * routers returned 500 for a malformed id. `Note.findOne({_id:'banana'})`
+     * throws a CastError and every handler's catch maps every failure to 500,
+     * so a client error arrived as a server error on the entire surface.
+     *
+     * Found while deleting the duplicate graph endpoint — that removal made
+     * /api/notes/graph fall through to /:id and land on exactly this path.
+     *
+     * THE TABLE IS THE TEST. Each row asserts that a malformed id gets the SAME
+     * status the same route gives for a note that is simply absent, which is
+     * the property middleware/objectId.js exists to provide: indistinguishable,
+     * so nothing about the id space is leaked on endpoints designed to say as
+     * little as possible.
+     */
+    let user;
+    let realNote;
+    beforeAll(async () => {
+      const stamp = Date.now();
+      user = await register({
+        name: 'Caster', username: `caster${stamp}`,
+        email: `caster${stamp}@example.com`, password: 'password123'
+      });
+      realNote = await createNote(user.token, 'Caster note', 'a body worth indexing');
+    });
+
+    // A syntactically valid ObjectId that names nothing.
+    const ABSENT = '507f1f77bcf86cd799439011';
+
+    const ROUTES = [
+      ['GET',    (id) => `/api/notes/${id}`,                       404],
+      ['PUT',    (id) => `/api/notes/${id}`,                       404],
+      ['DELETE', (id) => `/api/notes/${id}`,                       404],
+      ['GET',    (id) => `/api/notes/${id}/links`,                 404],
+      ['GET',    (id) => `/api/notes/${id}/versions`,              404],
+      ['GET',    (id) => `/api/notes/${id}/versions/1`,            404],
+      ['GET',    (id) => `/api/graph/note/${id}`,                  404],
+      ['GET',    (id) => `/api/graph/note/${id}/expand/salt`,      404],
+      ['GET',    (id) => `/api/export/${id}?format=text`,          404],
+      ['POST',   (id) => `/api/llm/${id}/summarize`,               400],
+      ['POST',   (id) => `/api/study-pack/${id}`,                  400]
+    ];
+
+    test.each(ROUTES)('%s %s — a malformed id is %i, not 500', async (method, url, expected) => {
+      const { status } = await api(method, url('banana'), { token: user.token, ...(method === 'PUT' ? { body: {} } : {}) });
+      expect(status).toBe(expected);
+    });
+
+    test.each(ROUTES)('%s %s — and that MATCHES what an absent id returns', async (method, url, expected) => {
+      // THE HALF THAT MAKES IT A GUARANTEE RATHER THAN A STATUS CODE. If these
+      // ever diverge, a caller can tell "malformed" from "not yours" and the
+      // isolation argument in middleware/objectId.js quietly stops holding.
+      const { status } = await api(method, url(ABSENT), { token: user.token, ...(method === 'PUT' ? { body: {} } : {}) });
+      expect(status).toBe(expected);
+    });
+
+    test('the relations route refuses a SELF-pair with 400, not 500', async () => {
+      // The second instance of the same family: `canonicalPair(x, x)` throws
+      // because a self-edge has no meaning under an unordered unique index, and
+      // the catch turned that into "Error removing link".
+      const { status, body } = await api('DELETE', `/api/notes/${ABSENT}/relations/${ABSENT}`, { token: user.token });
+      expect(status).toBe(400);
+      expect(body.message).toBe('A note cannot be linked to itself');
+    });
+
+    test('a malformed relatedId is refused too, not just the primary id', async () => {
+      // :relatedId gets its own router.param registration. Easy to forget, and
+      // the reason the guard is a param handler rather than twelve ifs.
+      const { status } = await api('DELETE', `/api/notes/${realNote}/relations/banana`, { token: user.token });
+      expect(status).toBe(404);
+    });
+
+    test('AN UPPERCASE ID STILL WORKS — the guard must not be stricter than mongoose', async () => {
+      // THE REGRESSION THE FIRST DRAFT SHIPPED. isCanonicalObjectId compared the
+      // round-trip EXACTLY, and mongoose stringifies to lowercase, so an id sent
+      // uppercase failed to round-trip and got a 404 — for a request that finds
+      // the document perfectly well today. Turning a fix into a regression is
+      // the worse direction for a guard whose whole job is softening 500s.
+      const { status } = await api('GET', `/api/notes/${String(realNote).toUpperCase()}`, { token: user.token });
+      expect(status).toBe(200);
+    });
+
+    test('a well-formed id belonging to SOMEONE ELSE is still 404, unchanged', async () => {
+      // The isolation guarantee the guard must not disturb: it sits in front of
+      // the ownership check, so it must not answer differently for a valid id
+      // that simply is not yours.
+      const { status } = await api('GET', `/api/notes/${realNote}`, { token: bob.token });
+      expect(status).toBe(404);
+    });
+  });
 
   describe('create derives contentText, so the linker sees the note', () => {
     /**

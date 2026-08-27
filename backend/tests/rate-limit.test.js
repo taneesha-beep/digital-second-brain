@@ -692,6 +692,82 @@ describe('the eval harness is not affected, and that is structural', () => {
 // THE FACTORY ITSELF — the pre-Phase-8 sweep, 27 Aug 2026.
 // ───────────────────────────────────────────────────────────────────────────
 
+describe('a param guard must not run BEFORE the limiter', () => {
+  /**
+   * THE ORDERING THAT `results/rate-limit-verification.txt` RESTS ON.
+   *
+   * That artifact was produced by hitting the LLM routes with a note id that
+   * does not exist — the handler answers before a model is reached, so the
+   * limiter can be exercised in production without spending a single Groq
+   * token. ROADMAP's redeploy checklist tells the owner to smoke-test it
+   * exactly that way, in bold, for the same reason.
+   *
+   * The pre-Phase-8 sweep added `router.param('noteId', …)` to these routers so
+   * a MALFORMED id gets the route's own not-found answer instead of a 500. If
+   * that guard short-circuited BEFORE the limiter, the artifact's method would
+   * silently stop working: the request would be refused without ever being
+   * counted, and the next person to reproduce it would measure nothing while
+   * getting plausible-looking output.
+   *
+   * Express runs `router.param` callbacks at route-match time, which is AFTER
+   * `router.use` middleware — so the ordering is correct by construction. This
+   * pins it anyway, because "correct by construction" is a claim about a
+   * framework's behaviour and this repository's rule is to measure those.
+   */
+  const { objectIdParam } = require('../middleware/objectId');
+
+  function appWithParamGuard(limiter) {
+    const app = express();
+    app.use((req, res, next) => {
+      const id = req.get('x-test-user');
+      if (id) req.user = { id };
+      next();
+    });
+    const router = express.Router();
+    router.use(limiter);
+    router.param('noteId', objectIdParam({ status: 400, message: 'Note not found or access denied' }));
+    router.post('/:noteId', (req, res) => res.status(200).json({ reached: true }));
+    app.use('/api/thing', router);
+    return app;
+  }
+
+  test('a refused id is still COUNTED — the header decrements', async () => {
+    const { server, base } = await listen(appWithParamGuard(llmLimiter));
+    try {
+      const seen = [];
+      for (let i = 0; i < 3; i += 1) {
+        const r = await fetch(`${base}/api/thing/banana`, {
+          method: 'POST', headers: { 'x-test-user': 'ordering-user' }
+        });
+        seen.push({ status: r.status, header: r.headers.get('ratelimit') });
+      }
+      // The guard answered every one of them...
+      expect(seen.map((x) => x.status)).toEqual([400, 400, 400]);
+      // ...and the limiter counted every one of them.
+      for (const x of seen) expect(x.header).toBeTruthy();
+      const remaining = seen.map((x) => Number(/r=(\d+)/.exec(x.header)[1]));
+      expect(remaining).toEqual([remaining[0], remaining[0] - 1, remaining[0] - 2]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  test('and a WELL-FORMED id reaches the handler, so the guard is not refusing everything', async () => {
+    // POSITIVE CONTROL. Without it, a guard that rejected every id would satisfy
+    // the test above perfectly.
+    const { server, base } = await listen(appWithParamGuard(llmLimiter));
+    try {
+      const r = await fetch(`${base}/api/thing/507f1f77bcf86cd799439011`, {
+        method: 'POST', headers: { 'x-test-user': 'ordering-user-2' }
+      });
+      expect(r.status).toBe(200);
+      expect((await r.json()).reached).toBe(true);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+});
+
 describe('build() refuses an option it would not honour', () => {
   /**
    * THIS BLOCK EXISTS BECAUSE A MUTATION IN THIS VERY SUITE REPORTED A CATCH IT

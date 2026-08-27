@@ -2,8 +2,21 @@ const express = require('express');
 const { protect } = require('../middleware/auth');
 const { studyPackLimiter, quotaDailyLimiter } = require('../middleware/rateLimit');
 const { buildStudyPack } = require('../services/studyPack.service');
+const { objectIdParam } = require('../middleware/objectId');
 
 const router = express.Router();
+
+// A malformed id in the URL used to be a 500 on every one of these routes —
+// `Note.findOne({_id: 'banana'})` throws a CastError and the catch maps it to
+// "Error fetching". Measured at 12 of 12 id-taking endpoints across 5 routers.
+// This answers with the SAME response this router already gives for a note that
+// is simply absent, so a malformed id is indistinguishable from a missing one.
+// See middleware/objectId.js for why that rather than a 400.
+//
+// router.param runs AFTER router.use, so `protect` and any rate limiter still
+// see the request and still count it. A test pins that ordering.
+router.param('noteId', objectIdParam({ status: 400, message: 'Note not found or access denied' }));
+
 
 router.use(protect);
 
