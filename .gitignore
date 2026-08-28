@@ -41,6 +41,7 @@ docs/LEARNING.md
 docs/INTERVIEW-NOTES.md
 docs/PRIMER.md
 docs/EVALUATION.md
+docs/TECHNICAL-REPORT.md
 # 3.4's vectors and the model weights behind them. Same rule as data/corpus/ and
 # data/qrels/: the artifact is 42 MB (vectors) and 86 MB (weights), and what
 # makes it citable is its SHA-256 in a manifest and in docs/EVALUATION.md §17,
