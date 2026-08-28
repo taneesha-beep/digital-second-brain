@@ -338,3 +338,5 @@ Three things a caller should know:
 | Keyword extraction | Hand-written TF-IDF, no NLP library |
 | Tracing | OpenTelemetry → Jaeger, dev-only and off by default |
 | Tests | Jest |
+| Containers | Docker Compose — five services, every image pinned by digest |
+| CI | GitHub Actions, with a real MongoDB 7 service container |
