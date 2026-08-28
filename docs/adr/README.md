@@ -28,6 +28,11 @@ the more useful thing to read.
   requires each to be the correct rounding of a value in a committed artifact. **Counts,
   percentages and shorter decimals are not** — every record says so where it quotes one.
 - **A decline names its price.** Declining something cheap is not a decision.
+- **Numbers are permanent.** A record's number never changes and is never reused, so a citation
+  written today stays correct. `backend/tests/adr-links.test.js` enforces it, along with the two
+  things a reader actually depends on: **every link between these documents resolves**, and
+  **a link naming a record points at that record.** The second is the one that matters — a link
+  can resolve and still be wrong, because the wrong file exists too.
 
 ## Numbering
 
