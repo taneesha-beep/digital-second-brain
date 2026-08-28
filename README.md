@@ -81,8 +81,10 @@ both are sub-millisecond. The embedding model needs a vector stored and kept in 
 a backfill for every existing one, and a few hundred megabytes resident — and it cannot explain
 why it matched, where BM25 can.
 
-- **How the retrieval was evaluated** → [`results/test-ladder.txt`](results/test-ladder.txt) —
-  every rung, every metric, both splits, assembled from committed run sidecars.
+- **How the retrieval was evaluated** → [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) — where the
+  answer key came from, how the scoring was checked against the NIST reference, what was tuned on
+  which split, and what the key cannot tell you. Every rung's raw numbers are in
+  [`results/test-ladder.txt`](results/test-ladder.txt).
 - **A silent failure made visible** → [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — a
   background job that had been failing into silence since the app was written, and the trace
   that shows it.

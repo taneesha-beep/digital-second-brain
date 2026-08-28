@@ -232,6 +232,7 @@ const WRITEUPS = [
   // covered half buys: this checker catches an INVENTED digit and not a
   // MISPLACED one.
   'docs/ARCHITECTURE.md',
+  'docs/METHODOLOGY.md',
   'docs/adr/README.md',
   'docs/adr/0001-canonical-edge-storage.md',
   'docs/adr/0002-lexical-first-retrieval.md',

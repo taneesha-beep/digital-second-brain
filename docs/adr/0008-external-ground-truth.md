@@ -5,7 +5,7 @@
   [no response caching](0005-no-response-caching.md)**, which six references across the planning
   documents already cite by number, so this one moved rather than renumbering them.
 - **Relates to:** [ADR-0002](0002-lexical-first-retrieval.md) — every score that record compares is
-  computed against this key.
+  computed against this key. [`docs/METHODOLOGY.md`](../METHODOLOGY.md) carries the method in full.
 
 ## Context
 

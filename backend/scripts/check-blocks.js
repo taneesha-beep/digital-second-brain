@@ -192,6 +192,12 @@ const WRITEUPS = [
   // note there. A doc-relative resolver for the other thirty is a real, small
   // task and it is not this one.
   { file: 'docs/ARCHITECTURE.md', mode: 'current', published: true },
+  // 8.2's second half. docs/EVALUATION.md's checkbox RE-SCOPED to a new file and
+  // a new name: the notebook stays gitignored and unedited, and this is the
+  // published answer to the four questions a reader actually asks. A different
+  // NAME on purpose — two files called "the evaluation doc" would make every
+  // existing §-reference ambiguous forever.
+  { file: 'docs/METHODOLOGY.md', mode: 'current', published: true },
   { file: 'docs/adr/README.md', mode: 'current', published: true },
   { file: 'docs/adr/0001-canonical-edge-storage.md', mode: 'current', published: true },
   { file: 'docs/adr/0002-lexical-first-retrieval.md', mode: 'current', published: true },

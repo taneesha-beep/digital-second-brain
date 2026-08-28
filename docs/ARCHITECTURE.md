@@ -3,7 +3,8 @@
 **A note-taking app with a measured retrieval system inside it.** This document describes how the
 pieces fit together and where each non-obvious boundary is. The decisions behind those boundaries
 are one level down, in [`docs/adr/`](adr/README.md); what the retrieval is *worth* is in
-[`README.md`](../README.md); what it does when it breaks is in
+[`README.md`](../README.md) and how it was measured is in
+[`docs/METHODOLOGY.md`](METHODOLOGY.md); what it does when it breaks is in
 [`docs/FAILURE-MODES.md`](FAILURE-MODES.md).
 
 **This describes the code on `main`, at the commit you are reading.** A deployed instance exists
