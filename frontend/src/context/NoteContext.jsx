@@ -1,9 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import api from '../api/axiosInstance';
+import { useAuth } from './AuthContext';
 
 export const NoteContext = createContext(null);
 
 export const NoteProvider = ({ children }) => {
+  // NoteProvider is mounted INSIDE AuthProvider (main.jsx:12-13), so it can read
+  // auth state directly rather than going behind it to localStorage.
+  const { token } = useAuth();
   const [notes, setNotes] = useState([]);
   // Mirrors `notes` so selection can read the current list synchronously
   // without taking it as a dependency, which would rebuild every callback on
@@ -18,16 +22,46 @@ export const NoteProvider = ({ children }) => {
 
   useEffect(() => { notesRef.current = notes; }, [notes]);
 
-  // Fetch all notes on mount
+  /*
+   * THE NOTES LIST IS KEYED TO THE TOKEN, NOT TO MOUNT — and that is a bug fix,
+   * not a tidy-up.
+   *
+   * This effect used to have `[]` deps and read the token out of localStorage.
+   * `NoteProvider` wraps <App> in main.jsx, so on a FRESH LOGIN it is already
+   * mounted with no token, returns early, and never runs again: `login()`
+   * navigates client-side, so nothing remounts. The dashboard then showed ZERO
+   * NOTES until the user reloaded the page by hand. A reload happened to fix it,
+   * which is exactly why it read as "loading notes is slow" rather than as a bug.
+   *
+   * `token` is the right dependency rather than `user`: it is a STRING, so it
+   * cannot re-fire on object identity, it is set in the same `persist()` batch as
+   * the user (AuthContext.jsx:19-24), and it is the very value the old code went
+   * to localStorage for — so the state and the storage can no longer disagree.
+   *
+   * CLEARING ON LOGOUT IS PART OF THE FIX, NOT AN EXTRA. Logout never emptied
+   * this list, so one user's notes stayed in memory across a sign-out. Nothing
+   * rendered them, because logout routes away — but "log out, log in as someone
+   * else" is precisely the path where that stops being true.
+   *
+   * The `cancelled` flag is for that same path: logout-then-login puts two
+   * requests in flight, and without it a slow response from the previous session
+   * can land after the new one and replace it.
+   */
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    if (!token) {
+      setNotes([]);
+      setSelectedNote(null);
+      setLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
     setLoading(true);
     api.get('/notes')
-      .then(({ data }) => setNotes(Array.isArray(data) ? data : []))
-      .catch(() => setNotes([]))
-      .finally(() => setLoading(false));
-  }, []);
+      .then(({ data }) => { if (!cancelled) setNotes(Array.isArray(data) ? data : []); })
+      .catch(() => { if (!cancelled) setNotes([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token]);
 
   /*
    * SELECTING A NOTE FETCHES ONLY WHEN WE DO NOT ALREADY HAVE IT — which, in
