@@ -40,7 +40,26 @@ export default function WakingNotice() {
       role="status"
       aria-live="polite"
       style={{
-        position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+        // CENTRED WITH AUTO MARGINS, NOT left:50% + translateX(-50%). A fixed
+        // element given `left: 50%` and no `right` shrink-to-fits against the
+        // space from that point to the right edge — 50vw — and `maxWidth` can
+        // only cap a box, never widen one, so the box could never exceed half
+        // the viewport however much room was going spare.
+        //
+        // Pinning BOTH edges makes the available width 100vw, `fit-content`
+        // keeps the box tight around the text, and the auto margins centre it.
+        // MEASURED 19 Nov 2026, old allowance against new, same copy:
+        //
+        //   1024px   512px wide, 2 lines   ->   600px, 1 line
+        //    375px   188px wide, 5 lines   ->   343px, 2 lines
+        //
+        // At 375px the result is 16px gutters either side and no horizontal
+        // page scroll. NOTE THE DESKTOP ROW: this was never only a phone bug —
+        // it was wrong at 1024px too, and two lines of legible copy is simply
+        // what being wrong looked like there, which is why eyeballing it on a
+        // laptop passed it.
+        position: 'fixed', top: 16, left: 0, right: 0,
+        width: 'fit-content', margin: '0 auto',
         zIndex: 9999, maxWidth: 'calc(100vw - 32px)',
         display: 'flex', alignItems: 'center', gap: 10,
         background: '#1a1a2e', border: '1px solid rgba(148,163,184,0.25)',
