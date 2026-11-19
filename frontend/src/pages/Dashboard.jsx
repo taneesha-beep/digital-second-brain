@@ -1,10 +1,20 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { NoteContext } from '../context/NoteContext';
 import NoteEditor from '../components/editor/NoteEditor';
 import AIPanel from '../components/llm/AIPanel';
-import NoteGraph from '../components/graph/NoteGraph';
+/*
+ * NoteGraph is lazy because it imports cytoscape (425 KB of the old 718 KB
+ * bundle). It is already conditional on a note being selected, so on first
+ * paint it is not rendered at all and the chunk is never requested.
+ *
+ * THE PAIRING MATTERS: App.jsx lazies GraphPage for the same reason, and
+ * either one left as a static import puts cytoscape back in the main chunk for
+ * everybody. If you make one of them eager again, the other stops buying
+ * anything — check the build output rather than assuming.
+ */
+const NoteGraph = React.lazy(() => import('../components/graph/NoteGraph'));
 import LinkedNotesPanel from '../components/editor/LinkedNotesPanel';
 import ExportMenu from '../components/ExportMenu';
 import SearchBar from '../components/search/SearchBar';
@@ -462,7 +472,13 @@ export default function Dashboard() {
             {selectedNote?._id && (
               <section className="space-y-4">
                 {/* Note Graph — full width so the tree is readable */}
-                <NoteGraph noteId={selectedNote._id} />
+                <Suspense fallback={
+                  <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">
+                    Loading graph…
+                  </div>
+                }>
+                  <NoteGraph noteId={selectedNote._id} />
+                </Suspense>
 
                 {/* AI panel + Related notes — side by side below the graph */}
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
